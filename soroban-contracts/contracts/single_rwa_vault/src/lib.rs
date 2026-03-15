@@ -1,28 +1,3 @@
-//! SingleRWA_Vault — Soroban / Stellar
-//!
-//! Verbatim port of `SingleRWA_Vault.sol`.
-//!
-//! Design notes
-//! ─────────────
-//! • There is no native ERC-4626 standard on Soroban.  The vault **is** the
-//!   share-token: it implements the Soroban Token Interface (SEP-41) so that
-//!   wallets treat vault shares like any other fungible token.
-//!
-//! • Amounts are `i128` (Soroban token convention); all Solidity `uint256`
-//!   values that represent token amounts map to `i128`.
-//!
-//! • "Assets" (the underlying USDC-like token) are held inside the vault
-//!   contract account.  Deposits call `token_client.transfer(from, vault, amount)`.
-//!   Withdrawals call `token_client.transfer(vault, to, amount)`.
-//!
-//! • Re-entrancy: Soroban's execution model is inherently single-threaded and
-//!   synchronous within one transaction, so a dedicated mutex is unnecessary.
-//!   Critical state mutations still follow Checks-Effects-Interactions order.
-//!
-//! • Storage keys use a typed enum (DataKey) following Soroban best practice.
-//!   Per-user data uses Persistent storage with a per-key TTL bump strategy.
-//!   Contract globals use Instance storage.
-
 #![no_std]
 
 mod storage;

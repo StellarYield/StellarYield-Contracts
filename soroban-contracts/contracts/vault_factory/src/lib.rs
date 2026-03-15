@@ -1,21 +1,3 @@
-//! VaultFactory — Soroban / Stellar
-//!
-//! Verbatim port of `VaultFactory.sol`.
-//!
-//! Differences from the EVM version
-//! ─────────────────────────────────
-//! • On Soroban there is no `new Contract(…)` constructor deployment inside a
-//!   contract function.  Instead this factory stores a reference WASM hash of
-//!   the SingleRWA_Vault contract and calls `e.deployer().with_current_contract(…)`
-//!   to deploy a fresh instance for every vault.
-//!
-//! • The factory calls `single_rwa_vault::__constructor(…)` on the freshly
-//!   deployed vault via a cross-contract call immediately after deployment.
-//!
-//! • All vault registry data is in Persistent storage (addresses are long-lived).
-//!
-//! • The `createAggregatorVault` function panics exactly as in the Solidity
-//!   version ("Aggregator vault not supported").
 
 #![no_std]
 
