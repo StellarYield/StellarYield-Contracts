@@ -18,4 +18,5 @@ pub enum Error {
     VaultPaused             = 11,
     ZeroAddress             = 12,
     ZeroAmount              = 13,
+    AddressBlacklisted      = 14,
 }
