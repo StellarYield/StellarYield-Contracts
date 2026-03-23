@@ -67,6 +67,8 @@ pub enum DataKey {
     VaultState,
     Paused,
     ActivationTimestamp,
+    /// Reentrancy lock — true while a guarded function is executing.
+    Locked,
 
     // --- Epoch / yield ---
     CurrentEpoch,
@@ -190,6 +192,8 @@ instance_get!(get_vault_state, VaultState, VaultState);
 instance_put!(put_vault_state, VaultState, VaultState);
 instance_get!(get_paused, Paused, bool);
 instance_put!(put_paused, Paused, bool);
+instance_get!(get_locked, Locked, bool);
+instance_put!(put_locked, Locked, bool);
 
 pub fn get_activation_timestamp(e: &Env) -> u64 {
     e.storage()

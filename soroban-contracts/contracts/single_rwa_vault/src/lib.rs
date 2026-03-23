@@ -66,6 +66,7 @@ impl SingleRWAVault {
         // Initial state
         put_vault_state(e, VaultState::Funding);
         put_paused(e, false);
+        put_locked(e, false);
         put_current_epoch(e, 0u32);
         put_total_yield_distributed(e, 0i128);
         put_redemption_counter(e, 0u32);
@@ -152,8 +153,16 @@ impl SingleRWAVault {
 
     /// Deposit `assets` of the underlying token; mint vault shares to `receiver`.
     /// Caller must be KYC-verified.
+    ///
+    /// Security: follows the Checks-Effects-Interactions (CEI) pattern.
+    /// All state changes (_mint, deposit tracking) are committed before the
+    /// external token transfer so that a reentrant call observes fully-updated
+    /// state.  The reentrancy lock provides an additional hard stop against
+    /// any reentrant execution path.
     pub fn deposit(e: &Env, caller: Address, assets: i128, receiver: Address) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &receiver);
@@ -172,20 +181,30 @@ impl SingleRWAVault {
             }
         }
 
+        // Shares = assets (1:1 at start; yield accrual changes the price)
+        let shares = preview_deposit(e, assets);
+
+        // --- Effects (state changes first) ---
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
-
-        let shares = preview_deposit(e, assets);
-        transfer_asset_to_vault(e, &caller, assets);
         _mint(e, &receiver, shares);
 
+        // --- Interaction (external call last) ---
+        transfer_asset_to_vault(e, &caller, assets);
+
         bump_instance(e);
+        release_lock(e);
         shares
     }
 
     /// Mint exactly `shares`; caller pays the corresponding assets.
+    ///
+    /// Security: follows CEI — all state changes committed before the external
+    /// token transfer.  Reentrancy lock prevents reentrant calls.
     pub fn mint(e: &Env, caller: Address, shares: i128, receiver: Address) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &receiver);
@@ -205,25 +224,27 @@ impl SingleRWAVault {
             }
         }
 
+        // --- Effects (state changes first) ---
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
-
-        transfer_asset_to_vault(e, &caller, assets);
         _mint(e, &receiver, shares);
 
+        // --- Interaction (external call last) ---
+        transfer_asset_to_vault(e, &caller, assets);
+
         bump_instance(e);
+        release_lock(e);
         assets
     }
 
     /// Withdraw exactly `assets` worth of underlying; burns the corresponding shares.
-    pub fn withdraw(
-        e: &Env,
-        caller: Address,
-        assets: i128,
-        receiver: Address,
-        owner: Address,
-    ) -> i128 {
+    ///
+    /// Security: follows CEI — shares are burned (state change) before the
+    /// external asset transfer.  Reentrancy lock prevents reentrant calls.
+    pub fn withdraw(e: &Env, caller: Address, assets: i128, receiver: Address, owner: Address) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
@@ -235,27 +256,31 @@ impl SingleRWAVault {
             if allowance < shares_needed {
                 panic!("insufficient allowance");
             }
+            // --- Effects ---
             put_share_allowance(e, &owner, &caller, allowance - shares_needed);
         }
 
+        // --- Effects ---
         update_user_snapshot(e, &owner);
         let shares = preview_withdraw(e, assets);
         _burn(e, &owner, shares);
+
+        // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, assets);
 
         bump_instance(e);
+        release_lock(e);
         shares
     }
 
     /// Redeem `shares`; receive the corresponding underlying assets.
-    pub fn redeem(
-        e: &Env,
-        caller: Address,
-        shares: i128,
-        receiver: Address,
-        owner: Address,
-    ) -> i128 {
+    ///
+    /// Security: follows CEI — shares are burned (state change) before the
+    /// external asset transfer.  Reentrancy lock prevents reentrant calls.
+    pub fn redeem(e: &Env, caller: Address, shares: i128, receiver: Address, owner: Address) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
@@ -266,15 +291,20 @@ impl SingleRWAVault {
             if allowance < shares {
                 panic!("insufficient allowance");
             }
+            // --- Effects ---
             put_share_allowance(e, &owner, &caller, allowance - shares);
         }
 
+        // --- Effects ---
         update_user_snapshot(e, &owner);
         let assets = preview_redeem(e, shares);
         _burn(e, &owner, shares);
+
+        // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, assets);
 
         bump_instance(e);
+        release_lock(e);
         assets
     }
 
@@ -304,8 +334,15 @@ impl SingleRWAVault {
     // ─────────────────────────────────────────────────────────────────
 
     /// Operator transfers `amount` of asset into the vault and records a new epoch.
+    ///
+    /// Security: follows CEI — epoch counters and yield accounting are updated
+    /// (Effects) before the external token pull (Interaction).  This ensures
+    /// that any reentrant call sees a fully-consistent epoch state.
+    /// Reentrancy lock provides an additional hard stop.
     pub fn distribute_yield(e: &Env, caller: Address, amount: i128) -> u32 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_operator(e, &caller);
         require_state(e, VaultState::Active);
@@ -314,9 +351,7 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::ZeroAmount);
         }
 
-        // Pull yield tokens into vault
-        transfer_asset_to_vault(e, &caller, amount);
-
+        // --- Effects (state changes before external call) ---
         let epoch = get_current_epoch(e) + 1;
         put_current_epoch(e, epoch);
         put_epoch_yield(e, epoch, amount);
@@ -324,13 +359,24 @@ impl SingleRWAVault {
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
 
         emit_yield_distributed(e, epoch, amount, e.ledger().timestamp());
+
+        // --- Interaction (pull yield tokens into vault last) ---
+        transfer_asset_to_vault(e, &caller, amount);
+
         bump_instance(e);
+        release_lock(e);
         epoch
     }
 
     /// Claim all pending yield for the caller.
+    ///
+    /// Security: follows CEI — epoch claim flags and totals are committed
+    /// (Effects) before the asset transfer (Interaction).  Reentrancy lock
+    /// prevents double-claim via reentrant calls.
     pub fn claim_yield(e: &Env, caller: Address) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
 
@@ -339,6 +385,7 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::NoYieldToClaim);
         }
 
+        // --- Effects ---
         let epoch = get_current_epoch(e);
         for i in 1..=epoch {
             if !get_has_claimed_epoch(e, &caller, i) {
@@ -348,17 +395,30 @@ impl SingleRWAVault {
             }
         }
 
-        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
+        put_total_yield_claimed(
+            e,
+            &caller,
+            get_total_yield_claimed(e, &caller) + amount,
+        );
+
+        // --- Interaction ---
         transfer_asset_from_vault(e, &caller, amount);
 
         emit_yield_claimed(e, caller, amount, epoch);
         bump_instance(e);
+        release_lock(e);
         amount
     }
 
     /// Claim yield for a specific epoch only.
+    ///
+    /// Security: follows CEI — epoch claim flag and running total are updated
+    /// (Effects) before the asset transfer (Interaction).  Reentrancy lock
+    /// prevents double-claim via reentrant calls.
     pub fn claim_yield_for_epoch(e: &Env, caller: Address, epoch: u32) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
 
@@ -371,12 +431,20 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::NoYieldToClaim);
         }
 
+        // --- Effects ---
         put_has_claimed_epoch(e, &caller, epoch, true);
-        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
+        put_total_yield_claimed(
+            e,
+            &caller,
+            get_total_yield_claimed(e, &caller) + amount,
+        );
+
+        // --- Interaction ---
         transfer_asset_from_vault(e, &caller, amount);
 
         emit_yield_claimed(e, caller, amount, epoch);
         bump_instance(e);
+        release_lock(e);
         amount
     }
 
@@ -510,6 +578,10 @@ impl SingleRWAVault {
     // ─────────────────────────────────────────────────────────────────
 
     /// Full redemption at maturity.  Automatically claims pending yield.
+    ///
+    /// Security: follows CEI — all yield-claim state, allowance deduction, and
+    /// share burn are committed before the single outgoing asset transfer.
+    /// Reentrancy lock prevents reentrant calls.
     pub fn redeem_at_maturity(
         e: &Env,
         caller: Address,
@@ -518,6 +590,8 @@ impl SingleRWAVault {
         owner: Address,
     ) -> i128 {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_not_paused(e);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
@@ -529,10 +603,11 @@ impl SingleRWAVault {
             if allowance < shares {
                 panic!("insufficient allowance");
             }
+            // --- Effects ---
             put_share_allowance(e, &owner, &caller, allowance - shares);
         }
 
-        // Auto-claim pending yield
+        // --- Effects: auto-claim pending yield ---
         let pending = Self::pending_yield(e, owner.clone());
         let epoch = get_current_epoch(e);
         if pending > 0 {
@@ -550,9 +625,12 @@ impl SingleRWAVault {
         if pending > 0 {
             total_out += pending;
         }
+
+        // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, total_out);
 
         bump_instance(e);
+        release_lock(e);
         total_out
     }
 
@@ -587,8 +665,14 @@ impl SingleRWAVault {
     }
 
     /// Operator processes an early redemption request.
+    ///
+    /// Security: follows CEI — the request is marked processed and shares are
+    /// burned (Effects) before the asset transfer (Interaction).  Reentrancy
+    /// lock prevents reentrant calls from processing the same request twice.
     pub fn process_early_redemption(e: &Env, caller: Address, request_id: u32) {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_operator(e, &caller);
 
         let mut req = get_redemption_request(e, request_id);
@@ -596,6 +680,7 @@ impl SingleRWAVault {
             panic!("already processed");
         }
 
+        // --- Effects ---
         req.processed = true;
         put_redemption_request(e, request_id, req.clone());
 
@@ -606,10 +691,13 @@ impl SingleRWAVault {
 
         update_user_snapshot(e, &req.user);
         _burn(e, &req.user, req.shares);
+
+        // --- Interaction ---
         transfer_asset_from_vault(e, &req.user, net_assets);
         // Fee stays in vault for other depositors
 
         bump_instance(e);
+        release_lock(e);
     }
 
     pub fn early_redemption_fee_bps(e: &Env) -> u32 {
@@ -709,20 +797,30 @@ impl SingleRWAVault {
         get_paused(e)
     }
 
+    /// Drain all vault assets to `recipient` and pause the vault.
+    ///
+    /// Security: follows CEI — the vault is paused (Effect) before the asset
+    /// transfer (Interaction) so that any reentrant call is rejected by
+    /// `require_not_paused`.  Reentrancy lock provides an additional hard stop.
     pub fn emergency_withdraw(e: &Env, caller: Address, recipient: Address) {
         caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
         require_admin(e, &caller);
+
         let balance = asset_balance_of_vault(e);
+
+        // --- Effects (pause before transferring) ---
+        put_paused(e, true);
+        emit_emergency_action(e, true, String::from_str(e, "Emergency withdrawal executed"));
+
+        // --- Interaction ---
         if balance > 0 {
             transfer_asset_from_vault(e, &recipient, balance);
         }
-        put_paused(e, true);
-        emit_emergency_action(
-            e,
-            true,
-            String::from_str(e, "Emergency withdrawal executed"),
-        );
+
         bump_instance(e);
+        release_lock(e);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1033,6 +1131,35 @@ fn require_not_blacklisted(e: &Env, addr: &Address) {
     if get_blacklisted(e, addr) {
         panic_with_error!(e, Error::AddressBlacklisted);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reentrancy guard helpers
+//
+// Security rationale: Soroban cross-contract calls execute synchronously
+// within the same transaction.  A malicious token contract could call back
+// into this vault before the current function finishes, exploiting
+// inconsistent state.  The `locked` flag prevents any guarded function from
+// being entered a second time while the first invocation is still in
+// progress.  Because Soroban transactions are fully atomic — any panic rolls
+// back ALL storage writes — a stuck lock is impossible: if a guarded
+// function panics, `locked` reverts to `false` along with every other
+// change made in that transaction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Acquire the reentrancy lock.  Panics with `Error::Reentrant` if the lock
+/// is already held (i.e. we are inside a reentrant call).
+fn acquire_lock(e: &Env) {
+    if get_locked(e) {
+        panic_with_error!(e, Error::Reentrant);
+    }
+    put_locked(e, true);
+}
+
+/// Release the reentrancy lock.  Must be called at the end of every guarded
+/// function on all success paths.
+fn release_lock(e: &Env) {
+    put_locked(e, false);
 }
 
 #[cfg(test)]
