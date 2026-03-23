@@ -986,4 +986,18 @@ mod test {
         client.set_blacklisted(&admin, &user, &false);
         assert_eq!(client.is_blacklisted(&user), false);
     }
+
+    #[test]
+    #[should_panic(expected = "Error(Contract, #4)")]
+    fn test_set_blacklisted_non_admin_fails() {
+        let e = Env::default();
+        e.mock_all_auths();
+        let (vault_addr, _admin, _asset) = create_vault(&e);
+        let client = SingleRWAVaultClient::new(&e, &vault_addr);
+
+        let non_admin = Address::generate(&e);
+        let user = Address::generate(&e);
+
+        client.set_blacklisted(&non_admin, &user, &true);
+    }
 }
