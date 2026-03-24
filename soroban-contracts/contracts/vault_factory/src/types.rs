@@ -35,6 +35,7 @@ pub struct BatchVaultParams {
     pub rwa_category: String,
     pub expected_apy: u32,
     pub maturity_date: u64,
+    pub funding_deadline: u64,
     pub funding_target: i128,
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,

@@ -6,6 +6,9 @@ mod storage;
 mod token_interface;
 mod types;
 
+#[cfg(test)]
+mod test_funding_deadline;
+
 pub use crate::types::*;
 
 use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String};
@@ -59,6 +62,7 @@ impl SingleRWAVault {
         // Vault configuration
         put_funding_target(e, params.funding_target);
         put_maturity_date(e, params.maturity_date);
+        put_funding_deadline(e, params.funding_deadline);
         put_min_deposit(e, params.min_deposit);
         put_max_deposit_per_user(e, params.max_deposit_per_user);
         put_early_redemption_fee_bps(e, params.early_redemption_fee_bps);
@@ -241,6 +245,13 @@ impl SingleRWAVault {
 
     /// Withdraw exactly `assets` worth of underlying; burns the corresponding shares.
     ///
+    /// **State guard:** Only allowed in `Active` or `Matured` states.
+    /// During `Funding` the investment has not started so there is nothing to
+    /// withdraw, and a `Closed` vault has already been wound down.  The
+    /// `Active + Matured` policy keeps parity with `redeem` and lets LPs exit
+    /// once the RWA is live while still permitting withdrawals after maturity
+    /// for users who prefer the asset-denominated call over `redeem_at_maturity`.
+    ///
     /// Security: follows CEI — shares are burned (state change) before the
     /// external asset transfer.  Reentrancy lock prevents reentrant calls.
     pub fn withdraw(e: &Env, caller: Address, assets: i128, receiver: Address, owner: Address) -> i128 {
@@ -251,6 +262,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
+        require_active_or_matured(e);
 
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
@@ -277,6 +289,11 @@ impl SingleRWAVault {
     }
 
     /// Redeem `shares`; receive the corresponding underlying assets.
+    ///
+    /// **State guard:** Only allowed in `Active` or `Matured` states.
+    /// During `Funding` no investment has been made yet, and `Closed` vaults
+    /// have already been wound down.  For maturity-specific redemption with
+    /// automatic yield claiming use `redeem_at_maturity` instead.
     pub fn redeem(
         e: &Env,
         caller: Address,
@@ -291,6 +308,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
+        require_active_or_matured(e);
 
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
@@ -330,6 +348,70 @@ impl SingleRWAVault {
     }
     pub fn preview_redeem(e: &Env, shares: i128) -> i128 {
         preview_redeem(e, shares)
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ERC-4626 max helpers
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Maximum assets `receiver` can deposit right now.
+    /// Returns 0 when the vault is paused or not in Funding/Active state.
+    /// When `max_deposit_per_user` is 0 the vault is uncapped; returns i128::MAX.
+    pub fn max_deposit(e: &Env, receiver: Address) -> i128 {
+        if get_paused(e) {
+            return 0;
+        }
+        let state = get_vault_state(e);
+        if state != VaultState::Funding && state != VaultState::Active {
+            return 0;
+        }
+        let cap = get_max_deposit_per_user(e);
+        if cap == 0 {
+            return i128::MAX;
+        }
+        let already = get_user_deposited(e, &receiver);
+        (cap - already).max(0)
+    }
+
+    /// Maximum shares `receiver` can obtain via `mint` right now.
+    /// Converts `max_deposit` to shares using the current share price.
+    /// Returns 0 when the vault is paused or not in Funding/Active state.
+    pub fn max_mint(e: &Env, receiver: Address) -> i128 {
+        let max_assets = Self::max_deposit(e, receiver);
+        if max_assets == 0 {
+            return 0;
+        }
+        if max_assets == i128::MAX {
+            return i128::MAX;
+        }
+        preview_deposit(e, max_assets)
+    }
+
+    /// Maximum assets `owner` can withdraw right now.
+    /// Returns 0 when the vault is paused or not in Active/Matured state.
+    pub fn max_withdraw(e: &Env, owner: Address) -> i128 {
+        if get_paused(e) {
+            return 0;
+        }
+        let state = get_vault_state(e);
+        if state != VaultState::Active && state != VaultState::Matured {
+            return 0;
+        }
+        let shares = get_share_balance(e, &owner);
+        preview_redeem(e, shares)
+    }
+
+    /// Maximum shares `owner` can redeem right now (their full share balance).
+    /// Returns 0 when the vault is paused or not in Active/Matured state.
+    pub fn max_redeem(e: &Env, owner: Address) -> i128 {
+        if get_paused(e) {
+            return 0;
+        }
+        let state = get_vault_state(e);
+        if state != VaultState::Active && state != VaultState::Matured {
+            return 0;
+        }
+        get_share_balance(e, &owner)
     }
 
     pub fn total_assets(e: &Env) -> i128 {
@@ -488,11 +570,17 @@ impl SingleRWAVault {
         get_vault_state(e)
     }
 
-    /// Transition Funding → Active.  Requires funding target to be met.
+    /// Transition Funding → Active.  Requires funding target to be met and
+    /// the funding deadline must not have passed.
     pub fn activate_vault(e: &Env, caller: Address) {
         caller.require_auth();
         require_operator(e, &caller);
         require_state(e, VaultState::Funding);
+        // Cannot activate once the funding deadline has passed.
+        let deadline = get_funding_deadline(e);
+        if deadline > 0 && e.ledger().timestamp() > deadline {
+            panic_with_error!(e, Error::FundingDeadlinePassed);
+        }
         if !Self::is_funding_target_met(e) {
             panic_with_error!(e, Error::FundingTargetNotMet);
         }
@@ -500,6 +588,71 @@ impl SingleRWAVault {
         put_activation_timestamp(e, e.ledger().timestamp());
         emit_vault_state_changed(e, VaultState::Funding, VaultState::Active);
         bump_instance(e);
+    }
+
+    /// Cancel a failed funding round.
+    ///
+    /// Operator-only.  Callable only when the vault is in Funding state,
+    /// the funding deadline has passed, and the funding target has not been met.
+    /// Transitions the vault to Cancelled, enabling individual `refund` calls.
+    pub fn cancel_funding(e: &Env, caller: Address) {
+        caller.require_auth();
+        require_operator(e, &caller);
+        require_state(e, VaultState::Funding);
+        // Deadline must have passed.
+        let deadline = get_funding_deadline(e);
+        if deadline == 0 || e.ledger().timestamp() <= deadline {
+            panic_with_error!(e, Error::FundingDeadlineNotPassed);
+        }
+        // Funding target must still be unmet.
+        if Self::is_funding_target_met(e) {
+            panic_with_error!(e, Error::FundingTargetNotMet);
+        }
+        put_vault_state(e, VaultState::Cancelled);
+        emit_vault_state_changed(e, VaultState::Funding, VaultState::Cancelled);
+        emit_funding_cancelled(e);
+        bump_instance(e);
+    }
+
+    /// Refund a depositor after a cancelled funding round.
+    ///
+    /// Burns the caller's shares 1:1 and returns the corresponding deposited
+    /// assets.  Only callable when the vault is in Cancelled state.
+    ///
+    /// Security: follows CEI — shares are burned (Effect) before the asset
+    /// transfer (Interaction).  Reentrancy lock prevents double-refund.
+    pub fn refund(e: &Env, caller: Address) -> i128 {
+        caller.require_auth();
+        // --- Checks ---
+        acquire_lock(e);
+        require_not_paused(e);
+        require_state(e, VaultState::Cancelled);
+
+        let shares = get_share_balance(e, &caller);
+        if shares <= 0 {
+            panic_with_error!(e, Error::NoSharesToRefund);
+        }
+
+        // In Funding state no yield accrues, so the share price is always 1:1.
+        // preview_redeem handles this correctly (totalAssets == totalSupply).
+        let amount = preview_redeem(e, shares);
+
+        // --- Effects ---
+        put_user_deposited(e, &caller, 0);
+        _burn(e, &caller, shares);
+
+        // --- Interaction ---
+        transfer_asset_from_vault(e, &caller, amount);
+
+        emit_refunded(e, caller, amount);
+        bump_instance(e);
+        release_lock(e);
+        amount
+    }
+
+    /// Returns the funding deadline timestamp (0 = no deadline configured).
+    pub fn funding_deadline(e: &Env) -> u64 {
+        get_funding_deadline(e)
     }
 
     /// Transition Active → Matured.  Requires block timestamp ≥ maturityDate.
@@ -1131,6 +1284,16 @@ fn require_active_or_funding(e: &Env) {
     }
 }
 
+/// Withdrawals and redemptions are only valid once the vault is Active
+/// (investment is live) or Matured (investment has completed).  During Funding
+/// no underlying has been deployed yet, and a Closed vault has been wound down.
+fn require_active_or_matured(e: &Env) {
+    let state = get_vault_state(e);
+    if state != VaultState::Active && state != VaultState::Matured {
+        panic_with_error!(e, Error::InvalidVaultState);
+    }
+}
+
 fn require_not_blacklisted(e: &Env, addr: &Address) {
     if get_blacklisted(e, addr) {
         panic_with_error!(e, Error::AddressBlacklisted);
@@ -1201,6 +1364,7 @@ mod test {
             cooperator: admin.clone(),
             funding_target: 1000_0000000,
             maturity_date: 0,
+            funding_deadline: 0,
             min_deposit: 1_0000000,
             max_deposit_per_user: 0,
             early_redemption_fee_bps: 100,
@@ -1315,3 +1479,6 @@ mod test_constructor;
 mod test_withdraw;
 #[cfg(test)]
 mod test_redemption;
+
+#[cfg(test)]
+mod test_vault_state_guards;

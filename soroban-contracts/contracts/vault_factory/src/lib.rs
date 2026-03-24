@@ -86,6 +86,7 @@ impl VaultFactory {
             zero_str,  // category
             0u32,      // expected_apy
             maturity_date,
+            0u64,      // funding_deadline (0 = no deadline)
             0i128,     // funding_target
             0i128,     // min_deposit
             0i128,     // max_deposit_per_user
@@ -116,6 +117,7 @@ impl VaultFactory {
             params.rwa_category,
             params.expected_apy,
             params.maturity_date,
+            params.funding_deadline,
             params.funding_target,
             params.min_deposit,
             params.max_deposit_per_user,
@@ -146,6 +148,7 @@ impl VaultFactory {
                 p.rwa_category,
                 p.expected_apy,
                 p.maturity_date,
+                p.funding_deadline,
                 p.funding_target,
                 p.min_deposit,
                 p.max_deposit_per_user,
@@ -327,6 +330,7 @@ impl VaultFactory {
         rwa_category: String,
         expected_apy: u32,
         maturity_date: u64,
+        funding_deadline: u64,
         funding_target: i128,
         min_deposit: i128,
         max_deposit_per_user: i128,
@@ -363,6 +367,7 @@ impl VaultFactory {
             cooperator: coop.clone(),
             funding_target,
             maturity_date,
+            funding_deadline,
             min_deposit,
             max_deposit_per_user,
             early_redemption_fee_bps,

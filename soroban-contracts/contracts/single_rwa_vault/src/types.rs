@@ -27,6 +27,8 @@ pub struct InitParams {
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
+    /// Unix timestamp after which funding can be cancelled if target not met.
+    pub funding_deadline: u64,
     // RWA details
     pub rwa_name: String,
     pub rwa_symbol: String,
@@ -50,6 +52,8 @@ pub enum VaultState {
     Matured,
     /// Vault is closed.
     Closed,
+    /// Funding failed (deadline passed without meeting target); refunds available.
+    Cancelled,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

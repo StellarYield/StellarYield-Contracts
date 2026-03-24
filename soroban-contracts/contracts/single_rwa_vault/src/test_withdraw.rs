@@ -6,7 +6,7 @@
 //!  - Error paths: insufficient allowance, insufficient shares, vault paused
 //!  - Edge cases: drain entire balance, non-1:1 share price validation
 
-use crate::test_helpers::{mint_usdc, setup_with_kyc_bypass};
+use crate::test_helpers::{mint_usdc, setup_with_kyc_bypass, TestContext};
 use soroban_sdk::{testutils::Address as _, Address, String};
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +15,15 @@ use soroban_sdk::{testutils::Address as _, Address, String};
 fn deposit(ctx: &crate::test_helpers::TestContext, user: &Address, assets: i128) -> i128 {
     mint_usdc(&ctx.env, &ctx.asset_id, user, assets);
     ctx.vault().deposit(user, &assets, user)
+}
+
+/// Lower the funding target to match current assets and activate the vault.
+fn activate(ctx: &TestContext) {
+    let current = ctx.vault().total_assets();
+    if current < ctx.params.funding_target {
+        ctx.vault().set_funding_target(&ctx.admin, &current);
+    }
+    ctx.vault().activate_vault(&ctx.admin);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,6 +36,7 @@ fn test_withdraw_exact_assets() {
     let v = ctx.vault();
 
     deposit(&ctx, &ctx.user.clone(), 10_000_000); // 10 USDC → 10 shares (1:1)
+    activate(&ctx);
 
     let shares_before = v.balance(&ctx.user);
     let supply_before = v.total_supply();
@@ -58,6 +68,7 @@ fn test_redeem_exact_shares() {
     let v = ctx.vault();
 
     deposit(&ctx, &ctx.user.clone(), 10_000_000); // 10 USDC → 10 shares
+    activate(&ctx);
 
     let supply_before = v.total_supply();
 
@@ -80,6 +91,7 @@ fn test_withdraw_via_allowance() {
     let spender = Address::generate(&ctx.env);
 
     deposit(&ctx, &ctx.user.clone(), 10_000_000);
+    activate(&ctx);
 
     // Approve spender for 5 shares worth of allowance.
     v.approve(&ctx.user, &spender, &5_000_000i128, &9999u32);
@@ -114,6 +126,7 @@ fn test_redeem_via_allowance() {
     let spender = Address::generate(&ctx.env);
 
     deposit(&ctx, &ctx.user.clone(), 10_000_000);
+    activate(&ctx);
 
     // Approve spender for 4 shares.
     v.approve(&ctx.user, &spender, &4_000_000i128, &9999u32);
@@ -139,6 +152,7 @@ fn test_withdraw_insufficient_allowance_panics() {
     let spender = Address::generate(&ctx.env);
 
     deposit(&ctx, &ctx.user.clone(), 10_000_000);
+    activate(&ctx);
 
     // Grant only 2 shares of allowance but try to withdraw 5 USDC (= 5 shares).
     v.approve(&ctx.user, &spender, &2_000_000i128, &9999u32);
@@ -155,6 +169,7 @@ fn test_redeem_insufficient_shares_panics() {
     let ctx = setup_with_kyc_bypass();
 
     deposit(&ctx, &ctx.user.clone(), 5_000_000); // 5 shares
+    activate(&ctx);
 
     // Try to redeem 10 shares — owner only has 5.
     ctx.vault().redeem(&ctx.user, &10_000_000i128, &ctx.user, &ctx.user);
@@ -171,6 +186,7 @@ fn test_withdraw_while_paused_panics() {
     let v = ctx.vault();
 
     deposit(&ctx, &ctx.user.clone(), 5_000_000);
+    activate(&ctx);
 
     v.pause(&ctx.admin, &String::from_str(&ctx.env, "emergency"));
     assert!(v.paused());
@@ -188,6 +204,7 @@ fn test_withdraw_entire_balance() {
     let v = ctx.vault();
 
     deposit(&ctx, &ctx.user.clone(), 8_000_000); // 8 shares
+    activate(&ctx);
 
     let shares = v.balance(&ctx.user);
     let assets = v.preview_redeem(&shares);
@@ -213,6 +230,7 @@ fn test_redeem_at_non_unit_share_price() {
 
     // Deposit 40 USDC → 40 shares (1:1).
     deposit(&ctx, &ctx.user.clone(), 40_000_000);
+    activate(&ctx);
 
     let supply = v.total_supply();            // 40_000_000
     let assets_before = v.total_assets();     // 40_000_000
@@ -246,6 +264,7 @@ fn test_withdraw_at_non_unit_share_price() {
 
     // 40 USDC → 40 shares.
     deposit(&ctx, &ctx.user.clone(), 40_000_000);
+    activate(&ctx);
 
     // Vault now holds 80 USDC total (2× the deposited amount), still 40 shares outstanding.
     mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 40_000_000);

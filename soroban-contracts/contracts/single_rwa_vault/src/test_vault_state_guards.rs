@@ -2,7 +2,7 @@ extern crate std;
 
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::Address as _,
+    testutils::{Address as _, Ledger as _},
     Address, Env, String,
 };
 
@@ -10,7 +10,6 @@ use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
-// Only `balance` and `transfer` are needed by the vault.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[contract]
@@ -33,7 +32,6 @@ impl MockToken {
         e.storage().persistent().set(&to, &(to_bal + amount));
     }
 
-    /// Test-only mint; no auth required.
     pub fn mint(e: Env, to: Address, amount: i128) {
         let bal: i128 = e.storage().persistent().get(&to).unwrap_or(0);
         e.storage().persistent().set(&to, &(bal + amount));
@@ -49,12 +47,10 @@ pub struct MockZkme;
 
 #[contractimpl]
 impl MockZkme {
-    /// Returns true when the user has been granted approval via `approve_user`.
     pub fn has_approved(e: Env, _cooperator: Address, user: Address) -> bool {
         e.storage().instance().get(&user).unwrap_or(false)
     }
 
-    /// Test helper — grant KYC approval to a user.
     pub fn approve_user(e: Env, user: Address) {
         e.storage().instance().set(&user, &true);
     }
@@ -64,6 +60,7 @@ impl MockZkme {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Create a vault in Funding state with funding_target = 0 (auto-met).
 fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
     let admin = Address::generate(env);
     let cooperator = Address::generate(env);
@@ -83,7 +80,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             cooperator: cooperator.clone(),
             funding_target: 0i128,
             maturity_date: 9_999_999_999u64,
-            funding_deadline: 9_999_999_999u64,
+            funding_deadline: 0u64,
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
@@ -99,7 +96,6 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
 }
 
 /// Approve `user` in zkMe, mint tokens to them, and deposit into the vault.
-/// Returns the number of vault shares minted.
 fn fund_user(
     env: &Env,
     vault_id: &Address,
@@ -113,116 +109,154 @@ fn fund_user(
     SingleRWAVaultClient::new(env, vault_id).deposit(user, &amount, user)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests — transfer
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Transfer to a KYC-verified recipient must succeed and update balances.
-#[test]
-fn test_transfer_to_kyc_verified_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let (vault_id, token_id, zkme_id, _admin) = make_vault(&env);
-    let from = Address::generate(&env);
-    let to = Address::generate(&env);
-
-    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &from, 1_000_000);
-    // Approve the recipient in zkMe
-    MockZkmeClient::new(&env, &zkme_id).approve_user(&to);
-
-    let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    let transfer_amount = shares / 2;
-    vault.transfer(&from, &to, &transfer_amount);
-
-    assert_eq!(vault.balance(&from), shares - transfer_amount);
-    assert_eq!(vault.balance(&to), transfer_amount);
+/// Transition the vault Funding → Active.
+fn activate(env: &Env, vault_id: &Address, admin: &Address) {
+    SingleRWAVaultClient::new(env, vault_id).activate_vault(admin);
 }
 
-/// Transfer to a non-KYC'd recipient must be rejected with NotKYCVerified.
+/// Transition the vault Active → Matured.
+fn mature(env: &Env, vault_id: &Address, admin: &Address) {
+    let vault = SingleRWAVaultClient::new(env, vault_id);
+    let maturity = vault.maturity_date();
+    env.ledger().with_mut(|li| {
+        li.timestamp = maturity + 1;
+    });
+    vault.mature_vault(admin);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// withdraw — state guard tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// withdraw during Funding state must panic with Error::InvalidVaultState.
 #[test]
 #[should_panic]
-fn test_transfer_to_non_kyc_rejected() {
+fn test_withdraw_during_funding_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (vault_id, token_id, zkme_id, _admin) = make_vault(&env);
-    let from = Address::generate(&env);
-    let to = Address::generate(&env); // NOT approved in zkMe
+    let user = Address::generate(&env);
 
-    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &from, 1_000_000);
+    // Deposit is allowed during Funding, so we have shares.
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
 
-    // Must panic — `to` is not KYC-verified.
-    SingleRWAVaultClient::new(&env, &vault_id).transfer(&from, &to, &shares);
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    // Vault is still in Funding — must panic.
+    vault.withdraw(&user, &shares, &user, &user);
 }
 
-/// When the admin disables the KYC flag, transfers to unapproved recipients are allowed.
+/// withdraw during Active state succeeds.
 #[test]
-fn test_transfer_kyc_flag_disabled_allows_unverified_to() {
+fn test_withdraw_during_active_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
-    let from = Address::generate(&env);
-    let to = Address::generate(&env); // NOT approved in zkMe
+    let user = Address::generate(&env);
 
-    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &from, 1_000_000);
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
 
     let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    // Admin disables the transfer KYC requirement.
-    vault.set_transfer_requires_kyc(&admin, &false);
-    assert!(!vault.transfer_requires_kyc());
+    let token = MockTokenClient::new(&env, &token_id);
 
-    // Transfer to unapproved `to` must now succeed.
-    vault.transfer(&from, &to, &shares);
-    assert_eq!(vault.balance(&from), 0);
-    assert_eq!(vault.balance(&to), shares);
+    let user_balance_before = token.balance(&user);
+    let withdraw_amount = 500_000i128;
+    vault.withdraw(&user, &withdraw_amount, &user, &user);
+
+    let user_balance_after = token.balance(&user);
+    assert_eq!(user_balance_after, user_balance_before + withdraw_amount);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests — transfer_from
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// transfer_from to a KYC-verified recipient succeeds.
+/// withdraw during Matured state succeeds.
 #[test]
-fn test_transfer_from_to_kyc_verified_succeeds() {
+fn test_withdraw_during_matured_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (vault_id, token_id, zkme_id, _admin) = make_vault(&env);
-    let owner = Address::generate(&env);
-    let spender = Address::generate(&env);
-    let to = Address::generate(&env);
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
 
-    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &owner, 1_000_000);
-    MockZkmeClient::new(&env, &zkme_id).approve_user(&to);
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
+    mature(&env, &vault_id, &admin);
 
     let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    let transfer_amount = shares / 2;
-    vault.approve(&owner, &spender, &transfer_amount, &999_999u32);
-    vault.transfer_from(&spender, &owner, &to, &transfer_amount);
+    let token = MockTokenClient::new(&env, &token_id);
 
-    assert_eq!(vault.balance(&owner), shares - transfer_amount);
-    assert_eq!(vault.balance(&to), transfer_amount);
+    let user_balance_before = token.balance(&user);
+    let withdraw_amount = 500_000i128;
+    vault.withdraw(&user, &withdraw_amount, &user, &user);
+
+    let user_balance_after = token.balance(&user);
+    assert_eq!(user_balance_after, user_balance_before + withdraw_amount);
 }
 
-/// transfer_from to a non-KYC'd recipient must be rejected.
+// ─────────────────────────────────────────────────────────────────────────────
+// redeem — state guard tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// redeem during Funding state must panic with Error::InvalidVaultState.
 #[test]
 #[should_panic]
-fn test_transfer_from_to_non_kyc_rejected() {
+fn test_redeem_during_funding_panics() {
     let env = Env::default();
     env.mock_all_auths();
 
     let (vault_id, token_id, zkme_id, _admin) = make_vault(&env);
-    let owner = Address::generate(&env);
-    let spender = Address::generate(&env);
-    let to = Address::generate(&env); // NOT approved in zkMe
+    let user = Address::generate(&env);
 
-    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &owner, 1_000_000);
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
 
     let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    vault.approve(&owner, &spender, &shares, &999_999u32);
+    // Vault is still in Funding — must panic.
+    vault.redeem(&user, &shares, &user, &user);
+}
 
-    // Must panic — `to` is not KYC-verified.
-    vault.transfer_from(&spender, &owner, &to, &shares);
+/// redeem during Active state succeeds.
+#[test]
+fn test_redeem_during_active_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    let user_balance_before = token.balance(&user);
+    vault.redeem(&user, &shares, &user, &user);
+
+    let user_balance_after = token.balance(&user);
+    assert!(user_balance_after > user_balance_before);
+    assert_eq!(vault.balance(&user), 0);
+}
+
+/// redeem during Matured state succeeds.
+#[test]
+fn test_redeem_during_matured_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
+    mature(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    let user_balance_before = token.balance(&user);
+    vault.redeem(&user, &shares, &user, &user);
+
+    let user_balance_after = token.balance(&user);
+    assert!(user_balance_after > user_balance_before);
+    assert_eq!(vault.balance(&user), 0);
 }

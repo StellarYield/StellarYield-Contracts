@@ -81,6 +81,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             cooperator: cooperator.clone(),
             funding_target: 0i128,
             maturity_date: 9_999_999_999u64,
+            funding_deadline: 0u64,
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32, // 2% fee

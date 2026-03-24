@@ -202,3 +202,19 @@ pub fn emit_address_blacklisted(e: &Env, address: Address, status: bool) {
         status,
     );
 }
+
+/// Emitted by `cancel_funding` — vault moved to Cancelled state.
+pub fn emit_funding_cancelled(e: &Env) {
+    e.events().publish(
+        (symbol_short!("fund_cxl"),),
+        e.ledger().timestamp(),
+    );
+}
+
+/// Emitted by `refund` — user burned shares and received deposited assets back.
+pub fn emit_refunded(e: &Env, user: Address, amount: i128) {
+    e.events().publish(
+        (symbol_short!("refunded"), user),
+        amount,
+    );
+}

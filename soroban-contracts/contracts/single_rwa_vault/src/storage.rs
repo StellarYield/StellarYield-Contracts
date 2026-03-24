@@ -69,6 +69,8 @@ pub enum DataKey {
     ActivationTimestamp,
     /// Reentrancy lock — true while a guarded function is executing.
     Locked,
+    /// Unix timestamp deadline for funding; 0 means no deadline.
+    FundingDeadline,
 
     // --- Epoch / yield ---
     CurrentEpoch,
@@ -118,6 +120,43 @@ pub fn bump_balance(e: &Env, addr: &Address) {
         e.storage()
             .persistent()
             .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+    }
+}
+
+/// Extend the TTL for all persistent per-user yield/snapshot entries for a
+/// given address and epoch.  Call this any time user data is written so that
+/// no entry can silently expire and cause double-claims or missed payouts.
+///
+/// # Security rationale
+/// Stellar persistent storage entries expire when their TTL reaches zero.  If
+/// `HasClaimedEpoch` expires the contract will treat a previously-claimed epoch
+/// as unclaimed and allow a second payout.  Bumping every related key on every
+/// write keeps the TTL well above the BALANCE_LIFETIME_THRESHOLD (~60 days)
+/// and eliminates that class of bug.
+pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
+    let epoch_keys = [
+        DataKey::HasClaimedEpoch(addr.clone(), epoch),
+        DataKey::UserSharesAtEpoch(addr.clone(), epoch),
+        DataKey::HasSnapshotForEpoch(addr.clone(), epoch),
+    ];
+    for key in &epoch_keys {
+        if e.storage().persistent().has(key) {
+            e.storage()
+                .persistent()
+                .extend_ttl(key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+        }
+    }
+
+    let addr_keys = [
+        DataKey::TotalYieldClaimed(addr.clone()),
+        DataKey::LastInteractionEpoch(addr.clone()),
+    ];
+    for key in &addr_keys {
+        if e.storage().persistent().has(key) {
+            e.storage()
+                .persistent()
+                .extend_ttl(key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+        }
     }
 }
 
@@ -180,6 +219,17 @@ instance_get!(get_funding_target, FundingTarget, i128);
 instance_put!(put_funding_target, FundingTarget, i128);
 instance_get!(get_maturity_date, MaturityDate, u64);
 instance_put!(put_maturity_date, MaturityDate, u64);
+
+pub fn get_funding_deadline(e: &Env) -> u64 {
+    e.storage()
+        .instance()
+        .get(&DataKey::FundingDeadline)
+        .unwrap_or(0)
+}
+pub fn put_funding_deadline(e: &Env, val: u64) {
+    e.storage().instance().set(&DataKey::FundingDeadline, &val);
+}
+
 instance_get!(get_min_deposit, MinDeposit, i128);
 instance_put!(put_min_deposit, MinDeposit, i128);
 instance_get!(get_max_deposit_per_user, MaxDepositPerUser, i128);
@@ -332,9 +382,11 @@ pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
         .unwrap_or(0)
 }
 pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
+    let key = DataKey::TotalYieldClaimed(addr.clone());
+    e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
-        .set(&DataKey::TotalYieldClaimed(addr.clone()), &val);
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_has_claimed_epoch(e: &Env, addr: &Address, epoch: u32) -> bool {
@@ -344,9 +396,11 @@ pub fn get_has_claimed_epoch(e: &Env, addr: &Address, epoch: u32) -> bool {
         .unwrap_or(false)
 }
 pub fn put_has_claimed_epoch(e: &Env, addr: &Address, epoch: u32, val: bool) {
+    let key = DataKey::HasClaimedEpoch(addr.clone(), epoch);
+    e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
-        .set(&DataKey::HasClaimedEpoch(addr.clone(), epoch), &val);
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_user_shares_at_epoch(e: &Env, addr: &Address, epoch: u32) -> i128 {
@@ -356,9 +410,11 @@ pub fn get_user_shares_at_epoch(e: &Env, addr: &Address, epoch: u32) -> i128 {
         .unwrap_or(0)
 }
 pub fn put_user_shares_at_epoch(e: &Env, addr: &Address, epoch: u32, val: i128) {
+    let key = DataKey::UserSharesAtEpoch(addr.clone(), epoch);
+    e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
-        .set(&DataKey::UserSharesAtEpoch(addr.clone(), epoch), &val);
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_has_snapshot_for_epoch(e: &Env, addr: &Address, epoch: u32) -> bool {
@@ -368,9 +424,11 @@ pub fn get_has_snapshot_for_epoch(e: &Env, addr: &Address, epoch: u32) -> bool {
         .unwrap_or(false)
 }
 pub fn put_has_snapshot_for_epoch(e: &Env, addr: &Address, epoch: u32, val: bool) {
+    let key = DataKey::HasSnapshotForEpoch(addr.clone(), epoch);
+    e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
-        .set(&DataKey::HasSnapshotForEpoch(addr.clone(), epoch), &val);
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_last_interaction_epoch(e: &Env, addr: &Address) -> u32 {
@@ -380,9 +438,11 @@ pub fn get_last_interaction_epoch(e: &Env, addr: &Address) -> u32 {
         .unwrap_or(0)
 }
 pub fn put_last_interaction_epoch(e: &Env, addr: &Address, val: u32) {
+    let key = DataKey::LastInteractionEpoch(addr.clone());
+    e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
-        .set(&DataKey::LastInteractionEpoch(addr.clone()), &val);
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
