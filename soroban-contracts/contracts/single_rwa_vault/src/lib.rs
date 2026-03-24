@@ -216,7 +216,7 @@ impl SingleRWAVault {
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         _mint(e, &receiver, shares);
 
-        let shares = preview_deposit(e, assets);
+        // --- Interaction (external call last) ---
         transfer_asset_to_vault(e, &caller, assets);
 
         emit_deposit(e, caller, receiver, assets, shares);
@@ -287,19 +287,19 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &receiver);
         require_active_or_matured(e);
 
+        let shares = preview_withdraw(e, assets);
+
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
-            let shares_needed = preview_withdraw(e, assets);
-            if allowance < shares_needed {
+            if allowance < shares {
                 panic_with_error!(e, Error::InsufficientAllowance);
             }
             // --- Effects ---
-            put_share_allowance(e, &owner, &caller, allowance - shares_needed);
+            put_share_allowance(e, &owner, &caller, allowance - shares);
         }
 
         // --- Effects ---
         update_user_snapshot(e, &owner);
-        let shares = preview_withdraw(e, assets);
         _burn(e, &owner, shares);
 
         // --- Interaction ---
