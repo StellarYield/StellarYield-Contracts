@@ -34,11 +34,11 @@ extern crate std;
 
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::Address as _,
+    testutils::{Address as _, Ledger as _},
     Address, Env, String,
 };
 
-use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient, VaultState};
+use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock USDC token
@@ -94,15 +94,22 @@ impl MockZkme {
 }
 
 // Bypass verifier — always approves everyone.
-#[contract]
-pub struct AlwaysApproveZkme;
+// Placed in its own sub-module to avoid Soroban macro symbol collisions
+// with MockZkme (both expose `has_approved`).
+mod _bypass {
+    use soroban_sdk::{contract, contractimpl, Address, Env};
 
-#[contractimpl]
-impl AlwaysApproveZkme {
-    pub fn has_approved(_e: Env, _cooperator: Address, _user: Address) -> bool {
-        true
+    #[contract]
+    pub struct AlwaysApproveZkme;
+
+    #[contractimpl]
+    impl AlwaysApproveZkme {
+        pub fn has_approved(_e: Env, _cooperator: Address, _user: Address) -> bool {
+            true
+        }
     }
 }
+use _bypass::AlwaysApproveZkme;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TestContext — returned by setup() and setup_with_kyc_bypass()
@@ -111,15 +118,24 @@ impl AlwaysApproveZkme {
 pub struct TestContext {
     pub env: Env,
     pub vault_id: Address,
-    pub vault: SingleRWAVaultClient,
     pub asset_id: Address,
-    pub asset: MockUsdcClient,
     pub kyc_id: Address,
     pub admin: Address,
     pub operator: Address,
     pub user: Address,
     pub cooperator: Address,
     pub params: InitParams,
+}
+
+impl TestContext {
+    /// Construct a vault client that borrows the contained env.
+    pub fn vault(&self) -> SingleRWAVaultClient<'_> {
+        SingleRWAVaultClient::new(&self.env, &self.vault_id)
+    }
+    /// Construct a mock-USDC token client that borrows the contained env.
+    pub fn asset(&self) -> MockUsdcClient<'_> {
+        MockUsdcClient::new(&self.env, &self.asset_id)
+    }
 }
 
 /// Standard setup with a real controllable zkMe mock.
@@ -140,12 +156,9 @@ pub fn setup() -> TestContext {
     let vault_id = env.register(SingleRWAVault, (params.clone(),));
 
     // Add a secondary operator.
-    let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    vault.set_operator(&admin, &operator, &true);
+    SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true);
 
     TestContext {
-        asset: MockUsdcClient::new(&env, &asset_id),
-        vault,
         env,
         vault_id,
         asset_id,
@@ -175,12 +188,9 @@ pub fn setup_with_kyc_bypass() -> TestContext {
     let params = default_params(&env, asset_id.clone(), admin.clone(), kyc_id.clone(), cooperator.clone());
     let vault_id = env.register(SingleRWAVault, (params.clone(),));
 
-    let vault = SingleRWAVaultClient::new(&env, &vault_id);
-    vault.set_operator(&admin, &operator, &true);
+    SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true);
 
     TestContext {
-        asset: MockUsdcClient::new(&env, &asset_id),
-        vault,
         env,
         vault_id,
         asset_id,
@@ -205,7 +215,7 @@ pub fn mint_usdc(env: &Env, asset_id: &Address, recipient: &Address, amount: i12
 /// Advance the ledger timestamp by `seconds`.
 pub fn advance_time(env: &Env, seconds: u64) {
     let now = env.ledger().timestamp();
-    env.ledger().set_timestamp(now + seconds);
+    env.ledger().with_mut(|li| li.timestamp = now + seconds);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

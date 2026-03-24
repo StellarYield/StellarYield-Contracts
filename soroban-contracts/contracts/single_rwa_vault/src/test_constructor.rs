@@ -13,7 +13,7 @@ use crate::VaultState;
 #[test]
 fn test_rwa_metadata_stored_correctly() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.rwa_name(), ctx.params.rwa_name);
     assert_eq!(v.rwa_symbol(), ctx.params.rwa_symbol);
@@ -35,7 +35,7 @@ fn test_rwa_metadata_stored_correctly() {
 #[test]
 fn test_share_token_metadata() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.name(), ctx.params.share_name);
     assert_eq!(v.symbol(), ctx.params.share_symbol);
@@ -49,7 +49,7 @@ fn test_share_token_metadata() {
 #[test]
 fn test_admin_is_set_and_is_operator() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.admin(), ctx.admin);
     assert!(v.is_operator(&ctx.admin), "admin should be an operator by default");
@@ -62,7 +62,7 @@ fn test_admin_is_set_and_is_operator() {
 #[test]
 fn test_initial_vault_state() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.vault_state(), VaultState::Funding);
     assert!(!v.paused());
@@ -76,7 +76,7 @@ fn test_initial_vault_state() {
 #[test]
 fn test_vault_config_matches_init_params() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.funding_target(), ctx.params.funding_target);
     assert_eq!(v.maturity_date(), ctx.params.maturity_date);
@@ -92,7 +92,7 @@ fn test_vault_config_matches_init_params() {
 #[test]
 fn test_initial_accounting_state_is_zero() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.total_supply(), 0i128);
     assert_eq!(v.total_yield_distributed(), 0i128);
@@ -106,7 +106,7 @@ fn test_initial_accounting_state_is_zero() {
 #[test]
 fn test_zkme_verifier_and_cooperator_stored() {
     let ctx = setup();
-    let v = &ctx.vault;
+    let v = ctx.vault();
 
     assert_eq!(v.zkme_verifier(), ctx.kyc_id);
     assert_eq!(v.cooperator(), ctx.cooperator);
@@ -120,7 +120,7 @@ fn test_zkme_verifier_and_cooperator_stored() {
 fn test_asset_address_stored() {
     let ctx = setup();
 
-    assert_eq!(ctx.vault.asset(), ctx.asset_id);
+    assert_eq!(ctx.vault().asset(), ctx.asset_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,8 +131,8 @@ fn test_asset_address_stored() {
 fn test_expected_apy_stored() {
     let ctx = setup();
 
-    assert_eq!(ctx.vault.expected_apy(), ctx.params.expected_apy);
-    assert_eq!(ctx.vault.get_rwa_details().expected_apy, ctx.params.expected_apy);
+    assert_eq!(ctx.vault().expected_apy(), ctx.params.expected_apy);
+    assert_eq!(ctx.vault().get_rwa_details().expected_apy, ctx.params.expected_apy);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,5 +144,5 @@ fn test_time_to_maturity_nonzero_on_init() {
     let ctx = setup();
 
     // The default maturity_date is 9_999_999_999; ledger starts at ~0 in tests.
-    assert!(ctx.vault.time_to_maturity() > 0);
+    assert!(ctx.vault().time_to_maturity() > 0);
 }
