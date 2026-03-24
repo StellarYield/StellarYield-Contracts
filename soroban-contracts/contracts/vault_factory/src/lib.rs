@@ -19,37 +19,6 @@ use crate::events::*;
 use single_rwa_vault;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cross-contract client for the SingleRWA_Vault constructor call
-// ─────────────────────────────────────────────────────────────────────────────
-
-use soroban_sdk::contractclient;
-
-#[contractclient(name = "VaultConstructorClient")]
-pub trait VaultConstructorInterface {
-    #[allow(clippy::too_many_arguments)]
-    fn __constructor(
-        env: Env,
-        asset: Address,
-        share_name: String,
-        share_symbol: String,
-        share_decimals: u32,
-        admin: Address,
-        zkme_verifier: Address,
-        cooperator: Address,
-        funding_target: i128,
-        maturity_date: u64,
-        min_deposit: i128,
-        max_deposit_per_user: i128,
-        early_redemption_fee_bps: u32,
-        rwa_name: String,
-        rwa_symbol: String,
-        rwa_document_uri: String,
-        rwa_category: String,
-        expected_apy: u32,
-    );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Contract
 // ─────────────────────────────────────────────────────────────────────────────
 
