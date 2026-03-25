@@ -47,9 +47,20 @@ fn test_withdraw_exact_assets() {
     let shares_after = v.balance(&ctx.user);
     let supply_after = v.total_supply();
 
-    assert_eq!(shares_burned, 4_000_000, "should burn exactly the preview amount");
-    assert_eq!(shares_after, shares_before - shares_burned, "share balance decremented");
-    assert_eq!(supply_after, supply_before - shares_burned, "total supply decremented");
+    assert_eq!(
+        shares_burned, 4_000_000,
+        "should burn exactly the preview amount"
+    );
+    assert_eq!(
+        shares_after,
+        shares_before - shares_burned,
+        "share balance decremented"
+    );
+    assert_eq!(
+        supply_after,
+        supply_before - shares_burned,
+        "total supply decremented"
+    );
     // User receives the withdrawn assets back.
     assert_eq!(
         ctx.asset().balance(&ctx.user),
@@ -77,7 +88,11 @@ fn test_redeem_exact_shares() {
 
     assert_eq!(assets_returned, 6_000_000, "1:1 → 6 shares = 6 USDC");
     assert_eq!(v.balance(&ctx.user), 4_000_000, "4 shares remain");
-    assert_eq!(v.total_supply(), supply_before - 6_000_000, "supply down by 6");
+    assert_eq!(
+        v.total_supply(),
+        supply_before - 6_000_000,
+        "supply down by 6"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +150,11 @@ fn test_redeem_via_allowance() {
     let assets_returned = v.redeem(&spender, &4_000_000i128, &spender, &ctx.user);
 
     assert_eq!(assets_returned, 4_000_000);
-    assert_eq!(v.allowance(&ctx.user, &spender), 0, "allowance fully consumed");
+    assert_eq!(
+        v.allowance(&ctx.user, &spender),
+        0,
+        "allowance fully consumed"
+    );
     assert_eq!(v.balance(&ctx.user), 6_000_000, "owner has 6 shares left");
     assert_eq!(ctx.asset().balance(&spender), 4_000_000);
 }
@@ -172,7 +191,8 @@ fn test_redeem_insufficient_shares_panics() {
     activate(&ctx);
 
     // Try to redeem 10 shares — owner only has 5.
-    ctx.vault().redeem(&ctx.user, &10_000_000i128, &ctx.user, &ctx.user);
+    ctx.vault()
+        .redeem(&ctx.user, &10_000_000i128, &ctx.user, &ctx.user);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -232,13 +252,13 @@ fn test_redeem_at_non_unit_share_price() {
     deposit(&ctx, &ctx.user.clone(), 40_000_000);
     activate(&ctx);
 
-    let supply = v.total_supply();            // 40_000_000
-    let assets_before = v.total_assets();     // 40_000_000
+    let supply = v.total_supply(); // 40_000_000
+    let assets_before = v.total_assets(); // 40_000_000
 
     // Simulate yield: donate 20 USDC directly to the vault (no new shares).
     mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 20_000_000);
 
-    let assets_after = v.total_assets();      // 60_000_000
+    let assets_after = v.total_assets(); // 60_000_000
     assert_eq!(assets_after, assets_before + 20_000_000);
 
     // preview_redeem: 40 shares * 60 assets / 40 shares = 60 assets
@@ -271,12 +291,19 @@ fn test_withdraw_at_non_unit_share_price() {
 
     // preview_withdraw(20 USDC): shares = ceil(20 * 40 / 80) = 10
     let shares_needed = v.preview_withdraw(&20_000_000i128);
-    assert_eq!(shares_needed, 10_000_000, "20 USDC costs only 10 shares at 2:1");
+    assert_eq!(
+        shares_needed, 10_000_000,
+        "20 USDC costs only 10 shares at 2:1"
+    );
 
     let shares_burned = v.withdraw(&ctx.user, &20_000_000i128, &ctx.user, &ctx.user);
     assert_eq!(shares_burned, 10_000_000);
     assert_eq!(v.balance(&ctx.user), 30_000_000, "30 shares remain");
-    assert_eq!(ctx.asset().balance(&ctx.user), 20_000_000, "received 20 USDC");
+    assert_eq!(
+        ctx.asset().balance(&ctx.user),
+        20_000_000,
+        "received 20 USDC"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

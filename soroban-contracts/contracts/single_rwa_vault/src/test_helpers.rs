@@ -152,7 +152,13 @@ pub fn setup() -> TestContext {
     let asset_id = env.register(MockUsdc, ());
     let kyc_id = env.register(MockZkme, ());
 
-    let params = default_params(&env, asset_id.clone(), admin.clone(), kyc_id.clone(), cooperator.clone());
+    let params = default_params(
+        &env,
+        asset_id.clone(),
+        admin.clone(),
+        kyc_id.clone(),
+        cooperator.clone(),
+    );
     let vault_id = env.register(SingleRWAVault, (params.clone(),));
 
     // Add a secondary operator.
@@ -185,7 +191,13 @@ pub fn setup_with_kyc_bypass() -> TestContext {
     let asset_id = env.register(MockUsdc, ());
     let kyc_id = env.register(AlwaysApproveZkme, ());
 
-    let params = default_params(&env, asset_id.clone(), admin.clone(), kyc_id.clone(), cooperator.clone());
+    let params = default_params(
+        &env,
+        asset_id.clone(),
+        admin.clone(),
+        kyc_id.clone(),
+        cooperator.clone(),
+    );
     let vault_id = env.register(SingleRWAVault, (params.clone(),));
 
     SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true);
@@ -237,17 +249,18 @@ fn default_params(
         admin,
         zkme_verifier,
         cooperator,
-        funding_target: 100_000_000i128,   // 100 USDC (6 decimals)
-        maturity_date: 9_999_999_999u64,   // far future
-        funding_deadline: 9_999_999_999u64, // far future (no effective deadline by default)
-        min_deposit: 1_000_000i128,        // 1 USDC
+        funding_target: 100_000_000i128,      // 100 USDC (6 decimals)
+        maturity_date: 9_999_999_999u64,      // far future
+        funding_deadline: 9_999_999_999u64,   // far future (no effective deadline by default)
+        min_deposit: 1_000_000i128,           // 1 USDC
         max_deposit_per_user: 50_000_000i128, // 50 USDC
         early_redemption_fee_bps: 200u32,  // 2 %
         lock_up_period: 0u64,              // No lock-up period by default for tests
+        early_redemption_fee_bps: 200u32,     // 2 %
         rwa_name: String::from_str(env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(env, "USTB26"),
         rwa_document_uri: String::from_str(env, "https://example.com/ustb26"),
         rwa_category: String::from_str(env, "Government Bond"),
-        expected_apy: 500u32,              // 5 %
+        expected_apy: 500u32, // 5 %
     }
 }

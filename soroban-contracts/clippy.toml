@@ -1,0 +1,6 @@
+# Soroban contract functions naturally require more arguments than typical Rust
+# functions because they encode their full set of parameters inline (no &self
+# receiver, no builder pattern, no mutable state).  Raising the threshold to 12
+# keeps the lint active for genuinely bloated helpers while not firing on normal
+# contract entry points.
+too-many-arguments-threshold = 12

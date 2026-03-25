@@ -52,7 +52,10 @@ fn test_admin_is_set_and_is_operator() {
     let v = ctx.vault();
 
     assert_eq!(v.admin(), ctx.admin);
-    assert!(v.is_operator(&ctx.admin), "admin should be an operator by default");
+    assert!(
+        v.is_operator(&ctx.admin),
+        "admin should be an operator by default"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,7 +85,10 @@ fn test_vault_config_matches_init_params() {
     assert_eq!(v.maturity_date(), ctx.params.maturity_date);
     assert_eq!(v.min_deposit(), ctx.params.min_deposit);
     assert_eq!(v.max_deposit_per_user(), ctx.params.max_deposit_per_user);
-    assert_eq!(v.early_redemption_fee_bps(), ctx.params.early_redemption_fee_bps);
+    assert_eq!(
+        v.early_redemption_fee_bps(),
+        ctx.params.early_redemption_fee_bps
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +138,10 @@ fn test_expected_apy_stored() {
     let ctx = setup();
 
     assert_eq!(ctx.vault().expected_apy(), ctx.params.expected_apy);
-    assert_eq!(ctx.vault().get_rwa_details().expected_apy, ctx.params.expected_apy);
+    assert_eq!(
+        ctx.vault().get_rwa_details().expected_apy,
+        ctx.params.expected_apy
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

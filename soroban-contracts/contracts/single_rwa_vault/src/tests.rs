@@ -1,10 +1,6 @@
 extern crate std;
 
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::Address as _,
-    Address, Env, String,
-};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, String};
 
 use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 

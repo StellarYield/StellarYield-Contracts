@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::{
-    test_helpers::{setup, mint_usdc},
+    test_helpers::{mint_usdc, setup},
     VaultState,
 };
 
@@ -58,7 +58,7 @@ fn test_close_vault_fails_if_not_empty() {
 fn test_close_vault_fails_if_not_matured() {
     let ctx = setup();
     let v = ctx.vault();
-    
+
     // Still in Funding
     v.close_vault(&ctx.operator);
 }

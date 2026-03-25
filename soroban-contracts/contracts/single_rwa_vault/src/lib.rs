@@ -7,6 +7,8 @@ mod token_interface;
 mod types;
 
 #[cfg(test)]
+mod fuzz_tests;
+#[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
 mod test_lifecycle;
@@ -286,7 +288,13 @@ impl SingleRWAVault {
     ///
     /// Security: follows CEI — shares are burned (state change) before the
     /// external asset transfer.  Reentrancy lock prevents reentrant calls.
-    pub fn withdraw(e: &Env, caller: Address, assets: i128, receiver: Address, owner: Address) -> i128 {
+    pub fn withdraw(
+        e: &Env,
+        caller: Address,
+        assets: i128,
+        receiver: Address,
+        owner: Address,
+    ) -> i128 {
         caller.require_auth();
         // --- Checks ---
         acquire_lock(e);
@@ -526,10 +534,10 @@ impl SingleRWAVault {
         // --- Effects ---
         let epoch = get_current_epoch(e);
         for i in 1..=epoch {
-            if !get_has_claimed_epoch(e, &caller, i) {
-                if _get_user_shares_for_epoch(e, &caller, i) > 0 {
-                    put_has_claimed_epoch(e, &caller, i, true);
-                }
+            if !get_has_claimed_epoch(e, &caller, i)
+                && _get_user_shares_for_epoch(e, &caller, i) > 0
+            {
+                put_has_claimed_epoch(e, &caller, i, true);
             }
         }
 
@@ -740,7 +748,7 @@ impl SingleRWAVault {
         emit_vault_state_changed(e, VaultState::Active, VaultState::Matured);
         bump_instance(e);
     }
-    
+
     /// Transition Matured → Closed.
     ///
     /// Requires that all shares have been redeemed (total_supply == 0).
@@ -779,18 +787,16 @@ impl SingleRWAVault {
         let (target, assets) = (get_funding_target(e), total_assets(e));
         // We restore the original logic for clean state and only use hacks if absolutely necessary.
         // However, given the test environment issues, we keep a more general hack for now.
-        if target == 100_000_000 { return true; }
+        if target == 100_000_000 {
+            return true;
+        }
         assets >= target
     }
 
     pub fn time_to_maturity(e: &Env) -> u64 {
         let now = e.ledger().timestamp();
         let mat = get_maturity_date(e);
-        if now >= mat {
-            0
-        } else {
-            mat - now
-        }
+        mat.saturating_sub(now)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -878,7 +884,14 @@ impl SingleRWAVault {
         transfer_asset_from_vault(e, &receiver, total_out);
 
         // Emit ERC-4626 compliant Withdraw event
-        emit_withdraw(e, caller.clone(), receiver.clone(), owner.clone(), assets, shares);
+        emit_withdraw(
+            e,
+            caller.clone(),
+            receiver.clone(),
+            owner.clone(),
+            assets,
+            shares,
+        );
         // Emit custom maturity redemption event with yield info
         emit_redeem_at_maturity(e, owner, receiver, shares, assets, pending);
         bump_instance(e);
@@ -897,9 +910,9 @@ impl SingleRWAVault {
         if shares <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
         }
-        
+
         update_user_snapshot(e, &caller);
-        
+
         let bal = get_share_balance(e, &caller);
         if bal < shares {
             panic_with_error!(e, Error::InsufficientBalance);
@@ -914,12 +927,16 @@ impl SingleRWAVault {
         let id = get_redemption_counter(e) + 1;
         put_redemption_counter(e, id);
         let user = caller.clone();
-        put_redemption_request(e, id, RedemptionRequest {
-            user: caller,
-            shares,
-            request_time: e.ledger().timestamp(),
-            processed: false,
-        });
+        put_redemption_request(
+            e,
+            id,
+            RedemptionRequest {
+                user: caller,
+                shares,
+                request_time: e.ledger().timestamp(),
+                processed: false,
+            },
+        );
 
         emit_early_redemption_requested(e, user, id, shares);
         bump_instance(e);
@@ -974,7 +991,7 @@ impl SingleRWAVault {
     /// Cancel an early redemption request and return shares from escrow.
     pub fn cancel_early_redemption(e: &Env, caller: Address, request_id: u32) {
         caller.require_auth();
-        
+
         let mut req = get_redemption_request(e, request_id);
         if req.user != caller {
             panic_with_error!(e, Error::NotOperator);
@@ -992,7 +1009,7 @@ impl SingleRWAVault {
             // Should not happen
             panic_with_error!(e, Error::InsufficientBalance);
         }
-        
+
         update_user_snapshot(e, &caller);
         put_escrowed_shares(e, &caller, escrowed - req.shares);
         let bal = get_share_balance(e, &caller);
@@ -1166,7 +1183,11 @@ impl SingleRWAVault {
 
         // --- Effects (pause before transferring) ---
         put_paused(e, true);
-        emit_emergency_action(e, true, String::from_str(e, "Emergency withdrawal executed"));
+        emit_emergency_action(
+            e,
+            true,
+            String::from_str(e, "Emergency withdrawal executed"),
+        );
 
         // --- Interaction ---
         if balance > 0 {
@@ -1210,9 +1231,7 @@ impl SingleRWAVault {
             .checked_mul(SECONDS_PER_YEAR as i128)
             .and_then(|v| v.checked_mul(10000))
             .unwrap_or(i128::MAX);
-        let denominator = (ta as i128)
-            .checked_mul(elapsed as i128)
-            .unwrap_or(i128::MAX);
+        let denominator = ta.checked_mul(elapsed as i128).unwrap_or(i128::MAX);
         if denominator == 0 || denominator == i128::MAX {
             return get_expected_apy(e);
         }
@@ -1563,7 +1582,9 @@ fn release_lock(e: &Env) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::{contract as soroban_contract, contractimpl as soroban_contractimpl, testutils::Address as _};
+    use soroban_sdk::{
+        contract as soroban_contract, contractimpl as soroban_contractimpl, testutils::Address as _,
+    };
 
     // Minimal SEP-41 token mock for inline blacklist tests.
     #[soroban_contract]
@@ -1591,7 +1612,9 @@ mod test {
     struct InlineKyc;
     #[soroban_contractimpl]
     impl InlineKyc {
-        pub fn has_approved(_e: Env, _cooperator: Address, _user: Address) -> bool { true }
+        pub fn has_approved(_e: Env, _cooperator: Address, _user: Address) -> bool {
+            true
+        }
     }
 
     fn create_vault(e: &Env) -> (Address, Address, Address) {
@@ -1716,23 +1739,23 @@ mod test {
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
-pub mod test_helpers;
+mod test_access_control;
 #[cfg(test)]
 mod test_constructor;
 #[cfg(test)]
-mod test_withdraw;
-#[cfg(test)]
 mod test_escrow;
+#[cfg(test)]
+pub mod test_helpers;
 #[cfg(test)]
 mod test_redemption;
 #[cfg(test)]
-mod test_access_control;
+mod test_withdraw;
+#[cfg(test)]
+mod tests;
 
 #[cfg(test)]
-mod test_constructor_validation;
-#[cfg(test)]
 mod test_close_vault;
+#[cfg(test)]
+mod test_constructor_validation;
 #[cfg(test)]
 mod test_token;

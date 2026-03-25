@@ -6,11 +6,12 @@ use soroban_sdk::{
     Address, Env, String,
 };
 
-use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 use crate::storage::{
     get_has_snapshot_for_epoch, get_share_balance, get_total_supply, get_user_shares_at_epoch,
-    put_current_epoch, put_epoch_total_shares, put_epoch_yield, put_share_balance, put_total_supply,
+    put_current_epoch, put_epoch_total_shares, put_epoch_yield, put_share_balance,
+    put_total_supply,
 };
+use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -69,7 +70,13 @@ fn give_shares(env: &Env, vault_id: &Address, user: &Address, amount: i128) {
 
 /// Advance the vault's epoch counter and store per-epoch accounting data
 /// directly in contract storage (bypasses the Active-state guard).
-fn advance_epoch(env: &Env, vault_id: &Address, epoch: u32, yield_amount: i128, total_shares: i128) {
+fn advance_epoch(
+    env: &Env,
+    vault_id: &Address,
+    epoch: u32,
+    yield_amount: i128,
+    total_shares: i128,
+) {
     env.as_contract(vault_id, || {
         put_current_epoch(env, epoch);
         put_epoch_yield(env, epoch, yield_amount);

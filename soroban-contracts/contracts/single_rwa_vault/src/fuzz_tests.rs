@@ -98,7 +98,12 @@ fn setup() -> TestCtx {
         },),
     );
 
-    TestCtx { env, vault_id, token_id, admin }
+    TestCtx {
+        env,
+        vault_id,
+        token_id,
+        admin,
+    }
 }
 
 fn mint_and_deposit(ctx: &TestCtx, user: &Address, amount: i128) -> i128 {

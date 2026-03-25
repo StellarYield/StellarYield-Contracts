@@ -112,13 +112,50 @@ $$\text{yield}_{\text{user}} = \frac{\text{shares}_{\text{user at epoch } n}}{\t
 
 ## Build
 
+### Prerequisites
+
 ```bash
-# Install the Stellar CLI
+# Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Stellar CLI
 cargo install --locked stellar-cli
 
-# Build both contracts
+# wasm32v1-none target (required by stellar contract build)
+rustup target add wasm32v1-none
+```
+
+### Make targets
+
+All developer workflows are standardised via `soroban-contracts/Makefile`:
+
+| Target | Description |
+|---|---|
+| `make build` | Compile all contracts (`stellar contract build`) |
+| `make test` | Run the full test suite (`cargo test --workspace`) |
+| `make lint` | Run Clippy with `-D warnings` |
+| `make fmt` | Check formatting (`cargo fmt --check`) |
+| `make fmt-fix` | Auto-format source files |
+| `make clean` | Remove build artifacts |
+| `make optimize` | Run `stellar contract optimize` on compiled WASMs |
+| `make wasm-size` | Report compiled WASM file sizes |
+| `make bindings` | Generate TypeScript bindings via `stellar contract bindings typescript` |
+| `make deploy-testnet` | Upload WASMs and deploy factory to testnet (interactive) |
+| `make deploy-vault` | Create a vault through the deployed factory (interactive) |
+| `make all` | Build → test → lint → fmt-check in sequence |
+| `make ci` | Full CI pipeline (same as `all` with progress output) |
+| `make help` | List all targets with descriptions |
+
+```bash
 cd soroban-contracts
-stellar contract build
+
+# Quick start
+make build        # compile
+make test         # test
+make all          # build + test + lint + fmt
+
+# Full CI pipeline
+make ci
 ```
 
 Compiled `.wasm` files appear in `target/wasm32v1-none/release/`.
@@ -126,6 +163,51 @@ Compiled `.wasm` files appear in `target/wasm32v1-none/release/`.
 ---
 
 ## Deploy
+
+### Interactive testnet deployment
+
+Three shell scripts in `scripts/` cover the full deployment workflow.
+They prompt for required parameters and save state to `soroban-contracts/.env.testnet`
+so each subsequent step can pick up where the last left off.
+
+```bash
+# Step 1 — deploy the factory (uploads vault WASM, deploys VaultFactory)
+./scripts/deploy-testnet.sh
+
+# or via make (runs the same script)
+cd soroban-contracts && make deploy-testnet
+```
+
+```bash
+# Step 2 — create a vault through the factory
+./scripts/create-vault.sh
+
+# or via make
+cd soroban-contracts && make deploy-vault
+```
+
+```bash
+# Step 3 — deposit test tokens into a vault
+./scripts/fund-vault.sh
+```
+
+Each script accepts the same parameters as environment variables, allowing
+non-interactive use in CI:
+
+```bash
+FACTORY_ADDRESS=C... \
+OPERATOR_ADDRESS=G... \
+ASSET=C... \
+VAULT_NAME="US Treasury 6-Month Bill" \
+VAULT_SYMBOL=syUSTB \
+RWA_NAME="US Treasury 6-Month Bill" \
+RWA_SYMBOL=USTB6M \
+RWA_DOCUMENT_URI="ipfs://bafybei..." \
+MATURITY_DATE=1780000000 \
+./scripts/create-vault.sh --non-interactive
+```
+
+### Manual deployment (raw CLI)
 
 ```bash
 # 1. Upload the SingleRWA_Vault WASM and capture its hash

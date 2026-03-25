@@ -3,9 +3,13 @@
 //! Verifies the state machine: Funding -> Active -> Matured.
 //! Transitions require preconditions (funding target, maturity date) and guards (operator-only).
 
-use crate::test_helpers::{setup_with_kyc_bypass, mint_usdc, advance_time};
-use crate::{VaultState, Error};
-use soroban_sdk::testutils::{Events as _, Ledger};
+use crate::test_helpers::{advance_time, mint_usdc, setup_with_kyc_bypass};
+use crate::{Error, VaultState};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{Events, Ledger},
+    vec, IntoVal,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Happy Paths
@@ -81,7 +85,7 @@ fn test_is_funding_target_met() {
     let v = ctx.vault();
 
     let target = v.funding_target();
-    
+
     // Not met initially
     assert!(!v.is_funding_target_met());
 
@@ -99,7 +103,7 @@ fn test_time_to_maturity() {
 
     let maturity = 10_000u64;
     v.set_maturity_date(&ctx.operator, &maturity);
-    
+
     ctx.env.ledger().with_mut(|li| li.timestamp = 1000);
     assert_eq!(v.time_to_maturity(), 9000);
 

@@ -2,7 +2,7 @@ extern crate std;
 
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
-    Address, Env, String, IntoVal,
+    Address, Env, IntoVal, String,
 };
 
 use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
@@ -221,7 +221,7 @@ fn test_pause_emits_event_with_reason() {
     let (_, topics, data) = last_event;
     let topic: soroban_sdk::Symbol = topics.get(0).unwrap().into_val(&e);
     assert_eq!(topic, soroban_sdk::symbol_short!("emergency"));
-    
+
     let (paused, event_reason): (bool, String) = data.into_val(&e);
     assert!(paused);
     assert_eq!(event_reason, reason);
@@ -265,7 +265,7 @@ fn test_emergency_withdraw_non_admin_panics() {
     let recipient = Address::generate(&e);
 
     vault.set_operator(&admin, &operator, &true);
-    
+
     // Operator (non-admin) tries to call emergency withdraw
     vault.emergency_withdraw(&operator, &recipient);
 }

@@ -6,9 +6,10 @@ use soroban_sdk::{
 };
 
 use crate::{
-    storage::{get_active_vaults, get_all_vaults, get_single_rwa_vaults, get_vault_count,
-              get_vault_info, push_active_vaults, push_all_vaults, push_single_rwa_vaults,
-              put_vault_info},
+    storage::{
+        get_active_vaults, get_all_vaults, get_single_rwa_vaults, get_vault_count, get_vault_info,
+        push_active_vaults, push_all_vaults, push_single_rwa_vaults, put_vault_info,
+    },
     types::{VaultInfo, VaultType},
     VaultFactory, VaultFactoryClient,
 };
@@ -158,7 +159,10 @@ fn test_vault_count_matches_list_length() {
     }
 
     e.as_contract(&factory_id, || {
-        assert_eq!(get_vault_count(&e) as usize, get_all_vaults(&e).len() as usize);
+        assert_eq!(
+            get_vault_count(&e) as usize,
+            get_all_vaults(&e).len() as usize
+        );
     });
 }
 
@@ -269,8 +273,8 @@ fn test_get_active_vaults_paginated_offset_skips_active() {
     let (client, _) = setup_factory(&e);
     let factory_id = client.address.clone();
 
-    inject_vault(&e, &factory_id, true);  // active[0] — skipped by offset=1
-    let a2 = inject_vault(&e, &factory_id, true);  // active[1]
+    inject_vault(&e, &factory_id, true); // active[0] — skipped by offset=1
+    let a2 = inject_vault(&e, &factory_id, true); // active[1]
     inject_vault(&e, &factory_id, false); // inactive — not counted
 
     let page = client.get_active_vaults_paginated(&1, &5);
@@ -300,7 +304,10 @@ fn test_remove_inactive_vault_success() {
 
     // Post-conditions: vault purged from all lists and VaultInfo deleted
     e.as_contract(&factory_id, || {
-        assert!(get_vault_info(&e, &vault).is_none(), "VaultInfo must be deleted");
+        assert!(
+            get_vault_info(&e, &vault).is_none(),
+            "VaultInfo must be deleted"
+        );
         assert!(
             !get_all_vaults(&e).contains(vault.clone()),
             "vault must not appear in AllVaults"

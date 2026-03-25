@@ -5,7 +5,7 @@ use soroban_sdk::{
     Address, Env,
 };
 
-use crate::test_helpers::{setup, mint_usdc, TestContext};
+use crate::test_helpers::{mint_usdc, setup, TestContext};
 
 fn fund_and_approve(ctx: &TestContext, user: &Address, amount: i128) {
     let e = &ctx.env;
@@ -46,7 +46,7 @@ fn test_early_redemption_escrow_and_transfer_lock() {
     v.cancel_early_redemption(&ctx.user, &request_id);
     assert_eq!(v.balance(&ctx.user), initial_balance);
     assert_eq!(v.escrowed_balance(&ctx.user), 0);
-    
+
     let req = v.redemption_request(&request_id);
     assert!(req.processed);
 }
@@ -65,7 +65,7 @@ fn test_early_redemption_process_burns_from_escrow() {
 
     let request_shares = 10_000_000i128;
     let request_id = v.request_early_redemption(&ctx.user, &request_shares);
-    
+
     let supply_before = v.total_supply();
     assert_eq!(v.balance(&ctx.user), 0);
     assert_eq!(v.escrowed_balance(&ctx.user), request_shares);
@@ -77,7 +77,7 @@ fn test_early_redemption_process_burns_from_escrow() {
     assert_eq!(v.balance(&ctx.user), 0);
     assert_eq!(v.escrowed_balance(&ctx.user), 0);
     assert_eq!(v.total_supply(), supply_before - request_shares);
-    
+
     let req = v.redemption_request(&request_id);
     assert!(req.processed);
 }

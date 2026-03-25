@@ -53,11 +53,11 @@ fn deploy(funding_deadline: u64) -> Ctx {
         admin: admin.clone(),
         zkme_verifier: kyc_id.clone(),
         cooperator: cooperator.clone(),
-        funding_target: 100_000_000i128,   // 100 USDC
+        funding_target: 100_000_000i128, // 100 USDC
         maturity_date: 9_999_999_999u64,
         funding_deadline,
-        min_deposit: 1_000_000i128,        // 1 USDC
-        max_deposit_per_user: 0i128,       // unlimited
+        min_deposit: 1_000_000i128,  // 1 USDC
+        max_deposit_per_user: 0i128, // unlimited
         early_redemption_fee_bps: 200u32,
         lock_up_period: 0u64,
         rwa_name: String::from_str(&env, "US Treasury Bond 2026"),
@@ -68,7 +68,13 @@ fn deploy(funding_deadline: u64) -> Ctx {
     };
 
     let vault_id = env.register(SingleRWAVault, (params,));
-    Ctx { env, vault_id, asset_id, admin, user }
+    Ctx {
+        env,
+        vault_id,
+        asset_id,
+        admin,
+        user,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
