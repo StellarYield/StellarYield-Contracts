@@ -643,9 +643,7 @@ pub fn get_emergency_balance(e: &Env) -> i128 {
 }
 
 pub fn put_emergency_balance(e: &Env, val: i128) {
-    e.storage()
-        .instance()
-        .set(&DataKey::EmergencyBalance, &val);
+    e.storage().instance().set(&DataKey::EmergencyBalance, &val);
 }
 
 pub fn get_emergency_total_supply_snapshot(e: &Env) -> i128 {

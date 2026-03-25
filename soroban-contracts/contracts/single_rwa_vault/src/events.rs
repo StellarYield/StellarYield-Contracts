@@ -190,16 +190,12 @@ pub fn emit_refunded(e: &Env, user: Address, amount: i128) {
 
 /// Emitted by `emergency_enable_pro_rata` — vault enters Emergency state.
 pub fn emit_emergency_mode_enabled(e: &Env, balance: i128, total_supply: i128) {
-    e.events().publish(
-        (symbol_short!("emerg_on"),),
-        (balance, total_supply),
-    );
+    e.events()
+        .publish((symbol_short!("emerg_on"),), (balance, total_supply));
 }
 
 /// Emitted by `emergency_claim` — user claimed their pro-rata share.
 pub fn emit_emergency_claimed(e: &Env, user: Address, amount: i128) {
-    e.events().publish(
-        (symbol_short!("emerg_clm"), user),
-        amount,
-    );
+    e.events()
+        .publish((symbol_short!("emerg_clm"), user), amount);
 }
