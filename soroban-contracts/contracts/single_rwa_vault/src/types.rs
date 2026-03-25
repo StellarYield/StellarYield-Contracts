@@ -113,6 +113,27 @@ pub enum Role {
 // Redemption request
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Emergency multi-sig proposal
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EmergencyProposal {
+    /// Address that will receive all vault funds on execution.
+    pub recipient: Address,
+    /// Signer who created the proposal.
+    pub proposer: Address,
+    /// Ledger timestamp at proposal creation (used for expiry check).
+    pub proposed_at: u64,
+    /// True once `execute_emergency_withdraw` has run successfully.
+    pub executed: bool,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Redemption request
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct RedemptionRequest {

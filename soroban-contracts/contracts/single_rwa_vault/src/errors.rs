@@ -53,4 +53,22 @@ pub enum Error {
     MigrationRequired = 30,
     /// Burn requires pending yield to be claimed first (Option A).
     BurnRequiresYieldClaim = 31,
+    /// Caller is not a configured emergency signer.
+    NotEmergencySigner = 32,
+    /// Emergency proposal ID not found.
+    ProposalNotFound = 33,
+    /// Emergency proposal has expired (past 24-hour window).
+    ProposalExpired = 34,
+    /// Threshold approvals not yet met; cannot execute.
+    ThresholdNotMet = 35,
+    /// Signer has already approved this proposal.
+    AlreadyApproved = 36,
+    /// Emergency proposal has already been executed.
+    ProposalAlreadyExecuted = 37,
+    /// Multi-sig is configured; use multi-sig functions instead of single-admin fallback.
+    MultiSigConfigured = 38,
+    /// No multi-sig configured; call set_emergency_signers first.
+    NoMultiSigConfigured = 39,
+    /// Invalid threshold: must be >= 1 and <= number of signers.
+    InvalidThreshold = 40,
 }
