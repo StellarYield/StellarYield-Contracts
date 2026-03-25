@@ -89,6 +89,7 @@ fn setup() -> TestCtx {
             min_deposit: 1i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            lock_up_period: 0u64,
             rwa_name: String::from_str(&env, "Fuzz RWA"),
             rwa_symbol: String::from_str(&env, "FRWA"),
             rwa_document_uri: String::from_str(&env, "https://example.com"),

@@ -29,6 +29,8 @@ pub struct InitParams {
     pub early_redemption_fee_bps: u32,
     /// Unix timestamp after which funding can be cancelled if target not met.
     pub funding_deadline: u64,
+    /// Lock-up period in seconds after deposit during which shares cannot be transferred.
+    pub lock_up_period: u64,
     // RWA details
     pub rwa_name: String,
     pub rwa_symbol: String,

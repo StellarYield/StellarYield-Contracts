@@ -81,6 +81,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            lock_up_period: 0u64,
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),

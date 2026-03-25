@@ -45,4 +45,6 @@ pub enum Error {
     InvalidInitParams = 26,
     /// Vault cannot be closed because it still contains shares/assets.
     VaultNotEmpty = 27,
+    /// Shares are still within the lock-up period and cannot be transferred.
+    SharesLocked = 28,
 }

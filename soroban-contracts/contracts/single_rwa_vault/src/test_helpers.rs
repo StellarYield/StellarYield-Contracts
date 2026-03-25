@@ -243,6 +243,7 @@ fn default_params(
         min_deposit: 1_000_000i128,        // 1 USDC
         max_deposit_per_user: 50_000_000i128, // 50 USDC
         early_redemption_fee_bps: 200u32,  // 2 %
+        lock_up_period: 0u64,              // No lock-up period by default for tests
         rwa_name: String::from_str(env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(env, "USTB26"),
         rwa_document_uri: String::from_str(env, "https://example.com/ustb26"),

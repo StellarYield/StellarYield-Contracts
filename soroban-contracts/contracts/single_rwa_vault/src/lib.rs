@@ -12,6 +12,8 @@ mod test_funding_deadline;
 mod test_lifecycle;
 #[cfg(test)]
 mod fuzz_tests;
+#[cfg(test)]
+mod test_lock_up;
 
 pub use crate::types::*;
 
@@ -91,6 +93,7 @@ impl SingleRWAVault {
         put_min_deposit(e, params.min_deposit);
         put_max_deposit_per_user(e, params.max_deposit_per_user);
         put_early_redemption_fee_bps(e, params.early_redemption_fee_bps);
+        put_lock_up_period(e, params.lock_up_period);
 
         // Initial state
         put_vault_state(e, VaultState::Funding);
@@ -218,6 +221,7 @@ impl SingleRWAVault {
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
+        put_deposit_timestamp(e, &receiver, e.ledger().timestamp());
         _mint(e, &receiver, shares);
 
         // --- Interaction (external call last) ---
@@ -291,6 +295,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
         require_active_or_matured(e);
+        require_lock_up_period_elapsed(e, &owner);
 
         if assets <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -342,6 +347,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
         require_active_or_matured(e);
+        require_lock_up_period_elapsed(e, &owner);
 
         if shares <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -606,6 +612,30 @@ impl SingleRWAVault {
         get_total_yield_claimed(e, &user)
     }
 
+    /// Returns the remaining lock-up time in seconds for the given user.
+    /// Returns 0 if no lock-up period is configured, no deposit timestamp exists,
+    /// or the lock-up period has elapsed.
+    pub fn lock_up_remaining(e: &Env, user: Address) -> u64 {
+        let lock_up_period = get_lock_up_period(e);
+        if lock_up_period == 0 {
+            return 0; // No lock-up period configured
+        }
+        
+        let deposit_timestamp = get_deposit_timestamp(e, &user);
+        if deposit_timestamp == 0 {
+            return 0; // No deposit timestamp found
+        }
+        
+        let current_timestamp = e.ledger().timestamp();
+        let lock_up_end = deposit_timestamp + lock_up_period;
+        
+        if current_timestamp >= lock_up_end {
+            0 // Lock-up period has elapsed
+        } else {
+            lock_up_end - current_timestamp // Remaining time
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Vault lifecycle
     // ─────────────────────────────────────────────────────────────────
@@ -862,6 +892,7 @@ impl SingleRWAVault {
         require_not_paused(e);
         require_not_closed(e);
         require_not_blacklisted(e, &caller);
+        require_lock_up_period_elapsed(e, &caller);
 
         if shares <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -1082,6 +1113,15 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
+    /// Update the lock-up period for future deposits.  Only the admin may change this.
+    /// Existing deposits keep their original lock-up period based on their deposit timestamp.
+    pub fn set_lock_up_period(e: &Env, caller: Address, new_lock_up_period: u64) {
+        caller.require_auth();
+        require_admin(e, &caller);
+        put_lock_up_period(e, new_lock_up_period);
+        bump_instance(e);
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Emergency
     // ─────────────────────────────────────────────────────────────────
@@ -1229,6 +1269,7 @@ impl SingleRWAVault {
         from.require_auth();
         require_not_blacklisted(e, &from);
         require_not_blacklisted(e, &to);
+        require_lock_up_period_elapsed(e, &from);
         if get_transfer_requires_kyc(e) {
             require_kyc_verified(e, &to);
         }
@@ -1245,6 +1286,7 @@ impl SingleRWAVault {
         require_not_blacklisted(e, &spender);
         require_not_blacklisted(e, &from);
         require_not_blacklisted(e, &to);
+        require_lock_up_period_elapsed(e, &from);
         if get_transfer_requires_kyc(e) {
             require_kyc_verified(e, &to);
         }
@@ -1486,6 +1528,23 @@ fn require_not_blacklisted(e: &Env, addr: &Address) {
     }
 }
 
+fn require_lock_up_period_elapsed(e: &Env, user: &Address) {
+    let lock_up_period = get_lock_up_period(e);
+    if lock_up_period == 0 {
+        return; // No lock-up period configured
+    }
+    
+    let deposit_timestamp = get_deposit_timestamp(e, user);
+    if deposit_timestamp == 0 {
+        return; // No deposit timestamp found, allow transfer
+    }
+    
+    let current_timestamp = e.ledger().timestamp();
+    if current_timestamp < deposit_timestamp + lock_up_period {
+        panic_with_error!(e, Error::SharesLocked);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Reentrancy guard helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1554,6 +1613,7 @@ mod test {
             min_deposit: 1_0000000,
             max_deposit_per_user: 0,
             early_redemption_fee_bps: 100,
+            lock_up_period: 0,
             rwa_name: String::from_str(e, "Test RWA"),
             rwa_symbol: String::from_str(e, "TRWA"),
             rwa_document_uri: String::from_str(e, "https://example.com/doc"),

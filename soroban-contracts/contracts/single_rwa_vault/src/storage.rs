@@ -63,6 +63,7 @@ pub enum DataKey {
     MinDeposit,
     MaxDepositPerUser,
     EarlyRedemptionFeeBps,
+    LockUpPeriod,
 
     // --- Vault state ---
     VaultState,
@@ -93,6 +94,7 @@ pub enum DataKey {
 
     // --- User deposit tracking ---
     UserDeposited(Address),
+    DepositTimestamp(Address),
 
     // --- Total deposited principal ---
     TotalDeposited,
@@ -241,6 +243,16 @@ instance_get!(get_max_deposit_per_user, MaxDepositPerUser, i128);
 instance_put!(put_max_deposit_per_user, MaxDepositPerUser, i128);
 instance_get!(get_early_redemption_fee_bps, EarlyRedemptionFeeBps, u32);
 instance_put!(put_early_redemption_fee_bps, EarlyRedemptionFeeBps, u32);
+
+pub fn get_lock_up_period(e: &Env) -> u64 {
+    e.storage()
+        .instance()
+        .get(&DataKey::LockUpPeriod)
+        .unwrap_or(0)
+}
+pub fn put_lock_up_period(e: &Env, val: u64) {
+    e.storage().instance().set(&DataKey::LockUpPeriod, &val);
+}
 
 // State
 instance_get!(get_vault_state, VaultState, VaultState);
@@ -438,6 +450,23 @@ pub fn put_user_deposited(e: &Env, addr: &Address, val: i128) {
         .set(&DataKey::UserDeposited(addr.clone()), &val);
     e.storage().persistent().extend_ttl(
         &DataKey::UserDeposited(addr.clone()),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
+}
+
+pub fn get_deposit_timestamp(e: &Env, addr: &Address) -> u64 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::DepositTimestamp(addr.clone()))
+        .unwrap_or(0)
+}
+pub fn put_deposit_timestamp(e: &Env, addr: &Address, val: u64) {
+    e.storage()
+        .persistent()
+        .set(&DataKey::DepositTimestamp(addr.clone()), &val);
+    e.storage().persistent().extend_ttl(
+        &DataKey::DepositTimestamp(addr.clone()),
         BALANCE_LIFETIME_THRESHOLD,
         BALANCE_BUMP_AMOUNT,
     );

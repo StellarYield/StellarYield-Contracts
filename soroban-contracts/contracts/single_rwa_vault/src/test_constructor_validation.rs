@@ -26,6 +26,7 @@ fn get_valid_params(e: &Env) -> InitParams {
         min_deposit: 10,
         max_deposit_per_user: 100,
         early_redemption_fee_bps: 200,
+        lock_up_period: 0,
         rwa_name: String::from_str(e, "RWA"),
         rwa_symbol: String::from_str(e, "R"),
         rwa_document_uri: String::from_str(e, "uri"),
