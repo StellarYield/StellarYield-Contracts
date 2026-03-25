@@ -45,4 +45,22 @@ pub enum Error {
     InvalidInitParams = 26,
     /// Vault cannot be closed because it still contains shares/assets.
     VaultNotEmpty = 27,
+    /// Caller is not a configured emergency signer.
+    NotEmergencySigner = 28,
+    /// Emergency proposal ID not found.
+    ProposalNotFound = 29,
+    /// Emergency proposal has expired (past 24-hour window).
+    ProposalExpired = 30,
+    /// Threshold approvals not yet met; cannot execute.
+    ThresholdNotMet = 31,
+    /// Signer has already approved this proposal.
+    AlreadyApproved = 32,
+    /// Emergency proposal has already been executed.
+    ProposalAlreadyExecuted = 33,
+    /// Multi-sig is configured; use multi-sig functions instead of single-admin fallback.
+    MultiSigConfigured = 34,
+    /// No multi-sig configured; call set_emergency_signers first.
+    NoMultiSigConfigured = 35,
+    /// Invalid threshold: must be >= 1 and <= number of signers.
+    InvalidThreshold = 36,
 }

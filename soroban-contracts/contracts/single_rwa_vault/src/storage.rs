@@ -12,10 +12,10 @@
 //! INSTANCE_BUMP_AMOUNT  ≈ 30 days
 //! BALANCE_BUMP_AMOUNT   ≈ 60 days
 
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, String};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Vec};
 
 use crate::errors::Error;
-use crate::types::{RedemptionRequest, VaultState};
+use crate::types::{EmergencyProposal, RedemptionRequest, VaultState};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -104,6 +104,18 @@ pub enum DataKey {
 
     // --- Transfer KYC gate ---
     TransferRequiresKyc,
+
+    // --- Emergency multi-sig ---
+    /// Ordered list of addresses authorised to sign emergency withdrawals.
+    EmergencySigners,
+    /// Minimum number of signer approvals required to execute a proposal.
+    EmergencyThreshold,
+    /// Monotonically-incrementing counter used to assign proposal IDs.
+    EmergencyProposalCounter,
+    /// Proposal struct for a given ID.
+    EmergencyProposal(u32),
+    /// Vec<Address> of signers that have approved a given proposal.
+    EmergencyProposalApprovals(u32),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -580,4 +592,81 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
             BALANCE_LIFETIME_THRESHOLD,
             BALANCE_BUMP_AMOUNT,
         );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emergency multi-sig (instance storage for config, persistent for proposals)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns true when a signer set has been configured via `set_emergency_signers`.
+pub fn has_emergency_signers(e: &Env) -> bool {
+    e.storage().instance().has(&DataKey::EmergencySigners)
+}
+
+pub fn get_emergency_signers(e: &Env) -> Vec<Address> {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencySigners)
+        .unwrap()
+}
+
+pub fn put_emergency_signers(e: &Env, signers: Vec<Address>) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EmergencySigners, &signers);
+}
+
+pub fn get_emergency_threshold(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencyThreshold)
+        .unwrap_or(0)
+}
+
+pub fn put_emergency_threshold(e: &Env, threshold: u32) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EmergencyThreshold, &threshold);
+}
+
+pub fn get_emergency_proposal_counter(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencyProposalCounter)
+        .unwrap_or(0)
+}
+
+pub fn put_emergency_proposal_counter(e: &Env, val: u32) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EmergencyProposalCounter, &val);
+}
+
+pub fn get_emergency_proposal(e: &Env, id: u32) -> Option<EmergencyProposal> {
+    e.storage()
+        .persistent()
+        .get(&DataKey::EmergencyProposal(id))
+}
+
+pub fn put_emergency_proposal(e: &Env, id: u32, proposal: EmergencyProposal) {
+    let key = DataKey::EmergencyProposal(id);
+    e.storage().persistent().set(&key, &proposal);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn get_emergency_proposal_approvals(e: &Env, id: u32) -> Vec<Address> {
+    e.storage()
+        .persistent()
+        .get(&DataKey::EmergencyProposalApprovals(id))
+        .unwrap_or_else(|| Vec::new(e))
+}
+
+pub fn put_emergency_proposal_approvals(e: &Env, id: u32, approvals: Vec<Address>) {
+    let key = DataKey::EmergencyProposalApprovals(id);
+    e.storage().persistent().set(&key, &approvals);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }

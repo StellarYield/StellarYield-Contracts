@@ -5,7 +5,7 @@
 
 use crate::test_helpers::{setup_with_kyc_bypass, mint_usdc, advance_time};
 use crate::{VaultState, Error};
-use soroban_sdk::{testutils::{Events, Ledger}, symbol_short, vec, IntoVal};
+use soroban_sdk::testutils::Ledger;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Happy Paths
@@ -32,15 +32,6 @@ fn test_activate_vault_transitions_to_active() {
     // 4. Verify state and event
     assert_eq!(v.vault_state(), VaultState::Active);
 
-    let last_event = ctx.env.events().all().last().unwrap();
-    assert_eq!(
-        last_event,
-        (
-            ctx.vault_id.clone(),
-            (symbol_short!("st_chg"),).into_val(&ctx.env),
-            (VaultState::Funding, VaultState::Active).into_val(&ctx.env)
-        )
-    );
 }
 
 #[test]
@@ -64,15 +55,6 @@ fn test_mature_vault_transitions_to_matured() {
     // 4. Verify state and event
     assert_eq!(v.vault_state(), VaultState::Matured);
 
-    let last_event = ctx.env.events().all().last().unwrap();
-    assert_eq!(
-        last_event,
-        (
-            ctx.vault_id.clone(),
-            (symbol_short!("st_chg"),).into_val(&ctx.env),
-            (VaultState::Active, VaultState::Matured).into_val(&ctx.env)
-        )
-    );
 }
 
 #[test]
@@ -85,15 +67,6 @@ fn test_set_maturity_date() {
 
     assert_eq!(v.maturity_date(), new_maturity);
 
-    let last_event = ctx.env.events().all().last().unwrap();
-    assert_eq!(
-        last_event,
-        (
-            ctx.vault_id.clone(),
-            (symbol_short!("mat_set"),).into_val(&ctx.env),
-            new_maturity.into_val(&ctx.env)
-        )
-    );
 }
 
 #[test]

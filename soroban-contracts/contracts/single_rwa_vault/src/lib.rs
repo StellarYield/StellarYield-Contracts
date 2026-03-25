@@ -12,15 +12,24 @@ mod test_funding_deadline;
 mod test_lifecycle;
 #[cfg(test)]
 mod fuzz_tests;
+#[cfg(test)]
+mod test_emergency_multisig;
 
 pub use crate::types::*;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String};
+use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String, Vec};
 
 use crate::errors::Error;
 use crate::events::*;
 use crate::storage::*;
 use crate::token_interface::*;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Emergency withdrawal proposals expire after 24 hours (configurable here).
+const EMERGENCY_PROPOSAL_TIMEOUT_SECS: u64 = 86_400;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Contract struct
@@ -1087,15 +1096,22 @@ impl SingleRWAVault {
         get_paused(e)
     }
 
-    /// Drain all vault assets to `recipient` and pause the vault.
+    /// Single-admin emergency drain — **only available when no multi-sig is configured**.
+    ///
+    /// Once `set_emergency_signers` has been called, this function is disabled
+    /// and callers must use the multi-sig flow instead.  This prevents a single
+    /// compromised admin key from bypassing the threshold requirement.
     ///
     /// Security: follows CEI — the vault is paused (Effect) before the asset
     /// transfer (Interaction) so that any reentrant call is rejected by
     /// `require_not_paused`.  Reentrancy lock provides an additional hard stop.
     pub fn emergency_withdraw(e: &Env, caller: Address, recipient: Address) {
         caller.require_auth();
-        // --- Checks ---
         acquire_lock(e);
+        // Fallback is only available when multi-sig has not been configured.
+        if has_emergency_signers(e) {
+            panic_with_error!(e, Error::MultiSigConfigured);
+        }
         require_admin(e, &caller);
 
         let balance = asset_balance_of_vault(e);
@@ -1108,12 +1124,146 @@ impl SingleRWAVault {
         if balance > 0 {
             transfer_asset_from_vault(e, &recipient, balance);
         }
+        bump_instance(e);
+        release_lock(e);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Multi-sig emergency withdrawal
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Configure the emergency signer set and approval threshold (e.g. 3-of-5).
+    ///
+    /// Once called, the single-admin `emergency_withdraw` fallback is disabled.
+    /// Can be called again by the admin to rotate signers or change the threshold.
+    pub fn set_emergency_signers(
+        e: &Env,
+        caller: Address,
+        signers: Vec<Address>,
+        threshold: u32,
+    ) {
+        caller.require_auth();
+        require_admin(e, &caller);
+
+        if signers.is_empty() || threshold == 0 || threshold > signers.len() {
+            panic_with_error!(e, Error::InvalidThreshold);
+        }
+
+        put_emergency_signers(e, signers);
+        put_emergency_threshold(e, threshold);
+        bump_instance(e);
+    }
+
+    /// Any configured emergency signer can open a new withdrawal proposal.
+    ///
+    /// The proposer's approval is recorded automatically.
+    /// Returns the numeric proposal ID needed for subsequent approve/execute calls.
+    pub fn propose_emergency_withdraw(e: &Env, caller: Address, recipient: Address) -> u32 {
+        caller.require_auth();
+        require_emergency_signer(e, &caller);
+
+        let id = get_emergency_proposal_counter(e);
+
+        let proposal = EmergencyProposal {
+            recipient: recipient.clone(),
+            proposer: caller.clone(),
+            proposed_at: e.ledger().timestamp(),
+            executed: false,
+        };
+        put_emergency_proposal(e, id, proposal);
+
+        // Proposer's vote is counted immediately.
+        let mut approvals = get_emergency_proposal_approvals(e, id);
+        approvals.push_back(caller.clone());
+        put_emergency_proposal_approvals(e, id, approvals);
+
+        put_emergency_proposal_counter(e, id + 1);
+
+        emit_emergency_proposed(e, id, caller, recipient);
+        bump_instance(e);
+        id
+    }
+
+    /// Record a signer's approval for an open proposal.
+    ///
+    /// Reverts if the proposal is not found, already executed, expired, or the
+    /// caller has already approved it.
+    pub fn approve_emergency_withdraw(e: &Env, caller: Address, proposal_id: u32) {
+        caller.require_auth();
+        require_emergency_signer(e, &caller);
+
+        let proposal_opt = get_emergency_proposal(e, proposal_id);
+        if proposal_opt.is_none() {
+            panic_with_error!(e, Error::ProposalNotFound);
+        }
+        let proposal = proposal_opt.unwrap();
+
+        if proposal.executed {
+            panic_with_error!(e, Error::ProposalAlreadyExecuted);
+        }
+        if e.ledger().timestamp() > proposal.proposed_at + EMERGENCY_PROPOSAL_TIMEOUT_SECS {
+            panic_with_error!(e, Error::ProposalExpired);
+        }
+
+        let mut approvals = get_emergency_proposal_approvals(e, proposal_id);
+        for addr in approvals.iter() {
+            if addr == caller {
+                panic_with_error!(e, Error::AlreadyApproved);
+            }
+        }
+        approvals.push_back(caller.clone());
+        let approval_count = approvals.len();
+        put_emergency_proposal_approvals(e, proposal_id, approvals);
+
+        emit_emergency_approved(e, proposal_id, caller, approval_count);
+        bump_instance(e);
+    }
+
+    /// Execute a proposal once the configured threshold of approvals is reached.
+    ///
+    /// Drains all vault assets to the proposal's `recipient` and pauses the vault.
+    /// Follows CEI: marks the proposal as executed before the token transfer.
+    pub fn execute_emergency_withdraw(e: &Env, caller: Address, proposal_id: u32) {
+        caller.require_auth();
+        require_emergency_signer(e, &caller);
+        acquire_lock(e);
+
+        let proposal_opt = get_emergency_proposal(e, proposal_id);
+        if proposal_opt.is_none() {
+            panic_with_error!(e, Error::ProposalNotFound);
+        }
+        let mut proposal = proposal_opt.unwrap();
+
+        if proposal.executed {
+            panic_with_error!(e, Error::ProposalAlreadyExecuted);
+        }
+        if e.ledger().timestamp() > proposal.proposed_at + EMERGENCY_PROPOSAL_TIMEOUT_SECS {
+            panic_with_error!(e, Error::ProposalExpired);
+        }
+
+        let approvals = get_emergency_proposal_approvals(e, proposal_id);
+        let threshold = get_emergency_threshold(e);
+        if approvals.len() < threshold {
+            panic_with_error!(e, Error::ThresholdNotMet);
+        }
+
+        // --- Effects (CEI: mark executed and pause before transfer) ---
+        proposal.executed = true;
+        put_emergency_proposal(e, proposal_id, proposal.clone());
+        let balance = asset_balance_of_vault(e);
         put_paused(e, true);
         emit_emergency_action(
             e,
             true,
-            String::from_str(e, "Emergency withdrawal executed"),
+            String::from_str(e, "Multi-sig emergency withdrawal executed"),
         );
+
+        // --- Interaction ---
+        if balance > 0 {
+            transfer_asset_from_vault(e, &proposal.recipient, balance);
+        }
+
+        emit_emergency_executed(e, proposal_id, proposal.recipient, balance);
         bump_instance(e);
         release_lock(e);
     }
@@ -1406,6 +1556,21 @@ fn require_admin(e: &Env, caller: &Address) {
     if *caller != get_admin(e) {
         panic_with_error!(e, Error::NotAdmin);
     }
+}
+
+/// Verifies that `caller` is in the configured emergency signer list.
+/// Panics with `NoMultiSigConfigured` if no signers have been set yet.
+fn require_emergency_signer(e: &Env, caller: &Address) {
+    if !has_emergency_signers(e) {
+        panic_with_error!(e, Error::NoMultiSigConfigured);
+    }
+    let signers = get_emergency_signers(e);
+    for addr in signers.iter() {
+        if addr == *caller {
+            return;
+        }
+    }
+    panic_with_error!(e, Error::NotEmergencySigner);
 }
 
 fn require_operator(e: &Env, caller: &Address) {
