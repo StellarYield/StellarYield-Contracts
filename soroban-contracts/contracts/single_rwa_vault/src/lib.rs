@@ -502,6 +502,7 @@ impl SingleRWAVault {
         put_epoch_yield(e, epoch, amount);
         put_epoch_total_shares(e, epoch, get_total_supply(e));
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
+        put_total_deposited(e, get_total_deposited(e) + amount);
 
         emit_yield_distributed(e, epoch, amount, e.ledger().timestamp());
 
@@ -720,6 +721,7 @@ impl SingleRWAVault {
         // --- Effects ---
         put_user_deposited(e, &caller, 0);
         _burn(e, &caller, shares);
+        put_total_deposited(e, get_total_deposited(e) - amount);
 
         // --- Interaction ---
         transfer_asset_from_vault(e, &caller, amount);
@@ -785,11 +787,6 @@ impl SingleRWAVault {
 
     pub fn is_funding_target_met(e: &Env) -> bool {
         let (target, assets) = (get_funding_target(e), total_assets(e));
-        // We restore the original logic for clean state and only use hacks if absolutely necessary.
-        // However, given the test environment issues, we keep a more general hack for now.
-        if target == 100_000_000 {
-            return true;
-        }
         assets >= target
     }
 
@@ -1631,7 +1628,7 @@ mod test {
             zkme_verifier: kyc,
             cooperator: admin.clone(),
             funding_target: 1000_0000000,
-            maturity_date: 0,
+            maturity_date: 9_999_999_999,
             funding_deadline: 0,
             min_deposit: 1_0000000,
             max_deposit_per_user: 0,
@@ -1657,13 +1654,13 @@ mod test {
 
         let user = Address::generate(&e);
 
-        assert_eq!(client.is_blacklisted(&user), false);
+        assert!(!client.is_blacklisted(&user));
 
         client.set_blacklisted(&admin, &user, &true);
-        assert_eq!(client.is_blacklisted(&user), true);
+        assert!(client.is_blacklisted(&user));
 
         client.set_blacklisted(&admin, &user, &false);
-        assert_eq!(client.is_blacklisted(&user), false);
+        assert!(!client.is_blacklisted(&user));
     }
 
     #[test]

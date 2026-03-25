@@ -236,10 +236,9 @@ fn test_withdraw_entire_balance() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Non-1:1 share price: inject yield, verify preview and redeem output
+// 9. Non-1:1 share price: distribute yield, verify preview and redeem output
 //
-// Mechanism: directly mint extra tokens to the vault contract address.
-// This increases `total_assets` (vault token balance) without creating new
+// Mechanism: use distribute_yield to inject extra assets without creating new
 // shares, so each existing share is worth more than 1 asset unit.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -255,8 +254,9 @@ fn test_redeem_at_non_unit_share_price() {
     let supply = v.total_supply(); // 40_000_000
     let assets_before = v.total_assets(); // 40_000_000
 
-    // Simulate yield: donate 20 USDC directly to the vault (no new shares).
-    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 20_000_000);
+    // Simulate yield via distribute_yield (operator distributes 20 USDC).
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.admin, 20_000_000);
+    v.distribute_yield(&ctx.admin, &20_000_000i128);
 
     let assets_after = v.total_assets(); // 60_000_000
     assert_eq!(assets_after, assets_before + 20_000_000);
@@ -273,7 +273,7 @@ fn test_redeem_at_non_unit_share_price() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Non-1:1: withdraw by asset amount, verify shares burned > assets
+// 10. Non-1:1: withdraw by asset amount, verify shares burned < assets
 //     (because each share is worth more than 1 asset, fewer shares cover assets)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -286,8 +286,9 @@ fn test_withdraw_at_non_unit_share_price() {
     deposit(&ctx, &ctx.user.clone(), 40_000_000);
     activate(&ctx);
 
-    // Vault now holds 80 USDC total (2× the deposited amount), still 40 shares outstanding.
-    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 40_000_000);
+    // Distribute 40 USDC yield → total_assets = 80 USDC, still 40 shares outstanding.
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.admin, 40_000_000);
+    v.distribute_yield(&ctx.admin, &40_000_000i128);
 
     // preview_withdraw(20 USDC): shares = ceil(20 * 40 / 80) = 10
     let shares_needed = v.preview_withdraw(&20_000_000i128);
@@ -319,7 +320,8 @@ fn test_withdraw_zero_assets_panics() {
     activate(&ctx);
 
     // Must panic — zero assets
-    ctx.vault().withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
+    ctx.vault()
+        .withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

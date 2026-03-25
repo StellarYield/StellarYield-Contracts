@@ -6,7 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::{
-    test_helpers::{mint_usdc, setup},
+    test_helpers::{mint_usdc, setup, setup_with_kyc_bypass},
     VaultState,
 };
 
@@ -16,7 +16,8 @@ fn test_close_vault_success() {
     let v = ctx.vault();
     let e = &ctx.env;
 
-    // 1. Funding -> Active
+    // 1. Set funding target to 0 so it's trivially met, then Funding -> Active
+    v.set_funding_target(&ctx.admin, &0i128);
     e.ledger().set_timestamp(100);
     v.activate_vault(&ctx.operator);
 
@@ -33,13 +34,14 @@ fn test_close_vault_success() {
 #[test]
 #[should_panic(expected = "Error(Contract, #27)")] // VaultNotEmpty
 fn test_close_vault_fails_if_not_empty() {
-    let ctx = setup();
+    let ctx = setup_with_kyc_bypass();
     let v = ctx.vault();
     let e = &ctx.env;
 
-    // Mint some shares
-    mint_usdc(e, &ctx.asset_id, &ctx.user, 1000);
-    v.deposit(&ctx.user, &1000i128, &ctx.user);
+    // Deposit enough to meet the funding target
+    let deposit_amount = ctx.params.funding_target;
+    mint_usdc(e, &ctx.asset_id, &ctx.user, deposit_amount);
+    v.deposit(&ctx.user, &deposit_amount, &ctx.user);
 
     e.ledger().set_timestamp(100);
     v.activate_vault(&ctx.operator);
@@ -47,7 +49,7 @@ fn test_close_vault_fails_if_not_empty() {
     e.ledger().set_timestamp(ctx.params.maturity_date + 1);
     v.mature_vault(&ctx.operator);
 
-    // Vault has 1000 shares
+    // Vault has shares outstanding
     assert!(v.total_supply() > 0);
 
     v.close_vault(&ctx.operator);
@@ -71,6 +73,7 @@ fn test_close_vault_fails_for_non_operator() {
     let e = &ctx.env;
     let anyone = Address::generate(e);
 
+    v.set_funding_target(&ctx.admin, &0i128);
     e.ledger().set_timestamp(100);
     v.activate_vault(&ctx.operator);
     e.ledger().set_timestamp(ctx.params.maturity_date + 1);
@@ -85,6 +88,9 @@ fn test_closed_state_blocks_yield_claim() {
     let ctx = setup();
     let v = ctx.vault();
 
+    v.set_funding_target(&ctx.admin, &0i128);
+    ctx.env.ledger().set_timestamp(100);
+    v.activate_vault(&ctx.operator);
     ctx.env.ledger().set_timestamp(ctx.params.maturity_date + 1);
     v.mature_vault(&ctx.operator);
     v.close_vault(&ctx.operator);
@@ -99,6 +105,9 @@ fn test_closed_state_blocks_early_redemption_request() {
     let ctx = setup();
     let v = ctx.vault();
 
+    v.set_funding_target(&ctx.admin, &0i128);
+    ctx.env.ledger().set_timestamp(100);
+    v.activate_vault(&ctx.operator);
     ctx.env.ledger().set_timestamp(ctx.params.maturity_date + 1);
     v.mature_vault(&ctx.operator); // Need to mature first to close
     v.close_vault(&ctx.operator);
