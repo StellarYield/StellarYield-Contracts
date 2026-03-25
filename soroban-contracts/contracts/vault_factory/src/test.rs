@@ -10,6 +10,7 @@ use crate::{
     types::{BatchVaultParams, VaultType},
     VaultFactory, VaultFactoryClient,
 };
+use crate::test::single_rwa_vault::VaultState;
 
 mod single_rwa_vault {
     soroban_sdk::contractimport!(
@@ -129,6 +130,7 @@ fn test_create_single_rwa_vault_full() {
         min_deposit: 100i128,
         max_deposit_per_user: 1000000i128,
         early_redemption_fee_bps: 100u32, // 1%
+        share_decimals: 7u32,
     };
 
     let vault_addr = client.create_single_rwa_vault_full(&admin, &params);
@@ -155,12 +157,13 @@ fn test_batch_create_vaults() {
             rwa_document_uri: String::from_str(&e, "uri"),
             rwa_category: String::from_str(&e, "cat"),
             expected_apy: 0,
-            maturity_date: 0,
+            maturity_date: 1800000000u64, // future date
             funding_deadline: 0,
             funding_target: 0,
             min_deposit: 0,
             max_deposit_per_user: 0,
             early_redemption_fee_bps: 0,
+            share_decimals: 7u32,
         });
     }
 
@@ -295,6 +298,7 @@ fn test_full_vault_lifecycle_end_to_end() {
         min_deposit: 10_000_000i128,     // 10 USDC
         max_deposit_per_user: 200_000_000i128, // 200 USDC
         early_redemption_fee_bps: 200u32, // 2%
+        share_decimals: 6u32, // USDC has 6 decimals
     };
 
     let vault_addr = factory.create_single_rwa_vault_full(&admin, &vault_params);
@@ -335,7 +339,7 @@ fn test_full_vault_lifecycle_end_to_end() {
     e.ledger().with_mut(|li| li.timestamp += 100);
 
     vault.activate_vault(&admin);
-    assert_eq!(vault.vault_state(), single_rwa_vault::VaultState::Active);
+    assert_eq!(vault.vault_state(), VaultState::Active);
 
     // Epoch 1: Distribute 15 USDC yield
     usdc.mint(&admin, &15_000_000i128);
@@ -400,7 +404,7 @@ fn test_full_vault_lifecycle_end_to_end() {
     e.ledger().with_mut(|li| li.timestamp = maturity_date + 1);
 
     vault.mature_vault(&admin);
-    assert_eq!(vault.vault_state(), single_rwa_vault::VaultState::Matured);
+    assert_eq!(vault.vault_state(), VaultState::Matured);
 
     let expected_yield_c = 7_500_000i128;
 
@@ -448,7 +452,7 @@ fn test_full_vault_lifecycle_end_to_end() {
     assert_eq!(vault.total_supply(), 0i128);
 
     // Vault should be in Matured state (can transition to Closed if needed)
-    assert_eq!(vault.vault_state(), single_rwa_vault::VaultState::Matured);
+    assert_eq!(vault.vault_state(), VaultState::Matured);
 
     // Verify total yield distributed
     assert_eq!(vault.total_yield_distributed(), 45_000_000i128);
@@ -460,7 +464,7 @@ fn test_full_vault_lifecycle_end_to_end() {
 
     // Verify vault can be closed now that all shares are redeemed
     vault.close_vault(&admin);
-    assert_eq!(vault.vault_state(), single_rwa_vault::VaultState::Closed);
+    assert_eq!(vault.vault_state(), VaultState::Closed);
 
     // ═══════════════════════════════════════════════════════════════════════
     // Test Complete - Full Lifecycle Verified ✓

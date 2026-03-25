@@ -41,6 +41,12 @@ pub struct BatchVaultParams {
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
+    /// Share token decimal places in the minted vault shares.
+    ///
+    /// Default in `create_single_rwa_vault` is SEP-41 standard 7.
+    /// For non-USDC assets, set this explicitly to the desired precision
+    /// to avoid scaling issues between asset decimals and share decimals.
+    pub share_decimals: u32,
 }
 
 /// Parameters for `create_single_rwa_vault_full`.

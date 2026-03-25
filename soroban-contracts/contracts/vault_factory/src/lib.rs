@@ -12,7 +12,7 @@ mod tests;
 
 pub use crate::types::*;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec, xdr::ToXdr};
 
 use crate::errors::Error;
 use crate::events::*;
@@ -62,6 +62,10 @@ impl VaultFactory {
     // ─────────────────────────────────────────────────────────────────
 
     /// Create a minimal single-RWA vault.
+    ///
+    /// This uses `share_decimals=7` (SEP-41 convention) by default.
+    /// For non-USDC assets, use `create_single_rwa_vault_full` and set
+    /// `share_decimals` explicitly to avoid mis-scaling asset/share ratios.
     pub fn create_single_rwa_vault(
         e: &Env,
         caller: Address,
@@ -93,6 +97,7 @@ impl VaultFactory {
             0i128,  // min_deposit
             0i128,  // max_deposit_per_user
             200u32, // early_redemption_fee_bps (2 %)
+            7u32,   // share_decimals default SEP-41 convention
         )
     }
 
@@ -124,6 +129,7 @@ impl VaultFactory {
             params.min_deposit,
             params.max_deposit_per_user,
             params.early_redemption_fee_bps,
+            params.share_decimals,
         )
     }
 
@@ -162,6 +168,7 @@ impl VaultFactory {
                 p.min_deposit,
                 p.max_deposit_per_user,
                 p.early_redemption_fee_bps,
+                p.share_decimals,
             );
             vaults.push_back(vault);
         }
@@ -406,6 +413,7 @@ impl VaultFactory {
         min_deposit: i128,
         max_deposit_per_user: i128,
         early_redemption_fee_bps: u32,
+        share_decimals: u32,
     ) -> Address {
         // --- Validation ---
         if asset == e.current_contract_address() {
@@ -456,7 +464,7 @@ impl VaultFactory {
             asset: vault_asset.clone(),
             share_name: name.clone(),
             share_symbol: symbol.clone(),
-            share_decimals: 6u32, // USDC convention
+            share_decimals,
             admin: admin.clone(),
             zkme_verifier: zkme.clone(),
             cooperator: coop.clone(),
