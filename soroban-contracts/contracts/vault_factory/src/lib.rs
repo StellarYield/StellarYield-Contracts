@@ -12,7 +12,7 @@ mod tests;
 
 pub use crate::types::*;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, panic_with_error, xdr::ToXdr, Address, BytesN, Env, String, Vec};
 
 use crate::errors::Error;
 use crate::events::*;
