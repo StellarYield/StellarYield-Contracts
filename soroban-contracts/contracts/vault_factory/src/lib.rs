@@ -2,14 +2,11 @@
 
 mod errors;
 mod events;
-mod migrations;
 mod storage;
 mod types;
 
 #[cfg(test)]
 mod test;
-#[cfg(test)]
-mod test_factory_migration;
 #[cfg(test)]
 mod tests;
 
@@ -20,7 +17,6 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env
 
 use crate::errors::Error;
 use crate::events::*;
-use crate::migrations::CURRENT_SCHEMA_VERSION;
 use crate::storage::*;
 
 /// Maximum number of vaults that can be created in a single batch call.
@@ -59,38 +55,7 @@ impl VaultFactory {
         put_default_cooperator(e, cooperator);
         put_vault_wasm_hash(e, vault_wasm_hash);
         put_operator(e, admin, true);
-        // Versioning
-        put_contract_version(e, 1u32);
-        put_storage_schema_version(e, 1u32);
         bump_instance(e);
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Versioning and migration
-    // ─────────────────────────────────────────────────────────────────
-
-    /// Admin-only migration entry point. Updates storage schema to the latest version.
-    /// No-op if already up-to-date.
-    pub fn migrate(e: &Env, caller: Address) {
-        caller.require_auth();
-        require_admin(e, &caller);
-
-        let old_version = get_storage_schema_version(e);
-        if old_version >= CURRENT_SCHEMA_VERSION {
-            return;
-        }
-
-        crate::migrations::run_migrations(e, old_version);
-        emit_data_migrated(e, old_version, CURRENT_SCHEMA_VERSION);
-        bump_instance(e);
-    }
-
-    pub fn storage_schema_version(e: &Env) -> u32 {
-        get_storage_schema_version(e)
-    }
-
-    pub fn contract_version(e: &Env) -> u32 {
-        get_contract_version(e)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -110,7 +75,6 @@ impl VaultFactory {
         maturity_date: u64,
     ) -> Address {
         caller.require_auth();
-        require_current_schema(e);
         require_operator_or_admin(e, &caller);
 
         let zero_str = String::from_str(e, "");
@@ -130,6 +94,7 @@ impl VaultFactory {
             0i128,  // min_deposit
             0i128,  // max_deposit_per_user
             200u32, // early_redemption_fee_bps (2 %)
+            0u64,   // lock_up_period
         )
     }
 
@@ -143,7 +108,6 @@ impl VaultFactory {
         params: CreateVaultParams,
     ) -> Address {
         caller.require_auth();
-        require_current_schema(e);
         require_operator_or_admin(e, &caller);
 
         Self::_create_single_rwa_vault(
@@ -162,38 +126,7 @@ impl VaultFactory {
             params.min_deposit,
             params.max_deposit_per_user,
             params.early_redemption_fee_bps,
-        )
-    }
-
-    /// Create a fully parameterised single-RWA vault.
-    ///
-    /// Parameters are passed as a `CreateVaultParams` struct to stay within
-    /// Soroban's 10-argument limit per contract function.
-    pub fn create_single_rwa_vault_batch(
-        e: &Env,
-        caller: Address,
-        params: CreateVaultParams,
-    ) -> Address {
-        caller.require_auth();
-        require_current_schema(e);
-        require_operator_or_admin(e, &caller);
-
-        Self::_create_single_rwa_vault(
-            e,
-            params.asset,
-            params.name,
-            params.symbol,
-            params.rwa_name,
-            params.rwa_symbol,
-            params.rwa_document_uri,
-            params.rwa_category,
-            params.expected_apy,
-            params.maturity_date,
-            params.funding_deadline,
-            params.funding_target,
-            params.min_deposit,
-            params.max_deposit_per_user,
-            params.early_redemption_fee_bps,
+            params.lock_up_period,
         )
     }
 
@@ -207,7 +140,6 @@ impl VaultFactory {
         params: Vec<BatchVaultParams>,
     ) -> Vec<Address> {
         caller.require_auth();
-        require_current_schema(e);
         require_operator_or_admin(e, &caller);
 
         if params.len() > MAX_BATCH_SIZE {
@@ -233,6 +165,7 @@ impl VaultFactory {
                 p.min_deposit,
                 p.max_deposit_per_user,
                 p.early_redemption_fee_bps,
+                p.lock_up_period,
             );
             vaults.push_back(vault);
         }
@@ -294,7 +227,6 @@ impl VaultFactory {
 
     pub fn set_vault_status(e: &Env, caller: Address, vault: Address, active: bool) {
         caller.require_auth();
-        require_current_schema(e);
         require_admin(e, &caller);
 
         let mut info = get_vault_info(e, &vault).unwrap_or_else(|| panic_not_found(e));
@@ -403,7 +335,6 @@ impl VaultFactory {
 
     pub fn transfer_admin(e: &Env, caller: Address, new_admin: Address) {
         caller.require_auth();
-        require_current_schema(e);
         require_admin(e, &caller);
         let old = get_admin(e);
         put_admin(e, new_admin.clone());
@@ -411,40 +342,6 @@ impl VaultFactory {
         bump_instance(e);
     }
 
-    /// Grant `role` to `addr`.  Only the admin may grant roles.
-    ///
-    /// `FullOperator` is the backward-compatible superrole that passes every
-    /// role check (equivalent to the old `set_operator(..., true)`).
-    pub fn grant_role(e: &Env, caller: Address, addr: Address, role: Role) {
-        caller.require_auth();
-        require_current_schema(e);
-        require_admin(e, &caller);
-        put_role(e, addr.clone(), role.clone(), true);
-        emit_role_granted(e, addr, role);
-        bump_instance(e);
-    }
-
-    /// Revoke `role` from `addr`.  Only the admin may revoke roles.
-    pub fn revoke_role(e: &Env, caller: Address, addr: Address, role: Role) {
-        caller.require_auth();
-        require_current_schema(e);
-        require_admin(e, &caller);
-        put_role(e, addr.clone(), role.clone(), false);
-        emit_role_revoked(e, addr, role);
-        bump_instance(e);
-    }
-
-    /// Returns `true` when `addr` holds `role`, the `FullOperator` superrole,
-    /// or is the admin.
-    pub fn has_role(e: &Env, addr: Address, role: Role) -> bool {
-        if addr == get_admin(e) {
-            return true;
-        }
-        get_role(e, &addr, Role::FullOperator) || get_role(e, &addr, role)
-    }
-
-    /// Backward-compatible: grants or revokes the `FullOperator` superrole.
-    /// Prefer `grant_role` / `revoke_role` for new integrations.
     pub fn set_operator(e: &Env, caller: Address, operator: Address, status: bool) {
         caller.require_auth();
         require_admin(e, &caller);
@@ -461,7 +358,6 @@ impl VaultFactory {
         cooperator: Address,
     ) {
         caller.require_auth();
-        require_current_schema(e);
         require_admin(e, &caller);
         put_default_asset(e, asset.clone());
         put_default_zkme_verifier(e, zkme_verifier.clone());
@@ -473,11 +369,7 @@ impl VaultFactory {
     pub fn set_vault_wasm_hash(e: &Env, caller: Address, hash: BytesN<32>) {
         caller.require_auth();
         require_admin(e, &caller);
-        if hash == BytesN::from_array(e, &[0u8; 32]) {
-            panic_with_error!(e, Error::InvalidWasmHash);
-        }
-        put_vault_wasm_hash(e, hash.clone());
-        emit_wasm_hash_updated(e, hash, caller);
+        put_vault_wasm_hash(e, hash);
         bump_instance(e);
     }
 
@@ -495,10 +387,6 @@ impl VaultFactory {
     }
     pub fn default_cooperator(e: &Env) -> Address {
         get_default_cooperator(e)
-    }
-
-    pub fn vault_wasm_hash(e: &Env) -> BytesN<32> {
-        get_vault_wasm_hash(e)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -522,6 +410,7 @@ impl VaultFactory {
         min_deposit: i128,
         max_deposit_per_user: i128,
         early_redemption_fee_bps: u32,
+        lock_up_period: u64,
     ) -> Address {
         // --- Validation ---
         if asset == e.current_contract_address() {
@@ -571,7 +460,7 @@ impl VaultFactory {
 
         // Build the InitParams struct for the vault constructor.
         // Using a struct keeps us under Soroban's 10-arg limit per function.
-        let init_params = SingleRwaVaultInitParams {
+        let init_params = single_rwa_vault::InitParams {
             asset: vault_asset.clone(),
             share_name: name.clone(),
             share_symbol: symbol.clone(),
@@ -585,6 +474,7 @@ impl VaultFactory {
             min_deposit,
             max_deposit_per_user,
             early_redemption_fee_bps,
+            lock_up_period,
             rwa_name,
             rwa_symbol,
             rwa_document_uri,
@@ -636,29 +526,9 @@ fn require_admin(e: &Env, caller: &Address) {
     }
 }
 
-/// Passes when `caller` holds `role`, the `FullOperator` superrole, or is admin.
-fn require_role(e: &Env, caller: &Address, role: Role) {
-    if *caller == get_admin(e) {
-        return;
-    }
-    if get_role(e, caller, Role::FullOperator) {
-        return;
-    }
-    if !get_role(e, caller, role) {
-        panic_with_error!(e, Error::NotAuthorized);
-    }
-}
-
 fn require_operator_or_admin(e: &Env, caller: &Address) {
-    // Vault creation requires FullOperator or admin (backward-compatible).
-    require_role(e, caller, Role::FullOperator);
-}
-
-/// Require that storage schema is current; panics with MigrationRequired otherwise.
-/// Skipped for migrate, version, and admin functions.
-fn require_current_schema(e: &Env) {
-    if get_storage_schema_version(e) != CURRENT_SCHEMA_VERSION {
-        panic_with_error!(e, Error::MigrationRequired);
+    if !get_operator(e, caller) && *caller != get_admin(e) {
+        panic_with_error!(e, Error::NotAuthorized);
     }
 }
 

@@ -19,7 +19,7 @@ use crate::{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Deploy and initialise a VaultFactory with a dummy WASM hash.
-pub fn setup_factory(e: &Env) -> (VaultFactoryClient<'_>, Address) {
+fn setup_factory(e: &Env) -> (VaultFactoryClient, Address) {
     let admin = Address::generate(e);
     let asset = Address::generate(e);
     let zkme = Address::generate(e);
@@ -43,10 +43,9 @@ pub fn setup_factory(e: &Env) -> (VaultFactoryClient<'_>, Address) {
 /// Returns the generated vault address.
 fn inject_vault(e: &Env, factory_id: &Address, active: bool) -> Address {
     let vault = Address::generate(e);
-    let asset = Address::generate(e);
     let info = VaultInfo {
         vault: vault.clone(),
-        asset,
+        asset: Address::generate(e),
         vault_type: VaultType::SingleRwa,
         name: String::from_str(e, "Test Vault"),
         symbol: String::from_str(e, "TV"),
@@ -447,6 +446,7 @@ fn test_batch_create_vaults_exceeds_limit() {
             min_deposit: 0,
             max_deposit_per_user: 0,
             early_redemption_fee_bps: 200,
+            lock_up_period: 0,
         });
     }
 
@@ -481,6 +481,7 @@ fn test_batch_create_vaults_at_limit_ok() {
             min_deposit: 0,
             max_deposit_per_user: 0,
             early_redemption_fee_bps: 200,
+            lock_up_period: 0,
         });
     }
 

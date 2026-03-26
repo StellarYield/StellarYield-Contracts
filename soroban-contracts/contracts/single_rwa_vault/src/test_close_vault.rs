@@ -6,18 +6,17 @@ use soroban_sdk::{
 };
 
 use crate::{
-    test_helpers::{mint_usdc, setup, setup_with_kyc_bypass},
+    test_helpers::setup_with_kyc_bypass,
     VaultState,
 };
 
 #[test]
 fn test_close_vault_success() {
-    let ctx = setup();
+    let ctx = setup_with_kyc_bypass();
     let v = ctx.vault();
     let e = &ctx.env;
 
-    // 1. Set funding target to 0 so it's trivially met, then Funding -> Active
-    v.set_funding_target(&ctx.admin, &0i128);
+    // 1. Funding -> Active
     e.ledger().set_timestamp(100);
     v.activate_vault(&ctx.operator);
 
@@ -38,10 +37,9 @@ fn test_close_vault_fails_if_not_empty() {
     let v = ctx.vault();
     let e = &ctx.env;
 
-    // Deposit enough to meet the funding target
-    let deposit_amount = ctx.params.funding_target;
-    mint_usdc(e, &ctx.asset_id, &ctx.user, deposit_amount);
-    v.deposit(&ctx.user, &deposit_amount, &ctx.user);
+    // Mint some shares
+    ctx.asset().mint(&ctx.user, &1000i128);
+    v.deposit(&ctx.user, &1000i128, &ctx.user);
 
     e.ledger().set_timestamp(100);
     v.activate_vault(&ctx.operator);
@@ -49,7 +47,7 @@ fn test_close_vault_fails_if_not_empty() {
     e.ledger().set_timestamp(ctx.params.maturity_date + 1);
     v.mature_vault(&ctx.operator);
 
-    // Vault has shares outstanding
+    // Vault has 1000 shares
     assert!(v.total_supply() > 0);
 
     v.close_vault(&ctx.operator);
@@ -58,7 +56,7 @@ fn test_close_vault_fails_if_not_empty() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")] // InvalidVaultState
 fn test_close_vault_fails_if_not_matured() {
-    let ctx = setup();
+    let ctx = setup_with_kyc_bypass();
     let v = ctx.vault();
 
     // Still in Funding
@@ -68,12 +66,11 @@ fn test_close_vault_fails_if_not_matured() {
 #[test]
 #[should_panic(expected = "Error(Contract, #3)")] // NotOperator
 fn test_close_vault_fails_for_non_operator() {
-    let ctx = setup();
+    let ctx = setup_with_kyc_bypass();
     let v = ctx.vault();
     let e = &ctx.env;
     let anyone = Address::generate(e);
 
-    v.set_funding_target(&ctx.admin, &0i128);
     e.ledger().set_timestamp(100);
     v.activate_vault(&ctx.operator);
     e.ledger().set_timestamp(ctx.params.maturity_date + 1);
@@ -85,12 +82,9 @@ fn test_close_vault_fails_for_non_operator() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")] // InvalidVaultState
 fn test_closed_state_blocks_yield_claim() {
-    let ctx = setup();
+    let ctx = setup_with_kyc_bypass();
     let v = ctx.vault();
 
-    v.set_funding_target(&ctx.admin, &0i128);
-    ctx.env.ledger().set_timestamp(100);
-    v.activate_vault(&ctx.operator);
     ctx.env.ledger().set_timestamp(ctx.params.maturity_date + 1);
     v.mature_vault(&ctx.operator);
     v.close_vault(&ctx.operator);
@@ -102,12 +96,9 @@ fn test_closed_state_blocks_yield_claim() {
 #[test]
 #[should_panic(expected = "Error(Contract, #5)")] // InvalidVaultState
 fn test_closed_state_blocks_early_redemption_request() {
-    let ctx = setup();
+    let ctx = setup_with_kyc_bypass();
     let v = ctx.vault();
 
-    v.set_funding_target(&ctx.admin, &0i128);
-    ctx.env.ledger().set_timestamp(100);
-    v.activate_vault(&ctx.operator);
     ctx.env.ledger().set_timestamp(ctx.params.maturity_date + 1);
     v.mature_vault(&ctx.operator); // Need to mature first to close
     v.close_vault(&ctx.operator);

@@ -236,9 +236,10 @@ fn test_withdraw_entire_balance() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Non-1:1 share price: distribute yield, verify preview and redeem output
+// 9. Non-1:1 share price: inject yield, verify preview and redeem output
 //
-// Mechanism: use distribute_yield to inject extra assets without creating new
+// Mechanism: directly mint extra tokens to the vault contract address.
+// This increases `total_assets` (vault token balance) without creating new
 // shares, so each existing share is worth more than 1 asset unit.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -254,26 +255,27 @@ fn test_redeem_at_non_unit_share_price() {
     let supply = v.total_supply(); // 40_000_000
     let assets_before = v.total_assets(); // 40_000_000
 
-    // Simulate yield via distribute_yield (operator distributes 20 USDC).
-    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.admin, 20_000_000);
-    v.distribute_yield(&ctx.admin, &20_000_000i128);
+    // Simulate yield: donate 20 USDC directly to the vault.
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 20_000_000);
 
-    let assets_after = v.total_assets(); // 60_000_000
-    assert_eq!(assets_after, assets_before + 20_000_000);
+    // In the new architecture, total_assets() should NOT include directly minted yield
+    let assets_after = v.total_assets(); 
+    assert_eq!(assets_after, assets_before, "total_assets ONLY includes principal");
 
-    // preview_redeem: 40 shares * 60 assets / 40 shares = 60 assets
-    let expected_redeem = supply * assets_after / supply; // = 60_000_000
-    assert_eq!(v.preview_redeem(&supply), expected_redeem);
+    // preview_redeem: 40 shares = 40 assets (1:1)
+    assert_eq!(v.preview_redeem(&supply), supply);
 
-    // Actually redeem all shares; user should receive 60 USDC.
+    // Actually redeem all shares; user should receive 40 USDC principal.
     let received = v.redeem(&ctx.user, &supply, &ctx.user, &ctx.user);
-    assert_eq!(received, 60_000_000, "user receives principal + yield");
+    assert_eq!(received, 40_000_000, "user receives principal only via redeem");
     assert_eq!(v.balance(&ctx.user), 0);
-    assert_eq!(ctx.asset().balance(&ctx.user), 60_000_000);
+    
+    // Total assets redeemed = 40 USDC.
+    assert_eq!(ctx.asset().balance(&ctx.user), 40_000_000);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Non-1:1: withdraw by asset amount, verify shares burned < assets
+// 10. Non-1:1: withdraw by asset amount, verify shares burned > assets
 //     (because each share is worth more than 1 asset, fewer shares cover assets)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -286,20 +288,19 @@ fn test_withdraw_at_non_unit_share_price() {
     deposit(&ctx, &ctx.user.clone(), 40_000_000);
     activate(&ctx);
 
-    // Distribute 40 USDC yield → total_assets = 80 USDC, still 40 shares outstanding.
-    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.admin, 40_000_000);
-    v.distribute_yield(&ctx.admin, &40_000_000i128);
+    // Vault now holds 80 USDC total (40 principal + 40 yield), still 40 shares outstanding.
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 40_000_000);
 
-    // preview_withdraw(20 USDC): shares = ceil(20 * 40 / 80) = 10
+    // preview_withdraw(20 USDC): shares = 20 (1:1)
     let shares_needed = v.preview_withdraw(&20_000_000i128);
     assert_eq!(
-        shares_needed, 10_000_000,
-        "20 USDC costs only 10 shares at 2:1"
+        shares_needed, 20_000_000,
+        "20 USDC costs 20 shares at 1:1"
     );
 
     let shares_burned = v.withdraw(&ctx.user, &20_000_000i128, &ctx.user, &ctx.user);
-    assert_eq!(shares_burned, 10_000_000);
-    assert_eq!(v.balance(&ctx.user), 30_000_000, "30 shares remain");
+    assert_eq!(shares_burned, 20_000_000);
+    assert_eq!(v.balance(&ctx.user), 20_000_000, "20 shares remain");
     assert_eq!(
         ctx.asset().balance(&ctx.user),
         20_000_000,

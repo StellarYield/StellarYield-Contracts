@@ -68,6 +68,7 @@ pub struct BatchVaultParams {
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
+    pub lock_up_period: u64,
 }
 
 /// Parameters for `create_single_rwa_vault_full`.

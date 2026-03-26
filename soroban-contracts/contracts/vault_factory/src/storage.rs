@@ -5,7 +5,7 @@
 
 use soroban_sdk::{contracttype, vec, Address, BytesN, Env, Vec};
 
-use crate::types::{Role, VaultInfo};
+use crate::types::VaultInfo;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -25,12 +25,7 @@ pub const PERSIST_BUMP_AMOUNT: u32 = 1069000;
 #[derive(Clone)]
 pub enum DataKey {
     Admin,
-    /// Granular RBAC role assignment: (address, role) → bool.
-    /// Replaces the old binary `Operator(Address)` key.
-    Role(Address, Role),
-    // --- Versioning ---
-    ContractVersion,
-    StorageSchemaVersion,
+    Operator(Address),
     DefaultAsset,
     DefaultZkmeVerifier,
     DefaultCooperator,
@@ -77,63 +72,18 @@ pub fn put_admin(e: &Env, val: Address) {
     e.storage().instance().set(&DataKey::Admin, &val);
 }
 
-pub fn get_contract_version(e: &Env) -> u32 {
+pub fn get_operator(e: &Env, addr: &Address) -> bool {
     e.storage()
         .instance()
-        .get(&DataKey::ContractVersion)
-        .unwrap_or(0)
-}
-
-pub fn put_contract_version(e: &Env, val: u32) {
-    e.storage().instance().set(&DataKey::ContractVersion, &val);
-}
-
-pub fn get_storage_schema_version(e: &Env) -> u32 {
-    e.storage()
-        .instance()
-        .get(&DataKey::StorageSchemaVersion)
-        .unwrap_or(0)
-}
-
-pub fn put_storage_schema_version(e: &Env, val: u32) {
-    e.storage()
-        .instance()
-        .set(&DataKey::StorageSchemaVersion, &val);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Granular RBAC helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Returns `true` when `addr` has been granted `role` in instance storage.
-pub fn get_role(e: &Env, addr: &Address, role: Role) -> bool {
-    e.storage()
-        .instance()
-        .get(&DataKey::Role(addr.clone(), role))
+        .get(&DataKey::Operator(addr.clone()))
         .unwrap_or(false)
 }
-
-/// Grant (`val = true`) or revoke (`val = false`) `role` for `addr`.
-pub fn put_role(e: &Env, addr: Address, role: Role, val: bool) {
-    if val {
-        e.storage()
-            .instance()
-            .set(&DataKey::Role(addr, role), &true);
-    } else {
-        e.storage().instance().remove(&DataKey::Role(addr, role));
-    }
-}
-
-// ─── Backward-compatible operator wrappers ───────────────────────────────────
-
-/// Returns `true` when `addr` holds the `FullOperator` superrole.
-pub fn get_operator(e: &Env, addr: &Address) -> bool {
-    get_role(e, addr, Role::FullOperator)
-}
-
-/// Grant or revoke the `FullOperator` superrole for `addr`.
 pub fn put_operator(e: &Env, addr: Address, val: bool) {
-    put_role(e, addr, Role::FullOperator, val);
+    if val {
+        e.storage().instance().set(&DataKey::Operator(addr), &val);
+    } else {
+        e.storage().instance().remove(&DataKey::Operator(addr));
+    }
 }
 
 pub fn get_default_asset(e: &Env) -> Address {

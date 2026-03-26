@@ -15,7 +15,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env, String};
 
 use crate::errors::Error;
-use crate::types::{RedemptionRequest, Role, VaultState};
+use crate::types::{RedemptionRequest, VaultState};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -44,9 +44,7 @@ pub enum DataKey {
 
     // --- Admin / operators ---
     Admin,
-    /// Granular RBAC role assignment: (address, role) → bool.
-    /// Replaces the old binary `Operator(Address)` key.
-    Role(Address, Role),
+    Operator(Address),
 
     // --- zkMe ---
     ZkmeVerifier,
@@ -70,28 +68,19 @@ pub enum DataKey {
     // --- Vault state ---
     VaultState,
     Paused,
-    FreezeFlags,
     ActivationTimestamp,
     /// Reentrancy lock — true while a guarded function is executing.
     Locked,
     /// Unix timestamp deadline for funding; 0 means no deadline.
     FundingDeadline,
 
-    // --- Versioning ---
-    ContractVersion,
-    StorageSchemaVersion,
-
     // --- Epoch / yield ---
     CurrentEpoch,
     TotalYieldDistributed,
     EpochYield(u32),
     EpochTotalShares(u32),
-    EpochTimestamp(u32),
     TotalYieldClaimed(Address),
     HasClaimedEpoch(Address, u32),
-    /// Cursor: the highest epoch at which all epochs ≤ cursor have been claimed.
-    /// Allows pending_yield / claim_yield to scan only new epochs.
-    LastClaimedEpoch(Address),
 
     // --- User share snapshots ---
     UserSharesAtEpoch(Address, u32),
@@ -121,10 +110,8 @@ pub enum DataKey {
     // --- Transfer KYC gate ---
     TransferRequiresKyc,
 
-    // --- Emergency pro-rata distribution ---
-    EmergencyBalance,
-    HasClaimedEmergency(Address),
-    EmergencyTotalSupplySnapshot,
+    // --- Share Transfer Lock-up ---
+    UserLockUpPeriod(Address),
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,7 +143,6 @@ pub fn bump_balance(e: &Env, addr: &Address) {
 /// as unclaimed and allow a second payout.  Bumping every related key on every
 /// write keeps the TTL well above the BALANCE_LIFETIME_THRESHOLD (~60 days)
 /// and eliminates that class of bug.
-#[allow(dead_code)]
 pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     let epoch_keys = [
         DataKey::HasClaimedEpoch(addr.clone(), epoch),
@@ -176,7 +162,6 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     let addr_keys = [
         DataKey::TotalYieldClaimed(addr.clone()),
         DataKey::LastInteractionEpoch(addr.clone()),
-        DataKey::LastClaimedEpoch(addr.clone()),
     ];
     for key in &addr_keys {
         if e.storage().persistent().has(key) {
@@ -281,8 +266,6 @@ instance_get!(get_vault_state, VaultState, VaultState);
 instance_put!(put_vault_state, VaultState, VaultState);
 instance_get!(get_paused, Paused, bool);
 instance_put!(put_paused, Paused, bool);
-instance_get!(get_freeze_flags, FreezeFlags, u32);
-instance_put!(put_freeze_flags, FreezeFlags, u32);
 instance_get!(get_locked, Locked, bool);
 instance_put!(put_locked, Locked, bool);
 
@@ -316,53 +299,23 @@ instance_put!(put_total_deposited, TotalDeposited, i128);
 instance_get!(get_redemption_counter, RedemptionCounter, u32);
 instance_put!(put_redemption_counter, RedemptionCounter, u32);
 
-// Versioning
-instance_get!(get_contract_version, ContractVersion, u32);
-instance_put!(put_contract_version, ContractVersion, u32);
-instance_get!(get_storage_schema_version, StorageSchemaVersion, u32);
-instance_put!(put_storage_schema_version, StorageSchemaVersion, u32);
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Operator (instance storage — same lifetime as admin)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Granular RBAC helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Returns `true` when `addr` has been granted `role` in instance storage.
-pub fn get_role(e: &Env, addr: &Address, role: Role) -> bool {
+pub fn get_operator(e: &Env, addr: &Address) -> bool {
     e.storage()
         .instance()
-        .get(&DataKey::Role(addr.clone(), role))
+        .get(&DataKey::Operator(addr.clone()))
         .unwrap_or(false)
 }
 
-/// Grant (`val = true`) or revoke (`val = false`) `role` for `addr`.
-pub fn put_role(e: &Env, addr: Address, role: Role, val: bool) {
-    if val {
-        e.storage()
-            .instance()
-            .set(&DataKey::Role(addr, role), &true);
-    } else {
-        e.storage().instance().remove(&DataKey::Role(addr, role));
-    }
-}
-
-// ─── Backward-compatible operator wrappers ───────────────────────────────────
-//
-// `set_operator` / `is_operator` on the public interface map to `FullOperator`.
-// Existing deployments and tooling that call these functions continue to work
-// without change; they effectively grant/revoke the superrole.
-
-/// Returns `true` when `addr` holds the `FullOperator` superrole.
-pub fn get_operator(e: &Env, addr: &Address) -> bool {
-    get_role(e, addr, Role::FullOperator)
-}
-
-/// Grant or revoke the `FullOperator` superrole for `addr`.
 pub fn put_operator(e: &Env, addr: Address, val: bool) {
-    put_role(e, addr, Role::FullOperator, val);
+    if val {
+        e.storage().instance().set(&DataKey::Operator(addr), &val);
+    } else {
+        e.storage().instance().remove(&DataKey::Operator(addr));
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -391,18 +344,6 @@ pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
     e.storage()
         .instance()
         .set(&DataKey::EpochTotalShares(epoch), &val);
-}
-
-pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
-    e.storage()
-        .instance()
-        .get(&DataKey::EpochTimestamp(epoch))
-        .unwrap_or(0)
-}
-pub fn put_epoch_timestamp(e: &Env, epoch: u32, val: u64) {
-    e.storage()
-        .instance()
-        .set(&DataKey::EpochTimestamp(epoch), &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -451,9 +392,6 @@ pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 
     }
 }
 
-/// Decrements an existing allowance to `new_amount`, preserving the stored
-/// `expiration_ledger`.  Only call this after confirming the allowance is
-/// sufficient and non-expired via `get_share_allowance`.
 pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amount: i128) {
     let key = DataKey::Allowance(owner.clone(), spender.clone());
     // Read back the expiration that was set when the allowance was approved.
@@ -541,6 +479,22 @@ pub fn put_deposit_timestamp(e: &Env, addr: &Address, val: u64) {
         BALANCE_BUMP_AMOUNT,
     );
 }
+pub fn get_user_lock_up_period(e: &Env, addr: &Address) -> u64 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::UserLockUpPeriod(addr.clone()))
+        .unwrap_or(0)
+}
+pub fn put_user_lock_up_period(e: &Env, addr: &Address, val: u64) {
+    e.storage()
+        .persistent()
+        .set(&DataKey::UserLockUpPeriod(addr.clone()), &val);
+    e.storage().persistent().extend_ttl(
+        &DataKey::UserLockUpPeriod(addr.clone()),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
+}
 
 pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
     e.storage()
@@ -550,20 +504,6 @@ pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
 }
 pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
     let key = DataKey::TotalYieldClaimed(addr.clone());
-    e.storage().persistent().set(&key, &val);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
-}
-
-pub fn get_last_claimed_epoch(e: &Env, addr: &Address) -> u32 {
-    e.storage()
-        .persistent()
-        .get(&DataKey::LastClaimedEpoch(addr.clone()))
-        .unwrap_or(0)
-}
-pub fn put_last_claimed_epoch(e: &Env, addr: &Address, val: u32) {
-    let key = DataKey::LastClaimedEpoch(addr.clone());
     e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
@@ -702,47 +642,4 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
         BALANCE_LIFETIME_THRESHOLD,
         BALANCE_BUMP_AMOUNT,
     );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Emergency pro-rata distribution (instance + persistent)
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub fn get_emergency_balance(e: &Env) -> i128 {
-    e.storage()
-        .instance()
-        .get(&DataKey::EmergencyBalance)
-        .unwrap_or(0)
-}
-
-pub fn put_emergency_balance(e: &Env, val: i128) {
-    e.storage().instance().set(&DataKey::EmergencyBalance, &val);
-}
-
-pub fn get_emergency_total_supply_snapshot(e: &Env) -> i128 {
-    e.storage()
-        .instance()
-        .get(&DataKey::EmergencyTotalSupplySnapshot)
-        .unwrap_or(0)
-}
-
-pub fn put_emergency_total_supply_snapshot(e: &Env, val: i128) {
-    e.storage()
-        .instance()
-        .set(&DataKey::EmergencyTotalSupplySnapshot, &val);
-}
-
-pub fn get_has_claimed_emergency(e: &Env, addr: &Address) -> bool {
-    e.storage()
-        .persistent()
-        .get(&DataKey::HasClaimedEmergency(addr.clone()))
-        .unwrap_or(false)
-}
-
-pub fn put_has_claimed_emergency(e: &Env, addr: &Address, val: bool) {
-    let key = DataKey::HasClaimedEmergency(addr.clone());
-    e.storage().persistent().set(&key, &val);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }

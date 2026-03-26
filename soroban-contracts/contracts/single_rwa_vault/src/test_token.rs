@@ -12,6 +12,7 @@ use crate::storage::{
     put_total_supply,
 };
 use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
+use soroban_sdk::token::TokenInterface;
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 

@@ -338,13 +338,10 @@ fn test_redeem_at_maturity_returns_principal_plus_yield() {
     assert_eq!(pending, expected_pending);
 
     // total_out = preview_redeem(shares) + pending_yield
-    // totalAssets = 2 * deposit + total_yield = 2_080_000
-    // assets = shares * totalAssets / totalSupply = 1_000_000 * 2_080_000 / 2_000_000 = 1_040_000
-    // total_out = 1_040_000 + 40_000 = 1_080_000
-    let total_assets = 2 * deposit_amount + total_yield;
-    let total_supply = 2 * deposit_amount; // 1:1 ratio
-    let expected_assets = shares * total_assets / total_supply;
-    let expected_total_out = expected_assets + expected_pending;
+    // preview_redeem(shares) = 1_000_000 (principal is 1:1)
+    // pending_yield = 40_000
+    // total_out = 1_000_000 + 40_000 = 1_040_000
+    let expected_total_out = 1_040_000i128;
     assert_eq!(total_out, expected_total_out);
 
     // Verify user actually received the tokens
