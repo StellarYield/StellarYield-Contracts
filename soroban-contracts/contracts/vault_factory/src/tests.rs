@@ -436,6 +436,7 @@ fn test_batch_create_vaults_exceeds_limit() {
             asset: asset.clone(),
             name: String::from_str(&e, "V"),
             symbol: String::from_str(&e, "V"),
+            share_decimals: 7u32, // SEP-41 convention
             rwa_name: String::from_str(&e, "RWA"),
             rwa_symbol: String::from_str(&e, "R"),
             rwa_document_uri: String::from_str(&e, "https://example.com"),
@@ -470,6 +471,7 @@ fn test_batch_create_vaults_at_limit_ok() {
             asset: asset.clone(),
             name: String::from_str(&e, "V"),
             symbol: String::from_str(&e, "V"),
+            share_decimals: 7u32, // SEP-41 convention
             rwa_name: String::from_str(&e, "RWA"),
             rwa_symbol: String::from_str(&e, "R"),
             rwa_document_uri: String::from_str(&e, "https://example.com"),

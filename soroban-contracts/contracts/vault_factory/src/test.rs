@@ -58,6 +58,7 @@ fn test_create_single_rwa_vault_full() {
         asset: asset.clone(),
         name: String::from_str(&e, "Full Vault"),
         symbol: String::from_str(&e, "FV"),
+        share_decimals: 7u32, // SEP-41 convention
         rwa_name: String::from_str(&e, "Private Credit"),
         rwa_symbol: String::from_str(&e, "PC"),
         rwa_document_uri: String::from_str(&e, "https://doc.com"),
@@ -93,6 +94,7 @@ fn test_batch_create_vaults() {
             asset: asset.clone(),
             name: String::from_str(&e, "Vault"),
             symbol: String::from_str(&e, "V"),
+            share_decimals: 7u32, // SEP-41 convention
             rwa_name: String::from_str(&e, "RWA"),
             rwa_symbol: String::from_str(&e, "R"),
             rwa_document_uri: String::from_str(&e, "uri"),

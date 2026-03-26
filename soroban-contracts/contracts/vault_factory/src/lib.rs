@@ -98,6 +98,10 @@ impl VaultFactory {
     // ─────────────────────────────────────────────────────────────────
 
     /// Create a minimal single-RWA vault.
+    ///
+    /// Uses a default of 7 share decimals (SEP-41 convention). For USDC-aligned
+    /// assets (6 decimal tokens), use `create_single_rwa_vault_full` and specify
+    /// `share_decimals: 6u32`.
     pub fn create_single_rwa_vault(
         e: &Env,
         caller: Address,
@@ -119,17 +123,18 @@ impl VaultFactory {
             asset,
             name,
             symbol,
+            7u32,     // share_decimals: SEP-41 convention (7 decimals)
             rwa_name,
             rwa_symbol,
             rwa_document_uri,
             zero_str, // category
             0u32,     // expected_apy
             maturity_date,
-            0u64,   // funding_deadline (0 = no deadline)
-            0i128,  // funding_target
-            0i128,  // min_deposit
-            0i128,  // max_deposit_per_user
-            200u32, // early_redemption_fee_bps (2 %)
+            0u64,     // funding_deadline (0 = no deadline)
+            0i128,    // funding_target
+            0i128,    // min_deposit
+            0i128,    // max_deposit_per_user
+            200u32,   // early_redemption_fee_bps (2 %)
         )
     }
 
@@ -137,6 +142,12 @@ impl VaultFactory {
     ///
     /// Parameters are passed as a `CreateVaultParams` struct to stay within
     /// Soroban's 10-argument limit per contract function.
+    ///
+    /// **Note:** `share_decimals` is required in `CreateVaultParams`. Common values:
+    /// - `6u32` for USDC/USDT-aligned assets
+    /// - `7u32` for SEP-41 convention (default recommendation)
+    /// - `8u32` for BTC-pegged tokens
+    /// - `18u32` for ETH/ERC-20 compatibility
     pub fn create_single_rwa_vault_full(
         e: &Env,
         caller: Address,
@@ -151,6 +162,7 @@ impl VaultFactory {
             params.asset,
             params.name,
             params.symbol,
+            params.share_decimals,
             params.rwa_name,
             params.rwa_symbol,
             params.rwa_document_uri,
@@ -169,6 +181,12 @@ impl VaultFactory {
     ///
     /// Parameters are passed as a `CreateVaultParams` struct to stay within
     /// Soroban's 10-argument limit per contract function.
+    ///
+    /// **Note:** `share_decimals` is required in `CreateVaultParams`. Common values:
+    /// - `6u32` for USDC/USDT-aligned assets
+    /// - `7u32` for SEP-41 convention (default recommendation)
+    /// - `8u32` for BTC-pegged tokens
+    /// - `18u32` for ETH/ERC-20 compatibility
     pub fn create_single_rwa_vault_batch(
         e: &Env,
         caller: Address,
@@ -183,6 +201,7 @@ impl VaultFactory {
             params.asset,
             params.name,
             params.symbol,
+            params.share_decimals,
             params.rwa_name,
             params.rwa_symbol,
             params.rwa_document_uri,
@@ -201,6 +220,9 @@ impl VaultFactory {
     ///
     /// The batch size is capped at `MAX_BATCH_SIZE` (10) to prevent gas
     /// exhaustion from unbounded contract deployments.
+    ///
+    /// **Note:** Each vault in the batch uses its own `share_decimals` value
+    /// from the corresponding `BatchVaultParams`.
     pub fn batch_create_vaults(
         e: &Env,
         caller: Address,
@@ -222,6 +244,7 @@ impl VaultFactory {
                 p.asset,
                 p.name,
                 p.symbol,
+                p.share_decimals,
                 p.rwa_name,
                 p.rwa_symbol,
                 p.rwa_document_uri,
@@ -511,6 +534,7 @@ impl VaultFactory {
         asset: Address,
         name: String,
         symbol: String,
+        share_decimals: u32,
         rwa_name: String,
         rwa_symbol: String,
         rwa_document_uri: String,
@@ -571,11 +595,18 @@ impl VaultFactory {
 
         // Build the InitParams struct for the vault constructor.
         // Using a struct keeps us under Soroban's 10-arg limit per function.
+        //
+        // Note: share_decimals is passed from the caller. The relationship between
+        // share_decimals and asset_decimals affects the share/asset ratio calculation:
+        // - For USDC-aligned assets (6 decimals): use share_decimals = 6
+        // - For SEP-41 convention (7 decimals): use share_decimals = 7
+        // - For BTC-pegged tokens (8 decimals): use share_decimals = 8
+        // - For ETH/ERC-20 compatibility (18 decimals): use share_decimals = 18
         let init_params = SingleRwaVaultInitParams {
             asset: vault_asset.clone(),
             share_name: name.clone(),
             share_symbol: symbol.clone(),
-            share_decimals: 6u32, // USDC convention
+            share_decimals,
             admin: admin.clone(),
             zkme_verifier: zkme.clone(),
             cooperator: coop.clone(),
