@@ -49,4 +49,5 @@ pub enum Error {
     NotInEmergency = 28,
     /// User has already claimed their emergency distribution.
     AlreadyClaimedEmergency = 29,
+    InvalidDepositLimits = 30,
 }
