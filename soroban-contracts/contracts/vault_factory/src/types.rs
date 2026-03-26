@@ -73,3 +73,28 @@ pub struct BatchVaultParams {
 /// Parameters for `create_single_rwa_vault_full`.
 /// Identical fields to BatchVaultParams but named separately for clarity.
 pub type CreateVaultParams = BatchVaultParams;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Role-Based Access Control
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Granular operator role for on-chain access control.
+///
+/// `FullOperator` is the backward-compatible superrole equivalent to the old
+/// boolean `Operator` flag.  Additional roles can be granted for fine-grained
+/// permissions over vault creation and factory management.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Role {
+    /// Can call `distribute_yield` on managed vaults.
+    YieldOperator,
+    /// Can call vault lifecycle management functions.
+    LifecycleManager,
+    /// Can call KYC and compliance functions.
+    ComplianceOfficer,
+    /// Can call `pause` and `emergency_withdraw` on managed vaults.
+    TreasuryManager,
+    /// Superrole: grants every role check.  Backward-compatible with the old
+    /// binary `Operator` flag — can create vaults and manage the factory.
+    FullOperator,
+}

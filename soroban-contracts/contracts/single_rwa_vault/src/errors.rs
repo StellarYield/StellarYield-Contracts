@@ -47,4 +47,8 @@ pub enum Error {
     VaultNotEmpty = 27,
     /// Shares are still within the lock-up period and cannot be transferred.
     SharesLocked = 28,
+    /// Vault is not in Emergency state.
+    NotInEmergency = 28,
+    /// User has already claimed their emergency distribution.
+    AlreadyClaimedEmergency = 29,
 }

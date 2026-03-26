@@ -4,7 +4,7 @@
 
 use soroban_sdk::{symbol_short, Address, Env, String};
 
-use crate::types::VaultState;
+use crate::types::{Role, VaultState};
 
 pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
     e.events().publish((symbol_short!("zkme_upd"),), (old, new));
@@ -39,6 +39,16 @@ pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
 pub fn emit_operator_updated(e: &Env, operator: Address, status: bool) {
     e.events()
         .publish((symbol_short!("op_upd"), operator), status);
+}
+
+/// Emitted when the admin grants a role to an address.
+pub fn emit_role_granted(e: &Env, addr: Address, role: Role) {
+    e.events().publish((symbol_short!("role_grt"), addr), role);
+}
+
+/// Emitted when the admin revokes a role from an address.
+pub fn emit_role_revoked(e: &Env, addr: Address, role: Role) {
+    e.events().publish((symbol_short!("role_rvk"), addr), role);
 }
 
 pub fn emit_emergency_action(e: &Env, paused: bool, reason: String) {
@@ -135,6 +145,21 @@ pub fn emit_admin_transferred(e: &Env, old_admin: Address, new_admin: Address) {
         .publish((symbol_short!("adm_xfr"),), (old_admin, new_admin));
 }
 
+/// Emitted by `set_rwa_details`, `set_rwa_document_uri`, or `set_expected_apy`.
+pub fn emit_rwa_details_updated(
+    e: &Env,
+    name: String,
+    symbol: String,
+    document_uri: String,
+    category: String,
+    expected_apy: u32,
+) {
+    e.events().publish(
+        (symbol_short!("rwa_upd"),),
+        (name, symbol, document_uri, category, expected_apy),
+    );
+}
+
 /// Emitted by `set_early_redemption_fee`.
 pub fn emit_early_redemption_fee_set(e: &Env, fee_bps: u32) {
     e.events().publish((symbol_short!("fee_set"),), fee_bps);
@@ -161,4 +186,16 @@ pub fn emit_funding_cancelled(e: &Env) {
 pub fn emit_refunded(e: &Env, user: Address, amount: i128) {
     e.events()
         .publish((symbol_short!("refunded"), user), amount);
+}
+
+/// Emitted by `emergency_enable_pro_rata` — vault enters Emergency state.
+pub fn emit_emergency_mode_enabled(e: &Env, balance: i128, total_supply: i128) {
+    e.events()
+        .publish((symbol_short!("emerg_on"),), (balance, total_supply));
+}
+
+/// Emitted by `emergency_claim` — user claimed their pro-rata share.
+pub fn emit_emergency_claimed(e: &Env, user: Address, amount: i128) {
+    e.events()
+        .publish((symbol_short!("emerg_clm"), user), amount);
 }

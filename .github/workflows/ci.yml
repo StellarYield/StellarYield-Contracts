@@ -31,7 +31,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown, wasm32v1-none
           components: clippy
       - name: Cache cargo registry & build
         uses: actions/cache@v4
@@ -43,6 +43,9 @@ jobs:
           key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
+      - name: Build WASM (required by vault_factory contractimport)
+        working-directory: soroban-contracts
+        run: cargo build --target wasm32-unknown-unknown --release -p single_rwa_vault
       - name: Run clippy
         working-directory: soroban-contracts
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -54,6 +57,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - name: Cache cargo registry & build
         uses: actions/cache@v4
         with:
@@ -64,6 +69,9 @@ jobs:
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-
+      - name: Build WASM (required by vault_factory contractimport)
+        working-directory: soroban-contracts
+        run: cargo build --target wasm32-unknown-unknown --release -p single_rwa_vault
       - name: Run tests
         working-directory: soroban-contracts
         run: cargo test --workspace
@@ -76,7 +84,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown,wasm32v1-none
+      - name: Install system dependencies for stellar-cli
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli
       - name: Cache cargo registry & build
@@ -101,7 +111,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Contract | Size | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
-          for wasm in $(find soroban-contracts/target/wasm32-unknown-unknown/release -name "*.wasm" -type f); do
+          for wasm in $(find soroban-contracts/target/wasm32v1-none/release -name "*.wasm" -type f); do
             size=$(wc -c < "$wasm" | tr -d ' ')
             name=$(basename "$wasm")
             size_kb=$((size / 1024))
@@ -116,7 +126,7 @@ jobs:
       - name: Check WASM size limits
         run: |
           failed=0
-          for wasm in $(find soroban-contracts/target/wasm32-unknown-unknown/release -name "*.wasm" -type f); do
+          for wasm in $(find soroban-contracts/target/wasm32v1-none/release -name "*.wasm" -type f); do
             size=$(wc -c < "$wasm" | tr -d ' ')
             name=$(basename "$wasm")
             limit=$((256 * 1024))

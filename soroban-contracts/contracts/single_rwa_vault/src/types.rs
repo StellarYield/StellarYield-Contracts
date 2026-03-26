@@ -56,6 +56,8 @@ pub enum VaultState {
     Closed,
     /// Funding failed (deadline passed without meeting target); refunds available.
     Cancelled,
+    /// Emergency mode: users can claim pro-rata share of remaining assets.
+    Emergency,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,6 +72,43 @@ pub struct RwaDetails {
     pub document_uri: String,
     pub category: String,
     pub expected_apy: u32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Role-Based Access Control
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Granular operator role for on-chain access control.
+///
+/// Assign the narrowest role each team member needs rather than handing out
+/// the full-operator key.  `FullOperator` is the backward-compatible superrole
+/// and passes every role check — it is equivalent to the old boolean
+/// `Operator` flag.
+///
+/// Role → permitted functions
+/// - `YieldOperator`     → `distribute_yield`
+/// - `LifecycleManager`  → `activate_vault`, `cancel_funding`, `mature_vault`,
+///                          `close_vault`, `set_maturity_date`, `set_deposit_limits`,
+///                          `set_funding_target`, `process_early_redemption`,
+///                          `reject_early_redemption`, `set_early_redemption_fee`
+/// - `ComplianceOfficer` → `set_zkme_verifier`, `set_cooperator`,
+///                          `set_blacklisted`, `set_transfer_requires_kyc`
+/// - `TreasuryManager`   → `pause`, `emergency_withdraw`
+/// - `FullOperator`      → all of the above (backward-compatible superrole)
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum Role {
+    /// Can call `distribute_yield` only.
+    YieldOperator,
+    /// Can call vault lifecycle management functions.
+    LifecycleManager,
+    /// Can call KYC and compliance functions.
+    ComplianceOfficer,
+    /// Can call `pause` and `emergency_withdraw`.
+    TreasuryManager,
+    /// Superrole: grants every role check.  Backward-compatible with the old
+    /// binary `Operator` flag.
+    FullOperator,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

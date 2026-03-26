@@ -15,7 +15,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env, String};
 
 use crate::errors::Error;
-use crate::types::{RedemptionRequest, VaultState};
+use crate::types::{RedemptionRequest, Role, VaultState};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -44,7 +44,9 @@ pub enum DataKey {
 
     // --- Admin / operators ---
     Admin,
-    Operator(Address),
+    /// Granular RBAC role assignment: (address, role) → bool.
+    /// Replaces the old binary `Operator(Address)` key.
+    Role(Address, Role),
 
     // --- zkMe ---
     ZkmeVerifier,
@@ -109,6 +111,11 @@ pub enum DataKey {
 
     // --- Transfer KYC gate ---
     TransferRequiresKyc,
+
+    // --- Emergency pro-rata distribution ---
+    EmergencyBalance,
+    HasClaimedEmergency(Address),
+    EmergencyTotalSupplySnapshot,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -301,19 +308,43 @@ instance_put!(put_redemption_counter, RedemptionCounter, u32);
 // Operator (instance storage — same lifetime as admin)
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub fn get_operator(e: &Env, addr: &Address) -> bool {
+// ─────────────────────────────────────────────────────────────────────────────
+// Granular RBAC helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns `true` when `addr` has been granted `role` in instance storage.
+pub fn get_role(e: &Env, addr: &Address, role: Role) -> bool {
     e.storage()
         .instance()
-        .get(&DataKey::Operator(addr.clone()))
+        .get(&DataKey::Role(addr.clone(), role))
         .unwrap_or(false)
 }
 
-pub fn put_operator(e: &Env, addr: Address, val: bool) {
+/// Grant (`val = true`) or revoke (`val = false`) `role` for `addr`.
+pub fn put_role(e: &Env, addr: Address, role: Role, val: bool) {
     if val {
-        e.storage().instance().set(&DataKey::Operator(addr), &val);
+        e.storage()
+            .instance()
+            .set(&DataKey::Role(addr, role), &true);
     } else {
-        e.storage().instance().remove(&DataKey::Operator(addr));
+        e.storage().instance().remove(&DataKey::Role(addr, role));
     }
+}
+
+// ─── Backward-compatible operator wrappers ───────────────────────────────────
+//
+// `set_operator` / `is_operator` on the public interface map to `FullOperator`.
+// Existing deployments and tooling that call these functions continue to work
+// without change; they effectively grant/revoke the superrole.
+
+/// Returns `true` when `addr` holds the `FullOperator` superrole.
+pub fn get_operator(e: &Env, addr: &Address) -> bool {
+    get_role(e, addr, Role::FullOperator)
+}
+
+/// Grant or revoke the `FullOperator` superrole for `addr`.
+pub fn put_operator(e: &Env, addr: Address, val: bool) {
+    put_role(e, addr, Role::FullOperator, val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -627,4 +658,47 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
         BALANCE_LIFETIME_THRESHOLD,
         BALANCE_BUMP_AMOUNT,
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emergency pro-rata distribution (instance + persistent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub fn get_emergency_balance(e: &Env) -> i128 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencyBalance)
+        .unwrap_or(0)
+}
+
+pub fn put_emergency_balance(e: &Env, val: i128) {
+    e.storage().instance().set(&DataKey::EmergencyBalance, &val);
+}
+
+pub fn get_emergency_total_supply_snapshot(e: &Env) -> i128 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EmergencyTotalSupplySnapshot)
+        .unwrap_or(0)
+}
+
+pub fn put_emergency_total_supply_snapshot(e: &Env, val: i128) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EmergencyTotalSupplySnapshot, &val);
+}
+
+pub fn get_has_claimed_emergency(e: &Env, addr: &Address) -> bool {
+    e.storage()
+        .persistent()
+        .get(&DataKey::HasClaimedEmergency(addr.clone()))
+        .unwrap_or(false)
+}
+
+pub fn put_has_claimed_emergency(e: &Env, addr: &Address, val: bool) {
+    let key = DataKey::HasClaimedEmergency(addr.clone());
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }

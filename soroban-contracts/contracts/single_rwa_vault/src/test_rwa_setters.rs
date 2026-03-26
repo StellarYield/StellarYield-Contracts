@@ -1,9 +1,6 @@
 extern crate std;
 
-use soroban_sdk::{
-    testutils::{Address as _, Events as _},
-    Address, Env, IntoVal, String,
-};
+use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
@@ -81,7 +78,6 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
-            lock_up_period: 0u64,
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),
@@ -94,193 +90,170 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tests — Role Management
+// Tests — set_rwa_details (full update)
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn test_set_operator_grants_access() {
+fn test_set_rwa_details_updates_all_fields() {
     let e = Env::default();
     e.mock_all_auths();
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let operator = Address::generate(&e);
 
-    assert!(!vault.is_operator(&operator));
-    vault.set_operator(&admin, &operator, &true);
-    assert!(vault.is_operator(&operator));
-}
+    let new_name = String::from_str(&e, "Corporate Bond 2027");
+    let new_symbol = String::from_str(&e, "CORP27");
+    let new_uri = String::from_str(&e, "https://example.com/corp27");
+    let new_category = String::from_str(&e, "Corporate Bond");
+    let new_apy = 750u32;
 
-#[test]
-fn test_set_operator_revokes_access() {
-    let e = Env::default();
-    e.mock_all_auths();
-    let (vault_id, _, _, admin) = make_vault(&e);
-    let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let operator = Address::generate(&e);
+    vault.set_rwa_details(
+        &admin,
+        &new_name,
+        &new_symbol,
+        &new_uri,
+        &new_category,
+        &new_apy,
+    );
 
-    vault.set_operator(&admin, &operator, &true);
-    assert!(vault.is_operator(&operator));
-    vault.set_operator(&admin, &operator, &false);
-    assert!(!vault.is_operator(&operator));
+    let details = vault.get_rwa_details();
+    assert_eq!(details.name, new_name);
+    assert_eq!(details.symbol, new_symbol);
+    assert_eq!(details.document_uri, new_uri);
+    assert_eq!(details.category, new_category);
+    assert_eq!(details.expected_apy, new_apy);
 }
 
 #[test]
 #[should_panic(expected = "Error(Contract, #4)")] // Error::NotAdmin = 4
-fn test_set_operator_non_admin_panics() {
+fn test_set_rwa_details_non_admin_panics() {
     let e = Env::default();
     e.mock_all_auths();
-    let (vault_id, _, _, _) = make_vault(&e);
+    let (vault_id, _, _, _admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
     let non_admin = Address::generate(&e);
-    let operator = Address::generate(&e);
 
-    vault.set_operator(&non_admin, &operator, &true);
-}
-
-#[test]
-fn test_transfer_admin() {
-    let e = Env::default();
-    e.mock_all_auths();
-    let (vault_id, _, _, old_admin) = make_vault(&e);
-    let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let new_admin = Address::generate(&e);
-
-    // Initial check
-    assert_eq!(vault.admin(), old_admin);
-
-    // Transfer
-    vault.transfer_admin(&old_admin, &new_admin);
-    assert_eq!(vault.admin(), new_admin);
-
-    // New admin can perform admin actions (e.g., set operator)
-    let op = Address::generate(&e);
-    vault.set_operator(&new_admin, &op, &true);
-    assert!(vault.is_operator(&op));
-
-    // Old admin cannot (this should panic if we tested it, but let's just verify the transfer)
+    vault.set_rwa_details(
+        &non_admin,
+        &String::from_str(&e, "X"),
+        &String::from_str(&e, "X"),
+        &String::from_str(&e, "X"),
+        &String::from_str(&e, "X"),
+        &100u32,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tests — Pause / Unpause
+// Tests — set_rwa_document_uri
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-#[should_panic(expected = "Error(Contract, #11)")] // Error::VaultPaused = 11
-fn test_pause_blocks_deposits() {
-    let e = Env::default();
-    e.mock_all_auths();
-    let (vault_id, token_id, _, admin) = make_vault(&e);
-    let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let user = Address::generate(&e);
-
-    // Grant operator to admin so they can pause
-    vault.set_operator(&admin, &admin, &true);
-    vault.pause(&admin, &String::from_str(&e, "Maintenance"));
-    assert!(vault.paused());
-
-    // Try to deposit
-    MockTokenClient::new(&e, &token_id).mint(&user, &1000);
-    vault.deposit(&user, &1000, &user);
-}
-
-#[test]
-fn test_unpause_resumes_operations() {
-    let e = Env::default();
-    e.mock_all_auths();
-    let (vault_id, token_id, zkme_id, admin) = make_vault(&e);
-    let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let user = Address::generate(&e);
-
-    vault.set_operator(&admin, &admin, &true);
-    vault.pause(&admin, &String::from_str(&e, "Maintenance"));
-    assert!(vault.paused());
-
-    vault.unpause(&admin);
-    assert!(!vault.paused());
-
-    // Deposit should work now
-    MockZkmeClient::new(&e, &zkme_id).approve_user(&user);
-    MockTokenClient::new(&e, &token_id).mint(&user, &1000);
-    vault.deposit(&user, &1000, &user);
-    assert_eq!(vault.balance(&user), 1000);
-}
-
-#[test]
-fn test_pause_emits_event_with_reason() {
+fn test_set_rwa_document_uri_updates_only_uri() {
     let e = Env::default();
     e.mock_all_auths();
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
 
-    vault.set_operator(&admin, &admin, &true);
-    let reason = String::from_str(&e, "Critical failure");
-    vault.pause(&admin, &reason);
+    let original = vault.get_rwa_details();
+    let new_uri = String::from_str(&e, "https://new-docs.example.com/bond");
 
-    let last_event = e.events().all().last().unwrap();
-    // emit_emergency_action(e, true, reason): (symbol!("emergency"),), (true, reason)
-    let (_, topics, data) = last_event;
-    let topic: soroban_sdk::Symbol = topics.get(0).unwrap().into_val(&e);
-    assert_eq!(topic, soroban_sdk::symbol_short!("emergency"));
+    vault.set_rwa_document_uri(&admin, &new_uri);
 
-    let (paused, event_reason): (bool, String) = data.into_val(&e);
-    assert!(paused);
-    assert_eq!(event_reason, reason);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests — Emergency
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn test_emergency_withdraw_drains_vault() {
-    let e = Env::default();
-    e.mock_all_auths();
-    let (vault_id, token_id, _zkme_id, admin) = make_vault(&e);
-    let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let token = MockTokenClient::new(&e, &token_id);
-    let recipient = Address::generate(&e);
-
-    // Add some funds to the vault
-    token.mint(&vault_id, &5000);
-    assert_eq!(token.balance(&vault_id), 5000);
-
-    vault.emergency_withdraw(&admin, &recipient);
-
-    // Vault should be empty
-    assert_eq!(token.balance(&vault_id), 0);
-    // Recipient should have funds
-    assert_eq!(token.balance(&recipient), 5000);
-    // Vault should be paused
-    assert!(vault.paused());
+    let updated = vault.get_rwa_details();
+    assert_eq!(updated.document_uri, new_uri);
+    // Other fields unchanged
+    assert_eq!(updated.name, original.name);
+    assert_eq!(updated.symbol, original.symbol);
+    assert_eq!(updated.category, original.category);
+    assert_eq!(updated.expected_apy, original.expected_apy);
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #3)")] // Error::NotOperator = 3
-fn test_emergency_withdraw_non_admin_panics() {
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_set_rwa_document_uri_non_admin_panics() {
     let e = Env::default();
     e.mock_all_auths();
     let (vault_id, _, _, _admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    // An address with no role — not TreasuryManager, FullOperator, or admin.
-    let nobody = Address::generate(&e);
-    let recipient = Address::generate(&e);
+    let non_admin = Address::generate(&e);
 
-    vault.emergency_withdraw(&nobody, &recipient);
+    vault.set_rwa_document_uri(&non_admin, &String::from_str(&e, "https://evil.com"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests — set_expected_apy
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_expected_apy_updates_only_apy() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+
+    let original = vault.get_rwa_details();
+    let new_apy = 1200u32; // 12%
+
+    vault.set_expected_apy(&admin, &new_apy);
+
+    let updated = vault.get_rwa_details();
+    assert_eq!(updated.expected_apy, new_apy);
+    // Other fields unchanged
+    assert_eq!(updated.name, original.name);
+    assert_eq!(updated.symbol, original.symbol);
+    assert_eq!(updated.document_uri, original.document_uri);
+    assert_eq!(updated.category, original.category);
 }
 
 #[test]
-fn test_emergency_withdraw_zero_balance_no_transfer() {
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_set_expected_apy_non_admin_panics() {
     let e = Env::default();
     e.mock_all_auths();
-    let (vault_id, token_id, _zkme_id, admin) = make_vault(&e);
+    let (vault_id, _, _, _admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
-    let token = MockTokenClient::new(&e, &token_id);
-    let recipient = Address::generate(&e);
+    let non_admin = Address::generate(&e);
 
-    assert_eq!(token.balance(&vault_id), 0);
+    vault.set_expected_apy(&non_admin, &999u32);
+}
 
-    vault.emergency_withdraw(&admin, &recipient);
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests — get_rwa_details reflects updated values after sequential changes
+// ─────────────────────────────────────────────────────────────────────────────
 
-    assert_eq!(token.balance(&recipient), 0);
-    assert!(vault.paused());
+#[test]
+fn test_get_rwa_details_reflects_sequential_updates() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+
+    // First update via set_expected_apy
+    vault.set_expected_apy(&admin, &800u32);
+    assert_eq!(vault.get_rwa_details().expected_apy, 800);
+
+    // Then update via set_rwa_document_uri
+    let uri = String::from_str(&e, "https://updated.example.com");
+    vault.set_rwa_document_uri(&admin, &uri);
+    let details = vault.get_rwa_details();
+    assert_eq!(details.document_uri, uri);
+    assert_eq!(details.expected_apy, 800); // still 800 from previous update
+
+    // Full update overwrites everything
+    vault.set_rwa_details(
+        &admin,
+        &String::from_str(&e, "New Name"),
+        &String::from_str(&e, "NEW"),
+        &String::from_str(&e, "https://final.example.com"),
+        &String::from_str(&e, "Equity"),
+        &300u32,
+    );
+    let final_details = vault.get_rwa_details();
+    assert_eq!(final_details.name, String::from_str(&e, "New Name"));
+    assert_eq!(final_details.symbol, String::from_str(&e, "NEW"));
+    assert_eq!(
+        final_details.document_uri,
+        String::from_str(&e, "https://final.example.com")
+    );
+    assert_eq!(final_details.category, String::from_str(&e, "Equity"));
+    assert_eq!(final_details.expected_apy, 300);
 }

@@ -15,4 +15,4 @@ soroban-sdk = { version = "22.0.0", features = ["testutils"] }
 single_rwa_vault = { path = "../single_rwa_vault", features = ["testutils"] }
 
 [features]
-testutils = ["soroban-sdk/testutils", "single_rwa_vault/testutils"]
+testutils = ["soroban-sdk/testutils"]

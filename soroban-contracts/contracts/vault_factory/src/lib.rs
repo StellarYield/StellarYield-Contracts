@@ -339,6 +339,38 @@ impl VaultFactory {
         bump_instance(e);
     }
 
+    /// Grant `role` to `addr`.  Only the admin may grant roles.
+    ///
+    /// `FullOperator` is the backward-compatible superrole that passes every
+    /// role check (equivalent to the old `set_operator(..., true)`).
+    pub fn grant_role(e: &Env, caller: Address, addr: Address, role: Role) {
+        caller.require_auth();
+        require_admin(e, &caller);
+        put_role(e, addr.clone(), role.clone(), true);
+        emit_role_granted(e, addr, role);
+        bump_instance(e);
+    }
+
+    /// Revoke `role` from `addr`.  Only the admin may revoke roles.
+    pub fn revoke_role(e: &Env, caller: Address, addr: Address, role: Role) {
+        caller.require_auth();
+        require_admin(e, &caller);
+        put_role(e, addr.clone(), role.clone(), false);
+        emit_role_revoked(e, addr, role);
+        bump_instance(e);
+    }
+
+    /// Returns `true` when `addr` holds `role`, the `FullOperator` superrole,
+    /// or is the admin.
+    pub fn has_role(e: &Env, addr: Address, role: Role) -> bool {
+        if addr == get_admin(e) {
+            return true;
+        }
+        get_role(e, &addr, Role::FullOperator) || get_role(e, &addr, role)
+    }
+
+    /// Backward-compatible: grants or revokes the `FullOperator` superrole.
+    /// Prefer `grant_role` / `revoke_role` for new integrations.
     pub fn set_operator(e: &Env, caller: Address, operator: Address, status: bool) {
         caller.require_auth();
         require_admin(e, &caller);
@@ -521,10 +553,22 @@ fn require_admin(e: &Env, caller: &Address) {
     }
 }
 
-fn require_operator_or_admin(e: &Env, caller: &Address) {
-    if !get_operator(e, caller) && *caller != get_admin(e) {
+/// Passes when `caller` holds `role`, the `FullOperator` superrole, or is admin.
+fn require_role(e: &Env, caller: &Address, role: Role) {
+    if *caller == get_admin(e) {
+        return;
+    }
+    if get_role(e, caller, Role::FullOperator) {
+        return;
+    }
+    if !get_role(e, caller, role) {
         panic_with_error!(e, Error::NotAuthorized);
     }
+}
+
+fn require_operator_or_admin(e: &Env, caller: &Address) {
+    // Vault creation requires FullOperator or admin (backward-compatible).
+    require_role(e, caller, Role::FullOperator);
 }
 
 fn panic_not_found(e: &Env) -> ! {
