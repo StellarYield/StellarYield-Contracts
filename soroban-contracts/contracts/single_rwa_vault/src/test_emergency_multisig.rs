@@ -84,8 +84,7 @@ impl Ctx {
 
     /// Mint mock tokens directly into the vault contract address.
     fn fund_vault(&self, amount: i128) {
-        MockTokenClient::new(&self.env, &self.token_id)
-            .mint(&self.vault_id, &amount);
+        MockTokenClient::new(&self.env, &self.token_id).mint(&self.vault_id, &amount);
     }
 }
 
@@ -122,7 +121,12 @@ fn setup() -> Ctx {
         },),
     );
 
-    Ctx { env, vault_id, token_id, admin }
+    Ctx {
+        env,
+        vault_id,
+        token_id,
+        admin,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

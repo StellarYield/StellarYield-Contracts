@@ -32,7 +32,6 @@ fn test_activate_vault_transitions_to_active() {
 
     // 4. Verify state and event
     assert_eq!(v.vault_state(), VaultState::Active);
-
 }
 
 #[test]
@@ -55,7 +54,6 @@ fn test_mature_vault_transitions_to_matured() {
 
     // 4. Verify state and event
     assert_eq!(v.vault_state(), VaultState::Matured);
-
 }
 
 #[test]
@@ -67,7 +65,6 @@ fn test_set_maturity_date() {
     v.set_maturity_date(&ctx.operator, &new_maturity);
 
     assert_eq!(v.maturity_date(), new_maturity);
-
 }
 
 #[test]

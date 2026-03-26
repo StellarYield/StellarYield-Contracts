@@ -19,13 +19,13 @@ mod test_claim_cursor;
 #[cfg(test)]
 mod test_convert_erc4626;
 #[cfg(test)]
+mod test_emergency_multisig;
+#[cfg(test)]
 mod test_epoch_history;
 #[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
 mod test_lifecycle;
-#[cfg(test)]
-mod test_emergency_multisig;
 
 pub use crate::types::*;
 
@@ -1540,12 +1540,7 @@ impl SingleRWAVault {
     ///
     /// Once called, the single-admin `emergency_withdraw` fallback is disabled.
     /// Can be called again by the admin to rotate signers or change the threshold.
-    pub fn set_emergency_signers(
-        e: &Env,
-        caller: Address,
-        signers: Vec<Address>,
-        threshold: u32,
-    ) {
+    pub fn set_emergency_signers(e: &Env, caller: Address, signers: Vec<Address>, threshold: u32) {
         caller.require_auth();
         require_admin(e, &caller);
 
@@ -1672,7 +1667,6 @@ impl SingleRWAVault {
         bump_instance(e);
         release_lock(e);
     }
-
 
     /// Enable emergency pro-rata distribution mode.
     ///
@@ -1905,7 +1899,13 @@ impl SingleRWAVault {
         if allowance_data.amount < amount {
             panic_with_error!(e, Error::InsufficientAllowance);
         }
-        put_allowance(e, from.clone(), spender.clone(), allowance_data.amount - amount, allowance_data.expiration_ledger);
+        put_allowance(
+            e,
+            from.clone(),
+            spender.clone(),
+            allowance_data.amount - amount,
+            allowance_data.expiration_ledger,
+        );
         spend_share_balance(e, &from, amount);
         receive_share_balance(e, &to, amount);
         emit_transfer(e, from, to, amount);
@@ -1927,7 +1927,13 @@ impl SingleRWAVault {
         if allowance_data.amount < amount {
             panic_with_error!(e, Error::InsufficientAllowance);
         }
-        put_allowance(e, from.clone(), spender.clone(), allowance_data.amount - amount, allowance_data.expiration_ledger);
+        put_allowance(
+            e,
+            from.clone(),
+            spender.clone(),
+            allowance_data.amount - amount,
+            allowance_data.expiration_ledger,
+        );
         // Snapshot before balance change so epoch yield is attributed to pre-burn shares.
         update_user_snapshot(e, &from);
         _burn(e, &from, amount);

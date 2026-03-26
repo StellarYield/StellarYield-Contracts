@@ -85,10 +85,7 @@ fn test_vault_config_matches_init_params() {
     assert_eq!(v.maturity_date(), ctx.params.maturity_date);
     assert_eq!(v.min_deposit(), ctx.params.min_deposit);
     assert_eq!(v.max_user_dep(), ctx.params.max_user_dep);
-    assert_eq!(
-        v.redem_fee_bps(),
-        ctx.params.redem_fee_bps
-    );
+    assert_eq!(v.redem_fee_bps(), ctx.params.redem_fee_bps);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

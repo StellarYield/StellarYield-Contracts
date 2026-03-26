@@ -249,12 +249,12 @@ fn default_params(
         admin,
         zkme_verifier,
         cooperator,
-        funding_target: 100_000_000i128,    // 100 USDC (6 decimals)
-        maturity_date: 9_999_999_999u64,    // far future
+        funding_target: 100_000_000i128, // 100 USDC (6 decimals)
+        maturity_date: 9_999_999_999u64, // far future
         fund_deadline: 9_999_999_999u64, // far future (no effective deadline by default)
-        min_deposit: 1_000_000i128,         // 1 USDC
-        max_user_dep: 0i128,        // unlimited
-        redem_fee_bps: 200u32,   // 2 %
+        min_deposit: 1_000_000i128,      // 1 USDC
+        max_user_dep: 0i128,             // unlimited
+        redem_fee_bps: 200u32,           // 2 %
         rwa_name: String::from_str(env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(env, "USTB26"),
         rwa_document_uri: String::from_str(env, "https://example.com/ustb26"),

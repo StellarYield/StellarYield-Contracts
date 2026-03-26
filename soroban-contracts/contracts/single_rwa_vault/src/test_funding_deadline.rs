@@ -56,8 +56,8 @@ fn deploy(fund_deadline: u64) -> Ctx {
         funding_target: 100_000_000i128, // 100 USDC
         maturity_date: 9_999_999_999u64,
         fund_deadline,
-        min_deposit: 1_000_000i128,  // 1 USDC
-        max_user_dep: 0i128, // unlimited
+        min_deposit: 1_000_000i128, // 1 USDC
+        max_user_dep: 0i128,        // unlimited
         redem_fee_bps: 200u32,
         rwa_name: String::from_str(&env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(&env, "USTB26"),

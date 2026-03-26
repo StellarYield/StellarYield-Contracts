@@ -287,9 +287,7 @@ pub fn get_activation_timestamp(e: &Env) -> u64 {
         .unwrap_or(0)
 }
 pub fn put_activation_timestamp(e: &Env, val: u64) {
-    e.storage()
-        .instance()
-        .set(&StateKey::ActivateTime, &val);
+    e.storage().instance().set(&StateKey::ActivateTime, &val);
 }
 
 // Epoch / yield (global)
@@ -403,9 +401,7 @@ pub fn get_epoch_time(e: &Env, epoch: u32) -> u64 {
         .unwrap_or(0)
 }
 pub fn put_epoch_time(e: &Env, epoch: u32, val: u64) {
-    e.storage()
-        .persistent()
-        .set(&EpochKey::EpTime(epoch), &val);
+    e.storage().persistent().set(&EpochKey::EpTime(epoch), &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -498,13 +494,10 @@ pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amou
 /// Stores a fresh allowance with an on-chain `expiration_ledger` and sets the
 pub fn get_allowance(e: &Env, owner: Address, spender: Address) -> AllowData {
     let key = UserKey::Allow(owner, spender);
-    e.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(AllowData {
-            amount: 0,
-            expiration_ledger: 0,
-        })
+    e.storage().persistent().get(&key).unwrap_or(AllowData {
+        amount: 0,
+        expiration_ledger: 0,
+    })
 }
 
 pub fn put_allowance(
@@ -523,11 +516,9 @@ pub fn put_allowance(
         expiration_ledger,
     };
     e.storage().persistent().set(&key, &val);
-    e.storage().persistent().extend_ttl(
-        &key,
-        BALANCE_LIFETIME_THRESHOLD,
-        BALANCE_BUMP_AMOUNT,
-    );
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -543,11 +534,9 @@ pub fn get_user_deposited(e: &Env, addr: &Address) -> i128 {
 pub fn put_user_deposited(e: &Env, addr: &Address, val: i128) {
     let key = UserKey::UDep(addr.clone());
     e.storage().persistent().set(&key, &val);
-    e.storage().persistent().extend_ttl(
-        &key,
-        BALANCE_LIFETIME_THRESHOLD,
-        BALANCE_BUMP_AMOUNT,
-    );
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 // User-specific yield claim status
@@ -682,9 +671,7 @@ pub fn get_transfer_requires_kyc(e: &Env) -> bool {
 }
 
 pub fn put_transfer_requires_kyc(e: &Env, val: bool) {
-    e.storage()
-        .instance()
-        .set(&StateKey::TransferKyc, &val);
+    e.storage().instance().set(&StateKey::TransferKyc, &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -732,9 +719,7 @@ pub fn get_emergency_total_supply_snapshot(e: &Env) -> i128 {
 }
 
 pub fn put_emergency_total_supply_snapshot(e: &Env, val: i128) {
-    e.storage()
-        .instance()
-        .set(&StateKey::EmTotalSupSnap, &val);
+    e.storage().instance().set(&StateKey::EmTotalSupSnap, &val);
 }
 
 pub fn get_has_claimed_emergency(e: &Env, addr: &Address) -> bool {
@@ -762,16 +747,11 @@ pub fn has_emergency_signers(e: &Env) -> bool {
 }
 
 pub fn get_emergency_signers(e: &Env) -> Vec<Address> {
-    e.storage()
-        .instance()
-        .get(&ConfigKey::EmSigners)
-        .unwrap()
+    e.storage().instance().get(&ConfigKey::EmSigners).unwrap()
 }
 
 pub fn put_emergency_signers(e: &Env, signers: Vec<Address>) {
-    e.storage()
-        .instance()
-        .set(&ConfigKey::EmSigners, &signers);
+    e.storage().instance().set(&ConfigKey::EmSigners, &signers);
 }
 
 pub fn get_emergency_threshold(e: &Env) -> u32 {
@@ -795,15 +775,11 @@ pub fn get_emergency_proposal_counter(e: &Env) -> u32 {
 }
 
 pub fn put_emergency_proposal_counter(e: &Env, val: u32) {
-    e.storage()
-        .instance()
-        .set(&StateKey::EmPropCount, &val);
+    e.storage().instance().set(&StateKey::EmPropCount, &val);
 }
 
 pub fn get_emergency_proposal(e: &Env, id: u32) -> Option<EmergProposal> {
-    e.storage()
-        .persistent()
-        .get(&ProposalKey::EmergProp(id))
+    e.storage().persistent().get(&ProposalKey::EmergProp(id))
 }
 
 pub fn put_emergency_proposal(e: &Env, id: u32, prop: &EmergProposal) {
