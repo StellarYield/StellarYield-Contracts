@@ -6,11 +6,11 @@ use soroban_sdk::{
     Address, BytesN, Env, IntoVal, String, Vec,
 };
 
+use crate::test::single_rwa_vault::VaultState;
 use crate::{
     types::{BatchVaultParams, VaultType},
     VaultFactory, VaultFactoryClient,
 };
-use crate::test::single_rwa_vault::VaultState;
 
 mod single_rwa_vault {
     soroban_sdk::contractimport!(
@@ -24,7 +24,7 @@ const VAULT_WASM: &[u8] =
 fn setup_factory(
     e: &Env,
 ) -> (
-    VaultFactoryClient,
+    VaultFactoryClient<'_>,
     Address,
     Address,
     Address,
@@ -270,7 +270,7 @@ fn test_full_vault_lifecycle_end_to_end() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let (factory, admin, asset_id, zkme_id, coop_id, _) = setup_factory(&e);
+    let (factory, admin, _asset_id, _zkme_id, _coop_id, _) = setup_factory(&e);
 
     // Deploy mock USDC token
     let usdc_id = e.register(IntegrationMockUsdc, ());
@@ -298,7 +298,7 @@ fn test_full_vault_lifecycle_end_to_end() {
         min_deposit: 10_000_000i128,     // 10 USDC
         max_deposit_per_user: 200_000_000i128, // 200 USDC
         early_redemption_fee_bps: 200u32, // 2%
-        share_decimals: 6u32, // USDC has 6 decimals
+        share_decimals: 6u32,            // USDC has 6 decimals
     };
 
     let vault_addr = factory.create_single_rwa_vault_full(&admin, &vault_params);

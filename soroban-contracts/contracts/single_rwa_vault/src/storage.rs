@@ -549,7 +549,11 @@ pub fn get_user_redemption_requests(e: &Env, user: &Address) -> Vec<u32> {
     let opt: Option<Vec<u32>> = e.storage().persistent().get(&key);
     match opt {
         Some(list) => {
-            e.storage().persistent().extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+            e.storage().persistent().extend_ttl(
+                &key,
+                BALANCE_LIFETIME_THRESHOLD,
+                BALANCE_BUMP_AMOUNT,
+            );
             list
         }
         None => Vec::new(e),
@@ -559,7 +563,9 @@ pub fn get_user_redemption_requests(e: &Env, user: &Address) -> Vec<u32> {
 pub fn put_user_redemption_requests(e: &Env, user: &Address, ids: Vec<u32>) {
     let key = DataKey::UserRedemptionRequests(user.clone());
     e.storage().persistent().set(&key, &ids);
-    e.storage().persistent().extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_escrowed_shares(e: &Env, addr: &Address) -> i128 {

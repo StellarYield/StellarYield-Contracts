@@ -1,9 +1,6 @@
 extern crate std;
 
-use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, Env,
-};
+use soroban_sdk::Address;
 
 use crate::test_helpers::{mint_usdc, setup, TestContext};
 
@@ -20,7 +17,7 @@ fn fund_and_approve(ctx: &TestContext, user: &Address, amount: i128) {
 fn test_early_redemption_escrow_and_transfer_lock() {
     let ctx = setup();
     let v = ctx.vault();
-    let e = &ctx.env;
+    let _e = &ctx.env;
 
     // 1. Setup user with shares
     let deposit_amount = 10_000_000i128; // 10 USDC
@@ -55,7 +52,7 @@ fn test_early_redemption_escrow_and_transfer_lock() {
 fn test_early_redemption_process_burns_from_escrow() {
     let ctx = setup();
     let v = ctx.vault();
-    let e = &ctx.env;
+    let _e = &ctx.env;
 
     // Setup
     let deposit_amount = 10_000_000i128;
@@ -87,7 +84,7 @@ fn test_early_redemption_process_burns_from_escrow() {
 fn test_cannot_cancel_twice() {
     let ctx = setup();
     let v = ctx.vault();
-    let e = &ctx.env;
+    let _e = &ctx.env;
 
     fund_and_approve(&ctx, &ctx.user, 10_000_000);
     v.deposit(&ctx.user, &10_000_000i128, &ctx.user);
@@ -103,7 +100,7 @@ fn test_cannot_cancel_twice() {
 fn test_cannot_process_cancelled() {
     let ctx = setup();
     let v = ctx.vault();
-    let e = &ctx.env;
+    let _e = &ctx.env;
 
     fund_and_approve(&ctx, &ctx.user, 10_000_000);
     v.deposit(&ctx.user, &10_000_000i128, &ctx.user);

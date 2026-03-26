@@ -12,7 +12,9 @@ mod tests;
 
 pub use crate::types::*;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec, xdr::ToXdr};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, xdr::ToXdr, Address, BytesN, Env, String, Vec,
+};
 
 use crate::errors::Error;
 use crate::events::*;
@@ -455,7 +457,10 @@ impl VaultFactory {
         let mut salt_bytes = soroban_sdk::Bytes::new(e);
         salt_bytes.append(&soroban_sdk::Bytes::from_slice(e, &counter.to_be_bytes()));
         salt_bytes.append(&name.clone().to_xdr(e));
-        salt_bytes.append(&soroban_sdk::Bytes::from_slice(e, &e.ledger().timestamp().to_be_bytes()));
+        salt_bytes.append(&soroban_sdk::Bytes::from_slice(
+            e,
+            &e.ledger().timestamp().to_be_bytes(),
+        ));
         let salt = e.crypto().sha256(&salt_bytes);
 
         // Build the InitParams struct for the vault constructor.

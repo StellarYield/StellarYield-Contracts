@@ -199,7 +199,7 @@ fn test_user_redemption_requests_query_and_counter() {
     // Query by ID
     let r1 = vault.get_redemption_request(&req1);
     assert_eq!(r1.shares, shares);
-    assert_eq!(r1.processed, false);
+    assert!(!r1.processed);
 
     let r2 = vault.get_redemption_request(&req2);
     assert_eq!(r2.shares, shares2);

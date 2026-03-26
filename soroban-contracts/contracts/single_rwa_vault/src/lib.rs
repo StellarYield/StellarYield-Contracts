@@ -1615,13 +1615,13 @@ mod test {
 
         let user = Address::generate(&e);
 
-        assert_eq!(client.is_blacklisted(&user), false);
+        assert!(!client.is_blacklisted(&user));
 
         client.set_blacklisted(&admin, &user, &true);
-        assert_eq!(client.is_blacklisted(&user), true);
+        assert!(client.is_blacklisted(&user));
 
         client.set_blacklisted(&admin, &user, &false);
-        assert_eq!(client.is_blacklisted(&user), false);
+        assert!(!client.is_blacklisted(&user));
     }
 
     #[test]

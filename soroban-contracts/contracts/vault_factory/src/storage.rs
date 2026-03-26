@@ -80,13 +80,9 @@ pub fn get_operator(e: &Env, addr: &Address) -> bool {
 }
 pub fn put_operator(e: &Env, addr: Address, val: bool) {
     if val {
-        e.storage()
-            .instance()
-            .set(&DataKey::Operator(addr), &val);
+        e.storage().instance().set(&DataKey::Operator(addr), &val);
     } else {
-        e.storage()
-            .instance()
-            .remove(&DataKey::Operator(addr));
+        e.storage().instance().remove(&DataKey::Operator(addr));
     }
 }
 

@@ -319,7 +319,8 @@ fn test_withdraw_zero_assets_panics() {
     activate(&ctx);
 
     // Must panic — zero assets
-    ctx.vault().withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
+    ctx.vault()
+        .withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

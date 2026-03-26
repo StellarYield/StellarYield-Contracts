@@ -24,7 +24,7 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         admin: admin.clone(),
         zkme_verifier: admin.clone(),
         cooperator: admin.clone(),
-        funding_target: 1_000_000_0000000_i128,
+        funding_target: 10_000_000_000_000_i128,
         maturity_date: 9_999_999_999_u64,
         min_deposit: 1_000_i128,
         max_deposit_per_user: 0_i128,

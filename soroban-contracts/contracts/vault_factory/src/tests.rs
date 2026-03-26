@@ -19,7 +19,7 @@ use crate::{
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Deploy and initialise a VaultFactory with a dummy WASM hash.
-fn setup_factory(e: &Env) -> (VaultFactoryClient, Address) {
+fn setup_factory(e: &Env) -> (VaultFactoryClient<'_>, Address) {
     let admin = Address::generate(e);
     let asset = Address::generate(e);
     let zkme = Address::generate(e);
@@ -46,7 +46,7 @@ fn inject_vault(e: &Env, factory_id: &Address, active: bool) -> Address {
     let asset = Address::generate(e);
     let info = VaultInfo {
         vault: vault.clone(),
-        asset: asset,
+        asset,
         vault_type: VaultType::SingleRwa,
         name: String::from_str(e, "Test Vault"),
         symbol: String::from_str(e, "TV"),
