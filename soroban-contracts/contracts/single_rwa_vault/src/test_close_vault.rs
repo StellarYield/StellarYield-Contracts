@@ -5,10 +5,7 @@ use soroban_sdk::{
     Address,
 };
 
-use crate::{
-    test_helpers::setup_with_kyc_bypass,
-    VaultState,
-};
+use crate::{test_helpers::setup_with_kyc_bypass, VaultState};
 
 #[test]
 fn test_close_vault_success() {

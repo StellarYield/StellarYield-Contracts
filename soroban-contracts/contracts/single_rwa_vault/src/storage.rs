@@ -133,47 +133,6 @@ pub fn bump_balance(e: &Env, addr: &Address) {
     }
 }
 
-/// Extend the TTL for all persistent per-user yield/snapshot entries for a
-/// given address and epoch.  Call this any time user data is written so that
-/// no entry can silently expire and cause double-claims or missed payouts.
-///
-/// # Security rationale
-/// Stellar persistent storage entries expire when their TTL reaches zero.  If
-/// `HasClaimedEpoch` expires the contract will treat a previously-claimed epoch
-/// as unclaimed and allow a second payout.  Bumping every related key on every
-/// write keeps the TTL well above the BALANCE_LIFETIME_THRESHOLD (~60 days)
-/// and eliminates that class of bug.
-pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
-    let epoch_keys = [
-        DataKey::HasClaimedEpoch(addr.clone(), epoch),
-        DataKey::UserSharesAtEpoch(addr.clone(), epoch),
-        DataKey::HasSnapshotForEpoch(addr.clone(), epoch),
-    ];
-    for key in &epoch_keys {
-        if e.storage().persistent().has(key) {
-            e.storage().persistent().extend_ttl(
-                key,
-                BALANCE_LIFETIME_THRESHOLD,
-                BALANCE_BUMP_AMOUNT,
-            );
-        }
-    }
-
-    let addr_keys = [
-        DataKey::TotalYieldClaimed(addr.clone()),
-        DataKey::LastInteractionEpoch(addr.clone()),
-    ];
-    for key in &addr_keys {
-        if e.storage().persistent().has(key) {
-            e.storage().persistent().extend_ttl(
-                key,
-                BALANCE_LIFETIME_THRESHOLD,
-                BALANCE_BUMP_AMOUNT,
-            );
-        }
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Instance-stored getters / setters
 // (Admin, config, vault state, epoch counters, pause)

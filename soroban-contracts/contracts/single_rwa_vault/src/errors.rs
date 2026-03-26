@@ -46,7 +46,7 @@ pub enum Error {
     /// Vault cannot be closed because it still contains shares/assets.
     VaultNotEmpty = 27,
     /// Shares are still within the lock-up period and cannot be transferred.
-    SharesLocked = 28,
+    SharesLocked = 33,
     /// Epoch range is invalid (zero start, start > end, or exceeds max batch of 50).
     InvalidEpochRange = 28,
     /// Vault is not in Emergency state.

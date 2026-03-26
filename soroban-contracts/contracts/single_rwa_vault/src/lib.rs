@@ -538,10 +538,10 @@ impl SingleRWAVault {
         // --- Effects ---
         let epoch = get_current_epoch(e);
         for i in 1..=epoch {
-            if !get_has_claimed_epoch(e, &caller, i) {
-                if _get_user_shares_for_epoch(e, &caller, i) > 0 {
-                    put_has_claimed_epoch(e, &caller, i, true);
-                }
+            if !get_has_claimed_epoch(e, &caller, i)
+                && _get_user_shares_for_epoch(e, &caller, i) > 0
+            {
+                put_has_claimed_epoch(e, &caller, i, true);
             }
         }
 
@@ -625,11 +625,7 @@ impl SingleRWAVault {
         let lock_up_period = get_user_lock_up_period(e, &user);
         let now = e.ledger().timestamp();
         let elapsed = now.saturating_sub(deposit_timestamp);
-        if elapsed >= lock_up_period {
-            0
-        } else {
-            lock_up_period - elapsed
-        }
+        lock_up_period.saturating_sub(elapsed)
     }
 
     pub fn total_deposited(e: &Env) -> i128 {
@@ -790,11 +786,7 @@ impl SingleRWAVault {
     pub fn time_to_maturity(e: &Env) -> u64 {
         let now = e.ledger().timestamp();
         let mat = get_maturity_date(e);
-        if now >= mat {
-            0
-        } else {
-            mat - now
-        }
+        mat.saturating_sub(now)
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1229,9 +1221,7 @@ impl SingleRWAVault {
             .checked_mul(SECONDS_PER_YEAR as i128)
             .and_then(|v| v.checked_mul(10000))
             .unwrap_or(i128::MAX);
-        let denominator = (ta as i128)
-            .checked_mul(elapsed as i128)
-            .unwrap_or(i128::MAX);
+        let denominator = ta.checked_mul(elapsed as i128).unwrap_or(i128::MAX);
         if denominator == 0 || denominator == i128::MAX {
             return get_expected_apy(e);
         }
@@ -1358,8 +1348,6 @@ impl SingleRWAVault {
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-
 
 fn preview_deposit(e: &Env, assets: i128) -> i128 {
     let supply = get_total_supply(e);
@@ -1651,13 +1639,11 @@ mod test {
 
         let user = Address::generate(&e);
 
-        assert_eq!(client.is_blacklisted(&user), false);
-
+        assert!(!client.is_blacklisted(&user));
         client.set_blacklisted(&admin, &user, &true);
-        assert_eq!(client.is_blacklisted(&user), true);
-
+        assert!(client.is_blacklisted(&user));
         client.set_blacklisted(&admin, &user, &false);
-        assert_eq!(client.is_blacklisted(&user), false);
+        assert!(!client.is_blacklisted(&user));
     }
 
     #[test]

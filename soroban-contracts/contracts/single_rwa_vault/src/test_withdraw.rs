@@ -259,17 +259,23 @@ fn test_redeem_at_non_unit_share_price() {
     mint_usdc(&ctx.env, &ctx.asset_id, &ctx.vault_id, 20_000_000);
 
     // In the new architecture, total_assets() should NOT include directly minted yield
-    let assets_after = v.total_assets(); 
-    assert_eq!(assets_after, assets_before, "total_assets ONLY includes principal");
+    let assets_after = v.total_assets();
+    assert_eq!(
+        assets_after, assets_before,
+        "total_assets ONLY includes principal"
+    );
 
     // preview_redeem: 40 shares = 40 assets (1:1)
     assert_eq!(v.preview_redeem(&supply), supply);
 
     // Actually redeem all shares; user should receive 40 USDC principal.
     let received = v.redeem(&ctx.user, &supply, &ctx.user, &ctx.user);
-    assert_eq!(received, 40_000_000, "user receives principal only via redeem");
+    assert_eq!(
+        received, 40_000_000,
+        "user receives principal only via redeem"
+    );
     assert_eq!(v.balance(&ctx.user), 0);
-    
+
     // Total assets redeemed = 40 USDC.
     assert_eq!(ctx.asset().balance(&ctx.user), 40_000_000);
 }
@@ -293,10 +299,7 @@ fn test_withdraw_at_non_unit_share_price() {
 
     // preview_withdraw(20 USDC): shares = 20 (1:1)
     let shares_needed = v.preview_withdraw(&20_000_000i128);
-    assert_eq!(
-        shares_needed, 20_000_000,
-        "20 USDC costs 20 shares at 1:1"
-    );
+    assert_eq!(shares_needed, 20_000_000, "20 USDC costs 20 shares at 1:1");
 
     let shares_burned = v.withdraw(&ctx.user, &20_000_000i128, &ctx.user, &ctx.user);
     assert_eq!(shares_burned, 20_000_000);

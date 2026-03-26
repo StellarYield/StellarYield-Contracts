@@ -5,7 +5,7 @@
 
 use crate::test_helpers::{advance_time, mint_usdc, setup_with_kyc_bypass};
 use crate::VaultState;
-use soroban_sdk::testutils::{Events as _, Ledger};
+use soroban_sdk::testutils::Ledger;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Happy Paths

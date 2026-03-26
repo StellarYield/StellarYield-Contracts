@@ -5,8 +5,8 @@ use soroban_sdk::{
     Address, Env, String,
 };
 
-use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 use crate::types::VaultState;
+use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -149,7 +149,7 @@ fn test_lock_up_period_enforced() {
 
     // Setup user1 with deposit
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Approve user2 for KYC
     MockZkmeClient::new(&e, &kyc).kyc_approve(&user2, &user2);
 
@@ -167,7 +167,7 @@ fn test_lock_up_period_enforced() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #33)")]
 fn test_transfer_during_lock_up_fails() {
     let e = Env::default();
     e.mock_all_auths();
@@ -182,7 +182,7 @@ fn test_transfer_during_lock_up_fails() {
 
     // Setup user1 with deposit
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Approve user2 for KYC
     MockZkmeClient::new(&e, &kyc).kyc_approve(&user2, &user2);
 
@@ -191,7 +191,7 @@ fn test_transfer_during_lock_up_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #33)")]
 fn test_withdraw_during_lock_up_fails() {
     let e = Env::default();
     e.mock_all_auths();
@@ -206,7 +206,7 @@ fn test_withdraw_during_lock_up_fails() {
 
     // Setup user1 with deposit
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Meet funding target and activate vault
     let additional = vault.funding_target() - vault.total_deposited();
     if additional > 0 {
@@ -260,7 +260,7 @@ fn test_no_lock_up_period() {
 
     // Setup user1 with deposit (approved KYC already)
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Approve user2 for KYC
     MockZkmeClient::new(&e, &kyc).kyc_approve(&user2, &user2);
 
@@ -296,7 +296,7 @@ fn test_redeem_at_maturity_bypasses_lock_up() {
 
     // Setup user1 with deposit
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Meet funding target and activate vault
     let additional = vault.funding_target() - vault.total_deposited();
     if additional > 0 {
@@ -308,7 +308,7 @@ fn test_redeem_at_maturity_bypasses_lock_up() {
     // Actually maturity date is 1M seconds away, so let's just move to maturity.
     let maturity = vault.maturity_date();
     e.ledger().set_timestamp(maturity);
-    
+
     // Maturity should transition state
     vault.mature_vault(&admin);
     assert_eq!(vault.vault_state(), VaultState::Matured);
@@ -326,7 +326,7 @@ fn test_multiple_users_different_lock_up_times() {
     e.ledger().set_timestamp(1000);
 
     let lock_up_period = 3600; // 1 hour
-    let (admin, asset, kyc, vault) = create_vault_with_lockup(&e, lock_up_period);
+    let (_admin, asset, kyc, vault) = create_vault_with_lockup(&e, lock_up_period);
 
     let user1 = Address::generate(&e);
     let user2 = Address::generate(&e);
@@ -348,7 +348,7 @@ fn test_multiple_users_different_lock_up_times() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #33)")]
 fn test_redeem_during_lock_up_fails() {
     let e = Env::default();
     e.mock_all_auths();
@@ -363,7 +363,7 @@ fn test_redeem_during_lock_up_fails() {
 
     // Setup user1 with deposit
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Approve user2 for KYC
     MockZkmeClient::new(&e, &kyc).kyc_approve(&user2, &user2);
 
@@ -379,7 +379,7 @@ fn test_redeem_during_lock_up_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #33)")]
 fn test_request_early_redemption_during_lock_up_fails() {
     let e = Env::default();
     e.mock_all_auths();
@@ -406,7 +406,7 @@ fn test_request_early_redemption_during_lock_up_fails() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")]
+#[should_panic(expected = "Error(Contract, #33)")]
 fn test_transfer_from_during_lock_up_fails() {
     let e = Env::default();
     e.mock_all_auths();
@@ -421,7 +421,7 @@ fn test_transfer_from_during_lock_up_fails() {
 
     // Setup user1 with deposit
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, deposit_amount);
-    
+
     // Approve user2 for KYC
     MockZkmeClient::new(&e, &kyc).kyc_approve(&user2, &user2);
 
@@ -439,14 +439,14 @@ fn test_lock_up_remaining_edge_cases() {
     let (_admin, asset, kyc, vault) = create_vault_with_lockup(&e, lock_up_period);
 
     let user1 = Address::generate(&e);
-    
+
     // Case 1: No deposit yet
     assert_eq!(vault.lock_up_remaining(&user1), 0);
 
     // Case 2: Just deposited
     setup_user_with_deposit(&e, &vault, &asset, &kyc, &user1, 1000);
     let now = e.ledger().timestamp();
-    
+
     assert_eq!(vault.lock_up_remaining(&user1), lock_up_period);
 
     // Case 3: Half-way through
