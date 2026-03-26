@@ -953,6 +953,9 @@ impl SingleRWAVault {
         req.processed = true;
         put_redemption_request(e, request_id, req.clone());
 
+        // Calculate assets BEFORE burning shares to keep the price correct
+        let assets = preview_redeem(e, req.shares);
+
         // Burn from escrow
         let escrowed = get_escrowed_shares(e, &req.user);
         if escrowed < req.shares {
@@ -960,17 +963,36 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InsufficientBalance);
         }
         put_escrowed_shares(e, &req.user, escrowed - req.shares);
+        
+        // Actually burn the shares now that we've calculated the assets
         put_total_supply(e, get_total_supply(e) - req.shares);
         // Note: update_user_snapshot was already called at request time
 
-        let assets = preview_redeem(e, req.shares);
+        // --- Effects: auto-claim pending yield ---
+        let pending = Self::pending_yield(e, req.user.clone());
+        if pending > 0 {
+            let epoch = get_current_epoch(e);
+            for i in 1..=epoch {
+                put_has_claimed_epoch(e, &req.user, i, true);
+            }
+            put_total_yield_claimed(e, &req.user, get_total_yield_claimed(e, &req.user) + pending);
+        }
+
         let fee_bps = get_early_redemption_fee_bps(e) as i128;
         let fee = (assets * fee_bps) / 10000;
         let net_assets = assets - fee;
-        put_total_deposited(e, get_total_deposited(e) - net_assets);
+
+        // Use assets (the full principal amount) to decrement TotalDeposited.
+        // The fee stays in the vault but is no longer "deposited principal".
+        put_total_deposited(e, get_total_deposited(e) - assets);
+
+        let mut total_out = net_assets;
+        if pending > 0 {
+            total_out += pending;
+        }
 
         // --- Interaction ---
-        transfer_asset_from_vault(e, &req.user, net_assets);
+        transfer_asset_from_vault(e, &req.user, total_out);
         // Fee stays in vault for other depositors
 
         emit_early_redemption_processed(e, req.user, request_id, net_assets);

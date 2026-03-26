@@ -460,7 +460,7 @@ impl VaultFactory {
 
         // Build the InitParams struct for the vault constructor.
         // Using a struct keeps us under Soroban's 10-arg limit per function.
-        let init_params = single_rwa_vault::InitParams {
+        let init_params = SingleRwaVaultInitParams {
             asset: vault_asset.clone(),
             share_name: name.clone(),
             share_symbol: symbol.clone(),

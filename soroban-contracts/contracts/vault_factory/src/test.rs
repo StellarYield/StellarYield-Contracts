@@ -1,4 +1,4 @@
-#![cfg(test)]
+// #![cfg(test)]
 
 use soroban_sdk::{
     symbol_short,
@@ -12,18 +12,16 @@ use crate::{
 };
 
 mod single_rwa_vault {
-    soroban_sdk::contractimport!(
-        file = "../../target/wasm32-unknown-unknown/release/single_rwa_vault.wasm"
-    );
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/single_rwa_vault.wasm");
 }
 
 const VAULT_WASM: &[u8] =
-    include_bytes!("../../../target/wasm32-unknown-unknown/release/single_rwa_vault.wasm");
+    include_bytes!("../../../target/wasm32v1-none/release/single_rwa_vault.wasm");
 
 fn setup_factory(
     e: &Env,
 ) -> (
-    VaultFactoryClient,
+    VaultFactoryClient<'_>,
     Address,
     Address,
     Address,
@@ -31,9 +29,11 @@ fn setup_factory(
     BytesN<32>,
 ) {
     let admin = Address::generate(e);
-    let asset = Address::generate(e);
-    let zkme = Address::generate(e);
-    let coop = Address::generate(e);
+
+    // Register mock dependencies
+    let asset = e.register(IntegrationMockUsdc, ());
+    let zkme = e.register(IntegrationMockZkme, ());
+    let coop = Address::generate(e); // cooperator still random for now
 
     // Upload the vault WASM
     let vault_wasm_hash = e.deployer().upload_contract_wasm(VAULT_WASM);
@@ -155,14 +155,14 @@ fn test_batch_create_vaults() {
             rwa_symbol: String::from_str(&e, "R"),
             rwa_document_uri: String::from_str(&e, "uri"),
             rwa_category: String::from_str(&e, "cat"),
-            expected_apy: 0,
-            maturity_date: 0,
-            funding_deadline: 0,
-            funding_target: 0,
-            min_deposit: 0,
-            max_deposit_per_user: 0,
-            early_redemption_fee_bps: 0,
-            lock_up_period: 0,
+            expected_apy: 500,
+            maturity_date: e.ledger().timestamp() + 3600,
+            funding_deadline: e.ledger().timestamp() + 1800,
+            funding_target: 100_000_000i128,
+            min_deposit: 1_000_000i128,
+            max_deposit_per_user: 50_000_000i128,
+            early_redemption_fee_bps: 200,
+            lock_up_period: 300,
         });
     }
 
@@ -180,7 +180,7 @@ fn test_create_vault_emits_event() {
     let name = String::from_str(&e, "Event Vault");
     client.create_single_rwa_vault(
         &admin, &asset, &name, &name, // symbol same as name
-        &name, &name, &name, &0,
+        &name, &name, &name, &(e.ledger().timestamp() + 3600),
     );
 
     let events = e.events().all();
@@ -206,7 +206,7 @@ fn test_get_active_vaults_filters_inactive() {
         &String::from_str(&e, ""),
         &String::from_str(&e, ""),
         &String::from_str(&e, ""),
-        &0,
+        &(e.ledger().timestamp() + 3600),
     );
     let v2 = client.create_single_rwa_vault(
         &admin,
@@ -216,7 +216,7 @@ fn test_get_active_vaults_filters_inactive() {
         &String::from_str(&e, ""),
         &String::from_str(&e, ""),
         &String::from_str(&e, ""),
-        &0,
+        &(e.ledger().timestamp() + 3600),
     );
 
     assert_eq!(client.get_active_vaults().len(), 2);
@@ -249,7 +249,7 @@ fn test_create_vault_non_operator_panics() {
 }
 
 #[test]
-#[should_panic(expected = "Aggregator vault not supported")]
+#[should_panic(expected = "Error(Contract, #5)")]
 fn test_create_aggregator_vault_panics() {
     let e = Env::default();
     e.mock_all_auths();
@@ -269,14 +269,8 @@ fn test_full_vault_lifecycle_end_to_end() {
     let e = Env::default();
     e.mock_all_auths();
 
-    let (factory, admin, _asset_id, _zkme_id, _coop_id, _) = setup_factory(&e);
-
-    // Deploy mock USDC token
-    let usdc_id = e.register(IntegrationMockUsdc, ());
+    let (factory, admin, usdc_id, kyc_id, _coop_id, _) = setup_factory(&e);
     let usdc = integration_test_mocks::IntegrationMockUsdcClient::new(&e, &usdc_id);
-
-    // Deploy mock zkMe verifier
-    let kyc_id = e.register(IntegrationMockZkme, ());
     let kyc = integration_test_mocks::IntegrationMockZkmeClient::new(&e, &kyc_id);
 
     let maturity_date = e.ledger().timestamp() + 365 * 24 * 60 * 60; // 1 year from now
@@ -387,7 +381,8 @@ fn test_full_vault_lifecycle_end_to_end() {
 
     let expected_assets_b = 150_000_000i128;
     let expected_fee_b = (expected_assets_b * 200) / 10000; // 2% = 3M
-    let expected_net_b = expected_assets_b - expected_fee_b;
+    let expected_yield_b = 22_500_000i128; // 50% of (15M + 15M + 15M) distributed
+    let expected_net_b = expected_assets_b - expected_fee_b + expected_yield_b;
 
     let user_b_balance_before = usdc.balance(&user_b);
     vault.process_early_redemption(&admin, &request_id);

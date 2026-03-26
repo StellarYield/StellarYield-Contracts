@@ -43,6 +43,7 @@ pub struct SingleRwaVaultInitParams {
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
     pub funding_deadline: u64,
+    pub lock_up_period: u64,
     pub rwa_name: String,
     pub rwa_symbol: String,
     pub rwa_document_uri: String,
