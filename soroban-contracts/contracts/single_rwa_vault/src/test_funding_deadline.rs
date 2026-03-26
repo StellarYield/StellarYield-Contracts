@@ -1,4 +1,4 @@
-//! Tests for funding_deadline, cancel_funding, and refund (issue #31).
+//! Tests for fund_deadline, cancel_funding, and refund (issue #31).
 
 extern crate std;
 
@@ -12,7 +12,7 @@ use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient, VaultState};
 use crate::test_helpers::{AlwaysApproveZkme, MockUsdc, MockUsdcClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test context with configurable funding_deadline and no deposit cap
+// Test context with configurable fund_deadline and no deposit cap
 // ─────────────────────────────────────────────────────────────────────────────
 
 struct Ctx {
@@ -32,9 +32,9 @@ impl Ctx {
     }
 }
 
-/// Deploy a fresh vault with the given `funding_deadline`.
-/// Funding target = 100 USDC; max_deposit_per_user = 0 (unlimited).
-fn deploy(funding_deadline: u64) -> Ctx {
+/// Deploy a fresh vault with the given `fund_deadline`.
+/// Funding target = 100 USDC; max_user_dep = 0 (unlimited).
+fn deploy(fund_deadline: u64) -> Ctx {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -55,10 +55,10 @@ fn deploy(funding_deadline: u64) -> Ctx {
         cooperator: cooperator.clone(),
         funding_target: 100_000_000i128, // 100 USDC
         maturity_date: 9_999_999_999u64,
-        funding_deadline,
+        fund_deadline,
         min_deposit: 1_000_000i128,  // 1 USDC
-        max_deposit_per_user: 0i128, // unlimited
-        early_redemption_fee_bps: 200u32,
+        max_user_dep: 0i128, // unlimited
+        redem_fee_bps: 200u32,
         rwa_name: String::from_str(&env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(&env, "USTB26"),
         rwa_document_uri: String::from_str(&env, "https://example.com/ustb26"),
@@ -77,14 +77,14 @@ fn deploy(funding_deadline: u64) -> Ctx {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test: funding_deadline is stored and queryable at construction
+// Test: fund_deadline is stored and queryable at construction
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
-fn test_funding_deadline_stored_at_construction() {
+fn test_fund_deadline_stored_at_construction() {
     let deadline = 1_700_000_000u64;
     let ctx = deploy(deadline);
-    assert_eq!(ctx.vault().funding_deadline(), deadline);
+    assert_eq!(ctx.vault().fund_deadline(), deadline);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

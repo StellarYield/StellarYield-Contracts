@@ -81,10 +81,10 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             cooperator: cooperator.clone(),
             funding_target: 0i128,
             maturity_date: 9_999_999_999u64,
-            funding_deadline: 0u64,
+            fund_deadline: 0u64,
             min_deposit: 0i128,
-            max_deposit_per_user: 0i128,
-            early_redemption_fee_bps: 200u32, // 2% fee
+            max_user_dep: 0i128,
+            redem_fee_bps: 200u32, // 2% fee
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),
@@ -145,7 +145,7 @@ fn mature(env: &Env, vault_id: &Address, admin: &Address) {
 // Tests — Early redemption: request
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// request_early_redemption returns a request ID and stores a RedemptionRequest
+/// request_early_redemption returns a request ID and stores a RedemRequest
 /// with the correct user, shares, and processed = false.
 #[test]
 fn test_request_early_redemption_creates_request() {
@@ -204,7 +204,7 @@ fn test_process_early_redemption_applies_fee() {
 
     vault.process_early_redemption(&admin, &request_id);
 
-    // The vault was initialised with early_redemption_fee_bps = 200 (2%).
+    // The vault was initialised with redem_fee_bps = 200 (2%).
     // With 1:1 share-to-asset ratio: assets = shares = 1_000_000
     let assets = shares; // 1:1 ratio at start
     let fee = (assets * 200) / 10000; // 20_000
@@ -267,15 +267,15 @@ fn test_set_early_redemption_fee() {
     let vault = SingleRWAVaultClient::new(&env, &vault_id);
 
     // Default fee from init is 200 bps
-    assert_eq!(vault.early_redemption_fee_bps(), 200u32);
+    assert_eq!(vault.redem_fee_bps(), 200u32);
 
     // Update to 500 bps (5%)
     vault.set_early_redemption_fee(&admin, &500u32);
-    assert_eq!(vault.early_redemption_fee_bps(), 500u32);
+    assert_eq!(vault.redem_fee_bps(), 500u32);
 
     // Update to 0 bps (no fee)
     vault.set_early_redemption_fee(&admin, &0u32);
-    assert_eq!(vault.early_redemption_fee_bps(), 0u32);
+    assert_eq!(vault.redem_fee_bps(), 0u32);
 }
 
 /// Setting early redemption fee above 1000 bps (10%) must panic with Error::FeeTooHigh (22).

@@ -21,17 +21,14 @@ mod test_convert_erc4626;
 #[cfg(test)]
 mod test_epoch_history;
 #[cfg(test)]
-mod test_funding_deadline;
+mod test_fund_deadline;
 #[cfg(test)]
 mod test_lifecycle;
-#[cfg(test)]
-mod test_emergency_multisig;
 #[cfg(test)]
 mod test_emergency_multisig;
 
 pub use crate::types::*;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String, Vec};
 use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String, Vec};
 
 use crate::errors::Error;
@@ -39,13 +36,6 @@ use crate::events::*;
 use crate::migrations::CURRENT_SCHEMA_VERSION;
 use crate::storage::*;
 use crate::token_interface::*;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Emergency withdrawal proposals expire after 24 hours (configurable here).
-const EMERGENCY_PROPOSAL_TIMEOUT_SECS: u64 = 86_400;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -88,15 +78,15 @@ impl SingleRWAVault {
         if params.maturity_date <= e.ledger().timestamp() {
             panic_with_error!(e, Error::InvalidInitParams);
         }
-        if params.early_redemption_fee_bps > 1000 {
+        if params.redem_fee_bps > 1000 {
             panic_with_error!(e, Error::InvalidInitParams);
         }
         if params.min_deposit < 0 || params.funding_target < 0 {
             panic_with_error!(e, Error::InvalidInitParams);
         }
         if params.min_deposit > 0
-            && params.max_deposit_per_user > 0
-            && params.max_deposit_per_user < params.min_deposit
+            && params.max_user_dep > 0
+            && params.max_user_dep < params.min_deposit
         {
             panic_with_error!(e, Error::InvalidInitParams);
         }
@@ -128,10 +118,10 @@ impl SingleRWAVault {
         // Vault configuration
         put_funding_target(e, params.funding_target);
         put_maturity_date(e, params.maturity_date);
-        put_funding_deadline(e, params.funding_deadline);
+        put_fund_deadline(e, params.fund_deadline);
         put_min_deposit(e, params.min_deposit);
-        put_max_deposit_per_user(e, params.max_deposit_per_user);
-        put_early_redemption_fee_bps(e, params.early_redemption_fee_bps);
+        put_max_user_dep(e, params.max_user_dep);
+        put_redem_fee_bps(e, params.redem_fee_bps);
 
         // Initial state
         put_vault_state(e, VaultState::Funding);
@@ -305,7 +295,7 @@ impl SingleRWAVault {
         if assets < min_dep {
             panic_with_error!(e, Error::BelowMinimumDeposit);
         }
-        let max_dep = get_max_deposit_per_user(e);
+        let max_dep = get_max_user_dep(e);
         if max_dep > 0 {
             let already = get_user_deposited(e, &receiver);
             if already + assets > max_dep {
@@ -351,7 +341,7 @@ impl SingleRWAVault {
         if assets < min_dep {
             panic_with_error!(e, Error::BelowMinimumDeposit);
         }
-        let max_dep = get_max_deposit_per_user(e);
+        let max_dep = get_max_user_dep(e);
         if max_dep > 0 {
             let already = get_user_deposited(e, &receiver);
             if already + assets > max_dep {
@@ -522,7 +512,7 @@ impl SingleRWAVault {
         math::mul_div(e, shares, ta, supply)
     }
 
-    pub fn redemption_request(e: &Env, request_id: u32) -> RedemptionRequest {
+    pub fn redemption_request(e: &Env, request_id: u32) -> RedemRequest {
         get_redemption_request(e, request_id)
     }
 
@@ -532,7 +522,7 @@ impl SingleRWAVault {
 
     /// Maximum assets `receiver` can deposit right now.
     /// Returns 0 when the vault is paused or not in Funding/Active state.
-    /// When `max_deposit_per_user` is 0 the vault is uncapped; returns i128::MAX.
+    /// When `max_user_dep` is 0 the vault is uncapped; returns i128::MAX.
     pub fn max_deposit(e: &Env, receiver: Address) -> i128 {
         if get_paused(e) {
             return 0;
@@ -541,7 +531,7 @@ impl SingleRWAVault {
         if state != VaultState::Funding && state != VaultState::Active {
             return 0;
         }
-        let cap = get_max_deposit_per_user(e);
+        let cap = get_max_user_dep(e);
         if cap == 0 {
             return i128::MAX;
         }
@@ -881,7 +871,7 @@ impl SingleRWAVault {
         require_role(e, &operator, Role::LifecycleManager);
         require_state(e, VaultState::Funding);
         // Cannot activate once the funding deadline has passed.
-        let deadline = get_funding_deadline(e);
+        let deadline = get_fund_deadline(e);
         if deadline > 0 && e.ledger().timestamp() > deadline {
             panic_with_error!(e, Error::FundingDeadlinePassed);
         }
@@ -905,7 +895,7 @@ impl SingleRWAVault {
         require_role(e, &caller, Role::LifecycleManager);
         require_state(e, VaultState::Funding);
         // Deadline must have passed.
-        let deadline = get_funding_deadline(e);
+        let deadline = get_fund_deadline(e);
         if deadline == 0 || e.ledger().timestamp() <= deadline {
             panic_with_error!(e, Error::FundingDeadlineNotPassed);
         }
@@ -957,8 +947,8 @@ impl SingleRWAVault {
     }
 
     /// Returns the funding deadline timestamp (0 = no deadline configured).
-    pub fn funding_deadline(e: &Env) -> u64 {
-        get_funding_deadline(e)
+    pub fn fund_deadline(e: &Env) -> u64 {
+        get_fund_deadline(e)
     }
 
     /// Transition Active → Matured.  Requires block timestamp ≥ maturityDate.
@@ -1030,8 +1020,8 @@ impl SingleRWAVault {
     pub fn min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
-    pub fn max_deposit_per_user(e: &Env) -> i128 {
-        get_max_deposit_per_user(e)
+    pub fn max_user_dep(e: &Env) -> i128 {
+        get_max_user_dep(e)
     }
     pub fn user_deposited(e: &Env, user: Address) -> i128 {
         get_user_deposited(e, &user)
@@ -1042,7 +1032,7 @@ impl SingleRWAVault {
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::LifecycleManager);
         put_min_deposit(e, min_amount);
-        put_max_deposit_per_user(e, max_amount);
+        put_max_user_dep(e, max_amount);
         emit_deposit_limits_updated(e, min_amount, max_amount);
         bump_instance(e);
     }
@@ -1154,7 +1144,7 @@ impl SingleRWAVault {
         put_redemption_request(
             e,
             id,
-            RedemptionRequest {
+            RedemRequest {
                 user: caller,
                 shares,
                 request_time: e.ledger().timestamp(),
@@ -1199,7 +1189,7 @@ impl SingleRWAVault {
         // Note: update_user_snapshot was already called at request time
 
         let assets = preview_redeem(e, req.shares);
-        let fee_bps = get_early_redemption_fee_bps(e) as i128;
+        let fee_bps = get_redem_fee_bps(e) as i128;
         let fee = math::mul_div(e, assets, fee_bps, 10000);
         let net_assets = assets - fee;
         put_total_deposited(e, get_total_deposited(e) - net_assets);
@@ -1277,8 +1267,8 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    pub fn early_redemption_fee_bps(e: &Env) -> u32 {
-        get_early_redemption_fee_bps(e)
+    pub fn redem_fee_bps(e: &Env) -> u32 {
+        get_redem_fee_bps(e)
     }
 
     /// Set the early redemption fee (only by operator).
@@ -1290,7 +1280,7 @@ impl SingleRWAVault {
         if fee_bps > 1000 {
             panic_with_error!(e, Error::FeeTooHigh);
         }
-        put_early_redemption_fee_bps(e, fee_bps);
+        put_redem_fee_bps(e, fee_bps);
         emit_early_redemption_fee_set(e, fee_bps);
         bump_instance(e);
     }
@@ -1452,10 +1442,6 @@ impl SingleRWAVault {
         if has_emergency_signers(e) {
             panic_with_error!(e, Error::MultiSigConfigured);
         }
-        // Fallback is only available when multi-sig has not been configured.
-        if has_emergency_signers(e) {
-            panic_with_error!(e, Error::MultiSigConfigured);
-        }
         require_admin(e, &caller);
 
         let balance = asset_balance_of_vault(e);
@@ -1513,7 +1499,7 @@ impl SingleRWAVault {
 
         let id = get_emergency_proposal_counter(e);
 
-        let proposal = EmergencyProposal {
+        let proposal = EmergProposal {
             recipient: recipient.clone(),
             proposer: caller.clone(),
             proposed_at: e.ledger().timestamp(),
@@ -1522,7 +1508,7 @@ impl SingleRWAVault {
         put_emergency_proposal(e, id, proposal);
 
         // Proposer's vote is counted immediately.
-        let mut approvals = get_emergency_proposal_approvals(e, id);
+        let mut approvals = get_emerg_approvals(e, id);
         approvals.push_back(caller.clone());
         put_emergency_proposal_approvals(e, id, approvals);
 
@@ -1554,7 +1540,7 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::ProposalExpired);
         }
 
-        let mut approvals = get_emergency_proposal_approvals(e, proposal_id);
+        let mut approvals = get_emerg_approvals(e, proposal_id);
         for addr in approvals.iter() {
             if addr == caller {
                 panic_with_error!(e, Error::AlreadyApproved);
@@ -1590,134 +1576,7 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::ProposalExpired);
         }
 
-        let approvals = get_emergency_proposal_approvals(e, proposal_id);
-        let threshold = get_emergency_threshold(e);
-        if approvals.len() < threshold {
-            panic_with_error!(e, Error::ThresholdNotMet);
-        }
-
-        // --- Effects (CEI: mark executed and pause before transfer) ---
-        proposal.executed = true;
-        put_emergency_proposal(e, proposal_id, proposal.clone());
-        let balance = asset_balance_of_vault(e);
-        bump_instance(e);
-        release_lock(e);
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Multi-sig emergency withdrawal
-    // ─────────────────────────────────────────────────────────────────
-
-    /// Configure the emergency signer set and approval threshold (e.g. 3-of-5).
-    ///
-    /// Once called, the single-admin `emergency_withdraw` fallback is disabled.
-    /// Can be called again by the admin to rotate signers or change the threshold.
-    pub fn set_emergency_signers(
-        e: &Env,
-        caller: Address,
-        signers: Vec<Address>,
-        threshold: u32,
-    ) {
-        caller.require_auth();
-        require_admin(e, &caller);
-
-        if signers.is_empty() || threshold == 0 || threshold > signers.len() {
-            panic_with_error!(e, Error::InvalidThreshold);
-        }
-
-        put_emergency_signers(e, signers);
-        put_emergency_threshold(e, threshold);
-        bump_instance(e);
-    }
-
-    /// Any configured emergency signer can open a new withdrawal proposal.
-    ///
-    /// The proposer's approval is recorded automatically.
-    /// Returns the numeric proposal ID needed for subsequent approve/execute calls.
-    pub fn propose_emergency_withdraw(e: &Env, caller: Address, recipient: Address) -> u32 {
-        caller.require_auth();
-        require_emergency_signer(e, &caller);
-
-        let id = get_emergency_proposal_counter(e);
-
-        let proposal = EmergencyProposal {
-            recipient: recipient.clone(),
-            proposer: caller.clone(),
-            proposed_at: e.ledger().timestamp(),
-            executed: false,
-        };
-        put_emergency_proposal(e, id, proposal);
-
-        // Proposer's vote is counted immediately.
-        let mut approvals = get_emergency_proposal_approvals(e, id);
-        approvals.push_back(caller.clone());
-        put_emergency_proposal_approvals(e, id, approvals);
-
-        put_emergency_proposal_counter(e, id + 1);
-
-        emit_emergency_proposed(e, id, caller, recipient);
-        bump_instance(e);
-        id
-    }
-
-    /// Record a signer's approval for an open proposal.
-    ///
-    /// Reverts if the proposal is not found, already executed, expired, or the
-    /// caller has already approved it.
-    pub fn approve_emergency_withdraw(e: &Env, caller: Address, proposal_id: u32) {
-        caller.require_auth();
-        require_emergency_signer(e, &caller);
-
-        let proposal_opt = get_emergency_proposal(e, proposal_id);
-        if proposal_opt.is_none() {
-            panic_with_error!(e, Error::ProposalNotFound);
-        }
-        let proposal = proposal_opt.unwrap();
-
-        if proposal.executed {
-            panic_with_error!(e, Error::ProposalAlreadyExecuted);
-        }
-        if e.ledger().timestamp() > proposal.proposed_at + EMERGENCY_PROPOSAL_TIMEOUT_SECS {
-            panic_with_error!(e, Error::ProposalExpired);
-        }
-
-        let mut approvals = get_emergency_proposal_approvals(e, proposal_id);
-        for addr in approvals.iter() {
-            if addr == caller {
-                panic_with_error!(e, Error::AlreadyApproved);
-            }
-        }
-        approvals.push_back(caller.clone());
-        let approval_count = approvals.len();
-        put_emergency_proposal_approvals(e, proposal_id, approvals);
-
-        emit_emergency_approved(e, proposal_id, caller, approval_count);
-        bump_instance(e);
-    }
-
-    /// Execute a proposal once the configured threshold of approvals is reached.
-    ///
-    /// Drains all vault assets to the proposal's `recipient` and pauses the vault.
-    /// Follows CEI: marks the proposal as executed before the token transfer.
-    pub fn execute_emergency_withdraw(e: &Env, caller: Address, proposal_id: u32) {
-        caller.require_auth();
-        require_emergency_signer(e, &caller);
-        acquire_lock(e);
-
-        let proposal_opt = get_emergency_proposal(e, proposal_id);
-        if proposal_opt.is_none() {
-            panic_with_error!(e, Error::ProposalNotFound);
-        }
-        let mut proposal = proposal_opt.unwrap();
-
-        if proposal.executed {
-            panic_with_error!(e, Error::ProposalAlreadyExecuted);
-        }
-        if e.ledger().timestamp() > proposal.proposed_at + EMERGENCY_PROPOSAL_TIMEOUT_SECS {
-            panic_with_error!(e, Error::ProposalExpired);
-        }
-
-        let approvals = get_emergency_proposal_approvals(e, proposal_id);
+        let approvals = get_emerg_approvals(e, proposal_id);
         let threshold = get_emergency_threshold(e);
         if approvals.len() < threshold {
             panic_with_error!(e, Error::ThresholdNotMet);
@@ -1728,19 +1587,12 @@ impl SingleRWAVault {
         put_emergency_proposal(e, proposal_id, proposal.clone());
         let balance = asset_balance_of_vault(e);
         put_paused(e, true);
+        put_freeze_flags(e, Self::FREEZE_ALL);
         emit_emergency_action(
             e,
             true,
             String::from_str(e, "Multi-sig emergency withdrawal executed"),
-            String::from_str(e, "Multi-sig emergency withdrawal executed"),
         );
-
-        // --- Interaction ---
-        if balance > 0 {
-            transfer_asset_from_vault(e, &proposal.recipient, balance);
-        }
-
-        emit_emergency_executed(e, proposal_id, proposal.recipient, balance);
 
         // --- Interaction ---
         if balance > 0 {
@@ -1751,6 +1603,7 @@ impl SingleRWAVault {
         bump_instance(e);
         release_lock(e);
     }
+
 
     /// Enable emergency pro-rata distribution mode.
     ///
@@ -2328,10 +2181,10 @@ mod test {
             cooperator: admin.clone(),
             funding_target: 1000_0000000,
             maturity_date: 9_999_999_999,
-            funding_deadline: 0,
+            fund_deadline: 0,
             min_deposit: 1_0000000,
-            max_deposit_per_user: 0,
-            early_redemption_fee_bps: 100,
+            max_user_dep: 0,
+            redem_fee_bps: 100,
             rwa_name: String::from_str(e, "Test RWA"),
             rwa_symbol: String::from_str(e, "TRWA"),
             rwa_document_uri: String::from_str(e, "https://example.com/doc"),

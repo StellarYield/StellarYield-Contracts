@@ -54,23 +54,23 @@ pub enum Error {
     /// Storage schema version is outdated; migrate() must be called.
     MigrationRequired = 31,
     /// Burn requires pending yield to be claimed first (Option A).
-    BurnRequiresYieldClaim = 31,
+    BurnRequiresYieldClaim = 32,
     /// Caller is not a configured emergency signer.
-    NotEmergencySigner = 32,
+    NotEmergencySigner = 33,
     /// Emergency proposal ID not found.
-    ProposalNotFound = 33,
+    ProposalNotFound = 34,
     /// Emergency proposal has expired (past 24-hour window).
-    ProposalExpired = 34,
+    ProposalExpired = 35,
     /// Threshold approvals not yet met; cannot execute.
-    ThresholdNotMet = 35,
+    ThresholdNotMet = 36,
     /// Signer has already approved this proposal.
-    AlreadyApproved = 36,
+    AlreadyApproved = 37,
     /// Emergency proposal has already been executed.
-    ProposalAlreadyExecuted = 37,
+    ProposalAlreadyExecuted = 38,
     /// Multi-sig is configured; use multi-sig functions instead of single-admin fallback.
-    MultiSigConfigured = 38,
+    MultiSigConfigured = 39,
     /// No multi-sig configured; call set_emergency_signers first.
-    NoMultiSigConfigured = 39,
+    NoMultiSigConfigured = 40,
     /// Invalid threshold: must be >= 1 and <= number of signers.
-    InvalidThreshold = 40,
+    InvalidThreshold = 41,
 }

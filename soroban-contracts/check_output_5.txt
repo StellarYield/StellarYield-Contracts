@@ -1,0 +1,1042 @@
+    Checking single_rwa_vault v0.1.0 (/home/godbrand/Documents/GitHub/StellarYield-Contracts/soroban-contracts/contracts/single_rwa_vault)
+error: custom attribute panicked
+  --> contracts/single_rwa_vault/src/storage.rs:34:1
+   |
+34 | #[contracttype]
+   | ^^^^^^^^^^^^^^^
+   |
+   = help: message: called `Result::unwrap()` on an `Err` value: LengthExceedsMax
+
+error[E0432]: unresolved imports `crate::types::EProp`, `crate::types::State`
+  --> contracts/single_rwa_vault/src/storage.rs:18:20
+   |
+18 | use crate::types::{EProp, RedemRequest, Role, State};
+   |                    ^^^^^                      ^^^^^ no `State` in `types`
+   |                    |
+   |                    no `EProp` in `types`
+   |
+   = help: consider importing one of these variants instead:
+           soroban_sdk::xdr::LedgerEntryChange::State
+           soroban_sdk::xdr::LedgerEntryChangeType::State
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:140:15
+    |
+140 |     let key = DataKey::Balance(addr.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:161:9
+    |
+161 |         DataKey::HasClm(addr.clone(), epoch),
+    |         ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:162:9
+    |
+162 |         DataKey::UShares(addr.clone(), epoch),
+    |         ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:163:9
+    |
+163 |         DataKey::USnap(addr.clone(), epoch),
+    |         ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:176:9
+    |
+176 |         DataKey::YldClm(addr.clone()),
+    |         ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:177:9
+    |
+177 |         DataKey::LInter(addr.clone()),
+    |         ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:178:9
+    |
+178 |         DataKey::LastClm(addr.clone()),
+    |         ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+212 | instance_get!(get_share_name, ShName, String);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+213 | instance_put!(put_share_name, ShName, String);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+214 | instance_get!(get_share_symbol, ShSymb, String);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+215 | instance_put!(put_share_symbol, ShSymb, String);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+216 | instance_get!(get_share_decimals, ShDec, u32);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+217 | instance_put!(put_share_decimals, ShDec, u32);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+220 | instance_get!(get_asset, Asset, Address);
+    | ---------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+221 | instance_put!(put_asset, Asset, Address);
+    | ---------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+224 | instance_get!(get_admin, Admin, Address);
+    | ---------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+225 | instance_put!(put_admin, Admin, Address);
+    | ---------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+228 | instance_get!(get_zkme_verifier, Verifier, Address);
+    | --------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+229 | instance_put!(put_zkme_verifier, Verifier, Address);
+    | --------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+230 | instance_get!(get_cooperator, Coop, Address);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+231 | instance_put!(put_cooperator, Coop, Address);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+234 | instance_get!(get_rwa_name, RwaName, String);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+235 | instance_put!(put_rwa_name, RwaName, String);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+236 | instance_get!(get_rwa_symbol, RwaSymbol, String);
+    | ------------------------------------------------ in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+237 | instance_put!(put_rwa_symbol, RwaSymbol, String);
+    | ------------------------------------------------ in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+238 | instance_get!(get_rwa_document_uri, RwaUri, String);
+    | --------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+239 | instance_put!(put_rwa_document_uri, RwaUri, String);
+    | --------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+240 | instance_get!(get_rwa_category, RwaCat, String);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+241 | instance_put!(put_rwa_category, RwaCat, String);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+242 | instance_get!(get_expected_apy, Apy, u32);
+    | ----------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+243 | instance_put!(put_expected_apy, Apy, u32);
+    | ----------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+246 | instance_get!(get_funding_target, Target, i128);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+247 | instance_put!(put_funding_target, Target, i128);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+248 | instance_get!(get_maturity_date, Maturity, u64);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+249 | instance_put!(put_maturity_date, Maturity, u64);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:254:15
+    |
+254 |         .get(&DataKey::Deadline)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:258:33
+    |
+258 |     e.storage().instance().set(&DataKey::Deadline, &val);
+    |                                 ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+261 | instance_get!(get_min_deposit, MinDep, i128);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+262 | instance_put!(put_min_deposit, MinDep, i128);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+263 | instance_get!(get_max_user_dep, MaxUser, i128);
+    | ---------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+264 | instance_put!(put_max_user_dep, MaxUser, i128);
+    | ---------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+265 | instance_get!(get_redem_fee_bps, RedemFee, u32);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+266 | instance_put!(put_redem_fee_bps, RedemFee, u32);
+    | ----------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+269 | instance_get!(get_vault_state, State, State);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+270 | instance_put!(put_vault_state, State, State);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+271 | instance_get!(get_paused, Paused, bool);
+    | --------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+272 | instance_put!(put_paused, Paused, bool);
+    | --------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+273 | instance_get!(get_freeze_flags, Flags, u32);
+    | ------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+274 | instance_put!(put_freeze_flags, Flags, u32);
+    | ------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+275 | instance_get!(get_locked, Locked, bool);
+    | --------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+276 | instance_put!(put_locked, Locked, bool);
+    | --------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:281:15
+    |
+281 |         .get(&DataKey::ActivateTime)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:287:15
+    |
+287 |         .set(&DataKey::ActivateTime, &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+291 | instance_get!(get_current_epoch, Epoch, u32);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+292 | instance_put!(put_current_epoch, Epoch, u32);
+    | -------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+293 | instance_get!(get_total_yield_distributed, YieldDist, i128);
+    | ----------------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+294 | instance_put!(put_total_yield_distributed, YieldDist, i128);
+    | ----------------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+297 | instance_get!(get_total_supply, Supply, i128);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+298 | instance_put!(put_total_supply, Supply, i128);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+301 | instance_get!(get_total_deposited, TDep, i128);
+    | ---------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+302 | instance_put!(put_total_deposited, TDep, i128);
+    | ---------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+305 | instance_get!(get_redemption_counter, RedemCount, u32);
+    | ------------------------------------------------------ in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+306 | instance_put!(put_redemption_counter, RedemCount, u32);
+    | ------------------------------------------------------ in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+309 | instance_get!(get_contract_version, Ver, u32);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+310 | instance_put!(put_contract_version, Ver, u32);
+    | --------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:199:41
+    |
+199 |             e.storage().instance().get(&DataKey::$key).unwrap()
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+311 | instance_get!(get_storage_schema_version, SchemaVersion, u32);
+    | ------------------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_get` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:206:41
+    |
+206 |             e.storage().instance().set(&DataKey::$key, &val);
+    |                                         ^^^^^^^ use of undeclared type `DataKey`
+...
+312 | instance_put!(put_storage_schema_version, SchemaVersion, u32);
+    | ------------------------------------------------------------- in this macro invocation
+    |
+    = note: this error originates in the macro `instance_put` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:326:15
+    |
+326 |         .get(&DataKey::Role(addr.clone(), role))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:335:19
+    |
+335 |             .set(&DataKey::Role(addr, role), &true);
+    |                   ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:337:40
+    |
+337 |         e.storage().instance().remove(&DataKey::Role(addr, role));
+    |                                        ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:364:15
+    |
+364 |         .get(&DataKey::EpYield(epoch))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:370:15
+    |
+370 |         .set(&DataKey::EpYield(epoch), &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:376:15
+    |
+376 |         .get(&DataKey::EpShares(epoch))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:382:15
+    |
+382 |         .set(&DataKey::EpShares(epoch), &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:388:15
+    |
+388 |         .get(&DataKey::EpTime(epoch))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:394:15
+    |
+394 |         .set(&DataKey::EpTime(epoch), &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:417:15
+    |
+417 |         .get(&DataKey::Balance(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:423:15
+    |
+423 |         .set(&DataKey::Balance(addr.clone()), &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:430:15
+    |
+430 |     let key = DataKey::Allow(owner.clone(), spender.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:447:15
+    |
+447 |     let key = DataKey::Allow(owner.clone(), spender.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:481:15
+    |
+481 |     let key = DataKey::Allow(owner.clone(), spender.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:503:15
+    |
+503 |         .get(&DataKey::UDep(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:509:15
+    |
+509 |         .set(&DataKey::UDep(addr.clone()), &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:511:10
+    |
+511 |         &DataKey::UDep(addr.clone()),
+    |          ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:520:15
+    |
+520 |         .get(&DataKey::YieldClaimed(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:524:15
+    |
+524 |     let key = DataKey::YieldClaimed(addr.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:534:15
+    |
+534 |         .get(&DataKey::LastClaimed(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:538:15
+    |
+538 |     let key = DataKey::LastClaimed(addr.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:548:15
+    |
+548 |         .get(&DataKey::HasClaimed(addr.clone(), epoch))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:552:15
+    |
+552 |     let key = DataKey::HasClaimed(addr.clone(), epoch);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:562:15
+    |
+562 |         .get(&DataKey::UserShares(addr.clone(), epoch))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:566:15
+    |
+566 |     let key = DataKey::UserShares(addr.clone(), epoch);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:576:15
+    |
+576 |         .get(&DataKey::HasSnapshot(addr.clone(), epoch))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:580:15
+    |
+580 |     let key = DataKey::HasSnapshot(addr.clone(), epoch);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:590:15
+    |
+590 |         .get(&DataKey::LastInteract(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:594:15
+    |
+594 |     let key = DataKey::LastInteract(addr.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:608:15
+    |
+608 |         .get(&DataKey::RedemReq(id))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:614:15
+    |
+614 |         .set(&DataKey::RedemReq(id), &req);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:616:10
+    |
+616 |         &DataKey::RedemReq(id),
+    |          ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:625:15
+    |
+625 |         .get(&DataKey::EscrowShares(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:630:15
+    |
+630 |     let key = DataKey::EscrowShares(addr.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:647:15
+    |
+647 |         .get(&DataKey::TransferKyc)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:654:15
+    |
+654 |         .set(&DataKey::TransferKyc, &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:664:15
+    |
+664 |         .get(&DataKey::BList(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:671:15
+    |
+671 |         .set(&DataKey::BList(addr.clone()), &status);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:673:10
+    |
+673 |         &DataKey::BList(addr.clone()),
+    |          ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:686:15
+    |
+686 |         .get(&DataKey::EmergBalance)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:691:33
+    |
+691 |     e.storage().instance().set(&DataKey::EmergBalance, &val);
+    |                                 ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:697:15
+    |
+697 |         .get(&DataKey::EmTotalSupSnap)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:704:15
+    |
+704 |         .set(&DataKey::EmTotalSupSnap, &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:710:15
+    |
+710 |         .get(&DataKey::HasClaimEmerg(addr.clone()))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:715:15
+    |
+715 |     let key = DataKey::HasClaimEmerg(addr.clone());
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:728:33
+    |
+728 |     e.storage().instance().has(&DataKey::EmSigners)
+    |                                 ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:734:15
+    |
+734 |         .get(&DataKey::EmSigners)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:741:15
+    |
+741 |         .set(&DataKey::EmSigners, &signers);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:747:15
+    |
+747 |         .get(&DataKey::EmThreshold)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:754:15
+    |
+754 |         .set(&DataKey::EmThreshold, &threshold);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:760:15
+    |
+760 |         .get(&DataKey::EmPropCount)
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:767:15
+    |
+767 |         .set(&DataKey::EmPropCount, &val);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:773:15
+    |
+773 |         .get(&DataKey::EmergProp(id))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:777:15
+    |
+777 |     let key = DataKey::EmergProp(id);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:787:15
+    |
+787 |         .get(&DataKey::EPAppr(id))
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+error[E0433]: failed to resolve: use of undeclared type `DataKey`
+   --> contracts/single_rwa_vault/src/storage.rs:792:15
+    |
+792 |     let key = DataKey::EPAppr(id);
+    |               ^^^^^^^ use of undeclared type `DataKey`
+
+Some errors have detailed explanations: E0432, E0433.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `single_rwa_vault` (lib) due to 125 previous errors

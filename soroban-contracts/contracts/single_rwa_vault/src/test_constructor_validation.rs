@@ -19,10 +19,10 @@ fn get_valid_params(e: &Env) -> InitParams {
         cooperator: Address::generate(e),
         funding_target: 1000,
         maturity_date: e.ledger().timestamp() + 1000,
-        funding_deadline: 0,
+        fund_deadline: 0,
         min_deposit: 10,
-        max_deposit_per_user: 100,
-        early_redemption_fee_bps: 200,
+        max_user_dep: 100,
+        redem_fee_bps: 200,
         rwa_name: String::from_str(e, "RWA"),
         rwa_symbol: String::from_str(e, "R"),
         rwa_document_uri: String::from_str(e, "uri"),
@@ -60,7 +60,7 @@ fn test_constructor_rejects_past_maturity() {
 fn test_constructor_rejects_high_fee() {
     let e = Env::default();
     let mut params = get_valid_params(&e);
-    params.early_redemption_fee_bps = 1001;
+    params.redem_fee_bps = 1001;
 
     e.register(SingleRWAVault, (params,));
 }
@@ -91,7 +91,7 @@ fn test_constructor_rejects_max_deposit_below_min() {
     let e = Env::default();
     let mut params = get_valid_params(&e);
     params.min_deposit = 100;
-    params.max_deposit_per_user = 50;
+    params.max_user_dep = 50;
 
     e.register(SingleRWAVault, (params,));
 }

@@ -24,11 +24,10 @@ pub struct InitParams {
     // Vault configuration
     pub funding_target: i128,
     pub maturity_date: u64,
+    pub fund_deadline: u64,
     pub min_deposit: i128,
-    pub max_deposit_per_user: i128,
-    pub early_redemption_fee_bps: u32,
-    /// Unix timestamp after which funding can be cancelled if target not met.
-    pub funding_deadline: u64,
+    pub max_user_dep: i128,
+    pub redem_fee_bps: u32,
     // RWA details
     pub rwa_name: String,
     pub rwa_symbol: String,
@@ -119,28 +118,7 @@ pub enum Role {
 
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct EmergencyProposal {
-    /// Address that will receive all vault funds on execution.
-    pub recipient: Address,
-    /// Signer who created the proposal.
-    pub proposer: Address,
-    /// Ledger timestamp at proposal creation (used for expiry check).
-    pub proposed_at: u64,
-    /// True once `execute_emergency_withdraw` has run successfully.
-    pub executed: bool,
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Redemption request
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Emergency multi-sig proposal
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct EmergencyProposal {
+pub struct EmergProposal {
     /// Address that will receive all vault funds on execution.
     pub recipient: Address,
     /// Signer who created the proposal.
@@ -157,7 +135,7 @@ pub struct EmergencyProposal {
 
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct RedemptionRequest {
+pub struct RedemRequest {
     pub user: Address,
     pub shares: i128,
     pub request_time: u64,
