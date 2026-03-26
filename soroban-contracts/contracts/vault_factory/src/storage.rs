@@ -28,6 +28,9 @@ pub enum DataKey {
     /// Granular RBAC role assignment: (address, role) → bool.
     /// Replaces the old binary `Operator(Address)` key.
     Role(Address, Role),
+    // --- Versioning ---
+    ContractVersion,
+    StorageSchemaVersion,
     DefaultAsset,
     DefaultZkmeVerifier,
     DefaultCooperator,
@@ -72,6 +75,30 @@ pub fn get_admin(e: &Env) -> Address {
 }
 pub fn put_admin(e: &Env, val: Address) {
     e.storage().instance().set(&DataKey::Admin, &val);
+}
+
+pub fn get_contract_version(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::ContractVersion)
+        .unwrap_or(0)
+}
+
+pub fn put_contract_version(e: &Env, val: u32) {
+    e.storage().instance().set(&DataKey::ContractVersion, &val);
+}
+
+pub fn get_storage_schema_version(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::StorageSchemaVersion)
+        .unwrap_or(0)
+}
+
+pub fn put_storage_schema_version(e: &Env, val: u32) {
+    e.storage()
+        .instance()
+        .set(&DataKey::StorageSchemaVersion, &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

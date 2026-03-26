@@ -1,6 +1,6 @@
 //! Events for VaultFactory.
 
-use soroban_sdk::{symbol_short, Address, Env, String};
+use soroban_sdk::{symbol_short, Address, BytesN, Env, String};
 
 use crate::types::{Role, VaultType};
 
@@ -44,9 +44,21 @@ pub fn emit_vault_removed(e: &Env, vault: Address, removed_by: Address) {
         .publish((symbol_short!("v_remove"), vault), removed_by);
 }
 
+/// Emitted when the vault WASM hash is updated by the admin.
+pub fn emit_wasm_hash_updated(e: &Env, new_hash: BytesN<32>, updated_by: Address) {
+    e.events()
+        .publish((symbol_short!("wasm_upd"),), (new_hash, updated_by));
+}
+
 /// Emitted when the admin grants a role to an address.
 pub fn emit_role_granted(e: &Env, addr: Address, role: Role) {
     e.events().publish((symbol_short!("role_grt"), addr), role);
+}
+
+/// Emitted by `migrate` — storage schema upgraded.
+pub fn emit_data_migrated(e: &Env, old_version: u32, new_version: u32) {
+    e.events()
+        .publish((symbol_short!("data_mig"), old_version, new_version), ());
 }
 
 /// Emitted when the admin revokes a role from an address.

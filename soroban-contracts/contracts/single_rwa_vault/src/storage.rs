@@ -70,19 +70,28 @@ pub enum DataKey {
     // --- Vault state ---
     VaultState,
     Paused,
+    FreezeFlags,
     ActivationTimestamp,
     /// Reentrancy lock — true while a guarded function is executing.
     Locked,
     /// Unix timestamp deadline for funding; 0 means no deadline.
     FundingDeadline,
 
+    // --- Versioning ---
+    ContractVersion,
+    StorageSchemaVersion,
+
     // --- Epoch / yield ---
     CurrentEpoch,
     TotalYieldDistributed,
     EpochYield(u32),
     EpochTotalShares(u32),
+    EpochTimestamp(u32),
     TotalYieldClaimed(Address),
     HasClaimedEpoch(Address, u32),
+    /// Cursor: the highest epoch at which all epochs ≤ cursor have been claimed.
+    /// Allows pending_yield / claim_yield to scan only new epochs.
+    LastClaimedEpoch(Address),
 
     // --- User share snapshots ---
     UserSharesAtEpoch(Address, u32),
@@ -167,6 +176,7 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     let addr_keys = [
         DataKey::TotalYieldClaimed(addr.clone()),
         DataKey::LastInteractionEpoch(addr.clone()),
+        DataKey::LastClaimedEpoch(addr.clone()),
     ];
     for key in &addr_keys {
         if e.storage().persistent().has(key) {
@@ -271,6 +281,8 @@ instance_get!(get_vault_state, VaultState, VaultState);
 instance_put!(put_vault_state, VaultState, VaultState);
 instance_get!(get_paused, Paused, bool);
 instance_put!(put_paused, Paused, bool);
+instance_get!(get_freeze_flags, FreezeFlags, u32);
+instance_put!(put_freeze_flags, FreezeFlags, u32);
 instance_get!(get_locked, Locked, bool);
 instance_put!(put_locked, Locked, bool);
 
@@ -303,6 +315,12 @@ instance_put!(put_total_deposited, TotalDeposited, i128);
 // RedemptionCounter
 instance_get!(get_redemption_counter, RedemptionCounter, u32);
 instance_put!(put_redemption_counter, RedemptionCounter, u32);
+
+// Versioning
+instance_get!(get_contract_version, ContractVersion, u32);
+instance_put!(put_contract_version, ContractVersion, u32);
+instance_get!(get_storage_schema_version, StorageSchemaVersion, u32);
+instance_put!(put_storage_schema_version, StorageSchemaVersion, u32);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Operator (instance storage — same lifetime as admin)
@@ -373,6 +391,18 @@ pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
     e.storage()
         .instance()
         .set(&DataKey::EpochTotalShares(epoch), &val);
+}
+
+pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EpochTimestamp(epoch))
+        .unwrap_or(0)
+}
+pub fn put_epoch_timestamp(e: &Env, epoch: u32, val: u64) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EpochTimestamp(epoch), &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -520,6 +550,20 @@ pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
 }
 pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
     let key = DataKey::TotalYieldClaimed(addr.clone());
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn get_last_claimed_epoch(e: &Env, addr: &Address) -> u32 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::LastClaimedEpoch(addr.clone()))
+        .unwrap_or(0)
+}
+pub fn put_last_claimed_epoch(e: &Env, addr: &Address, val: u32) {
+    let key = DataKey::LastClaimedEpoch(addr.clone());
     e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()

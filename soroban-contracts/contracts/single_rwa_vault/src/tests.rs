@@ -60,7 +60,7 @@ impl MockZkme {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
+pub fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
     let admin = Address::generate(env);
     let cooperator = Address::generate(env);
 
@@ -97,7 +97,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
 
 /// Approve `user` in zkMe, mint tokens to them, and deposit into the vault.
 /// Returns the number of vault shares minted.
-fn fund_user(
+pub fn fund_user(
     env: &Env,
     vault_id: &Address,
     token_id: &Address,

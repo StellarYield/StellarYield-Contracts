@@ -3,12 +3,23 @@
 mod errors;
 mod events;
 mod math;
+mod migrations;
 mod storage;
 mod token_interface;
 mod types;
 
 #[cfg(test)]
 mod fuzz_tests;
+#[cfg(test)]
+mod test_burn_snapshot;
+#[cfg(test)]
+mod test_burn_yield_accounting;
+#[cfg(test)]
+mod test_claim_cursor;
+#[cfg(test)]
+mod test_convert_erc4626;
+#[cfg(test)]
+mod test_epoch_history;
 #[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
@@ -20,10 +31,11 @@ mod test_lock_up;
 
 pub use crate::types::*;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String};
+use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String, Vec};
 
 use crate::errors::Error;
 use crate::events::*;
+use crate::migrations::CURRENT_SCHEMA_VERSION;
 use crate::storage::*;
 use crate::token_interface::*;
 
@@ -34,8 +46,17 @@ use crate::token_interface::*;
 #[contract]
 pub struct SingleRWAVault;
 
+/// Fixed-point precision for yield_per_share calculations (10^6).
+const PRECISION: i128 = 1_000_000;
+
 #[contractimpl]
 impl SingleRWAVault {
+    pub const FREEZE_DEPOSIT_MINT: u32 = 1;
+    pub const FREEZE_WITHDRAW_REDEEM: u32 = 2;
+    pub const FREEZE_YIELD: u32 = 4;
+    pub const FREEZE_ALL: u32 =
+        Self::FREEZE_DEPOSIT_MINT | Self::FREEZE_WITHDRAW_REDEEM | Self::FREEZE_YIELD;
+
     // ─────────────────────────────────────────────────────────────────
     // Constructor
     // ─────────────────────────────────────────────────────────────────
@@ -101,6 +122,7 @@ impl SingleRWAVault {
         // Initial state
         put_vault_state(e, VaultState::Funding);
         put_paused(e, false);
+        put_freeze_flags(e, 0u32);
         put_locked(e, false);
         put_current_epoch(e, 0u32);
         put_total_yield_distributed(e, 0i128);
@@ -108,6 +130,10 @@ impl SingleRWAVault {
         put_total_supply(e, 0i128);
         put_transfer_requires_kyc(e, true);
         put_total_deposited(e, 0i128);
+
+        // Versioning
+        put_contract_version(e, 1u32);
+        put_storage_schema_version(e, 1u32);
 
         e.storage()
             .instance()
@@ -253,8 +279,9 @@ impl SingleRWAVault {
     pub fn deposit(e: &Env, caller: Address, assets: i128, receiver: Address) -> i128 {
         caller.require_auth();
         // --- Checks ---
+        require_current_schema(e);
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_DEPOSIT_MINT);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &receiver);
         require_kyc_verified(e, &caller);
@@ -298,8 +325,9 @@ impl SingleRWAVault {
     pub fn mint(e: &Env, caller: Address, shares: i128, receiver: Address) -> i128 {
         caller.require_auth();
         // --- Checks ---
+        require_current_schema(e);
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_DEPOSIT_MINT);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &receiver);
         require_kyc_verified(e, &caller);
@@ -353,8 +381,9 @@ impl SingleRWAVault {
     ) -> i128 {
         caller.require_auth();
         // --- Checks ---
+        require_current_schema(e);
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
@@ -405,8 +434,9 @@ impl SingleRWAVault {
     ) -> i128 {
         caller.require_auth();
         // --- Checks ---
+        require_current_schema(e);
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
@@ -456,6 +486,29 @@ impl SingleRWAVault {
     }
     pub fn preview_redeem(e: &Env, shares: i128) -> i128 {
         preview_redeem(e, shares)
+    }
+
+    // ERC-4626 pure conversion helpers (floor division)
+    // ─────────────────────────────────────────────────────────────────
+
+    pub fn convert_to_shares(e: &Env, assets: i128) -> i128 {
+        let supply = get_total_supply(e);
+        let ta = total_assets(e);
+        if supply == 0 || ta == 0 {
+            return assets;
+        }
+        // shares = assets * totalSupply / totalAssets (floor)
+        math::mul_div(e, assets, supply, ta)
+    }
+
+    pub fn convert_to_assets(e: &Env, shares: i128) -> i128 {
+        let supply = get_total_supply(e);
+        let ta = total_assets(e);
+        if supply == 0 {
+            return shares;
+        }
+        // assets = shares * totalAssets / totalSupply (floor)
+        math::mul_div(e, shares, ta, supply)
     }
 
     pub fn redemption_request(e: &Env, request_id: u32) -> RedemptionRequest {
@@ -543,8 +596,9 @@ impl SingleRWAVault {
     pub fn distribute_yield(e: &Env, caller: Address, amount: i128) -> u32 {
         caller.require_auth();
         // --- Checks ---
+        require_current_schema(e);
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_YIELD);
         // YieldOperator role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::YieldOperator);
         require_state(e, VaultState::Active);
@@ -558,6 +612,7 @@ impl SingleRWAVault {
         put_current_epoch(e, epoch);
         put_epoch_yield(e, epoch, amount);
         put_epoch_total_shares(e, epoch, get_total_supply(e));
+        put_epoch_timestamp(e, epoch, e.ledger().timestamp());
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
         put_total_deposited(e, get_total_deposited(e) + amount);
 
@@ -579,8 +634,9 @@ impl SingleRWAVault {
     pub fn claim_yield(e: &Env, caller: Address) -> i128 {
         caller.require_auth();
         // --- Checks ---
+        require_current_schema(e);
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_YIELD);
         require_active_or_matured(e);
         require_not_blacklisted(e, &caller);
 
@@ -591,13 +647,14 @@ impl SingleRWAVault {
 
         // --- Effects ---
         let epoch = get_current_epoch(e);
-        for i in 1..=epoch {
-            if !get_has_claimed_epoch(e, &caller, i)
-                && _get_user_shares_for_epoch(e, &caller, i) > 0
-            {
-                put_has_claimed_epoch(e, &caller, i, true);
-            }
+        let last_claimed = get_last_claimed_epoch(e, &caller);
+        // Mark every epoch in the unclaimed window as claimed — including epochs
+        // where the user had 0 shares.  This prevents the loop from re-scanning
+        // dead epochs on every subsequent call (O(new_epochs) instead of O(total)).
+        for i in (last_claimed + 1)..=epoch {
+            put_has_claimed_epoch(e, &caller, i, true);
         }
+        put_last_claimed_epoch(e, &caller, epoch);
 
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
@@ -617,7 +674,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // --- Checks ---
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_YIELD);
         require_active_or_matured(e);
         require_not_blacklisted(e, &caller);
 
@@ -632,6 +689,15 @@ impl SingleRWAVault {
 
         // --- Effects ---
         put_has_claimed_epoch(e, &caller, epoch, true);
+        // Advance the cursor: if this epoch is the next sequential one after
+        // the cursor, walk forward over any already-claimed epochs too.
+        let mut cursor = get_last_claimed_epoch(e, &caller);
+        let current = get_current_epoch(e);
+        while cursor < current && get_has_claimed_epoch(e, &caller, cursor + 1) {
+            cursor += 1;
+        }
+        put_last_claimed_epoch(e, &caller, cursor);
+
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
 
@@ -643,8 +709,10 @@ impl SingleRWAVault {
 
     pub fn pending_yield(e: &Env, user: Address) -> i128 {
         let epoch = get_current_epoch(e);
+        // Start from the cursor so we skip already-claimed epochs entirely.
+        let start = get_last_claimed_epoch(e, &user) + 1;
         let mut total = 0i128;
-        for i in 1..=epoch {
+        for i in start..=epoch {
             if !get_has_claimed_epoch(e, &user, i) {
                 total += Self::pending_yield_for_epoch(e, user.clone(), i);
             }
@@ -700,6 +768,114 @@ impl SingleRWAVault {
         } else {
             lock_up_end - current_timestamp // Remaining time
         }
+    /// The highest epoch at which all epochs ≤ cursor have been fully claimed
+    /// by `user`.  `pending_yield` scans from `last_claimed_epoch + 1` onwards.
+    pub fn last_claimed_epoch(e: &Env, user: Address) -> u32 {
+        get_last_claimed_epoch(e, &user)
+    }
+
+    /// Get detailed data for a single epoch.
+    pub fn get_epoch_data(e: &Env, epoch: u32) -> EpochData {
+        let yield_amount = get_epoch_yield(e, epoch);
+        let total_shares = get_epoch_total_shares(e, epoch);
+        let yield_per_share = if total_shares > 0 {
+            yield_amount * PRECISION / total_shares
+        } else {
+            0
+        };
+        EpochData {
+            epoch,
+            yield_amount,
+            total_shares,
+            yield_per_share,
+            timestamp: get_epoch_timestamp(e, epoch),
+        }
+    }
+
+    /// Get epoch data for a range [start, end] inclusive.
+    /// Maximum range size is 50 epochs.
+    pub fn get_epoch_range(e: &Env, start: u32, end: u32) -> Vec<EpochData> {
+        const MAX_RANGE: u32 = 50;
+        if start == 0 || start > end {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let current = get_current_epoch(e);
+        let actual_end = end.min(current);
+        if actual_end < start {
+            return Vec::new(e);
+        }
+        if actual_end - start + 1 > MAX_RANGE {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let mut result: Vec<EpochData> = Vec::new(e);
+        for epoch in start..=actual_end {
+            result.push_back(Self::get_epoch_data(e, epoch));
+        }
+        result
+    }
+
+    /// Get aggregate yield statistics for the vault.
+    pub fn get_yield_summary(e: &Env) -> YieldSummary {
+        let total_epochs = get_current_epoch(e);
+        let total_yield = get_total_yield_distributed(e);
+        let average_yield = if total_epochs > 0 {
+            total_yield / total_epochs as i128
+        } else {
+            0
+        };
+        let latest_epoch_yield = if total_epochs > 0 {
+            get_epoch_yield(e, total_epochs)
+        } else {
+            0
+        };
+        YieldSummary {
+            total_epochs,
+            total_yield_distributed: total_yield,
+            average_yield_per_epoch: average_yield,
+            latest_epoch_yield,
+            earliest_epoch: if total_epochs > 0 { 1 } else { 0 },
+            latest_epoch: total_epochs,
+        }
+    }
+
+    /// Get per-epoch yield breakdown for a user over a range [start_epoch, end_epoch].
+    /// Maximum range size is 50 epochs.
+    pub fn get_user_yield_history(
+        e: &Env,
+        user: Address,
+        start_epoch: u32,
+        end_epoch: u32,
+    ) -> Vec<UserEpochYield> {
+        const MAX_RANGE: u32 = 50;
+        if start_epoch == 0 || start_epoch > end_epoch {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let current = get_current_epoch(e);
+        let actual_end = end_epoch.min(current);
+        if actual_end < start_epoch {
+            return Vec::new(e);
+        }
+        if actual_end - start_epoch + 1 > MAX_RANGE {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let mut result: Vec<UserEpochYield> = Vec::new(e);
+        for epoch in start_epoch..=actual_end {
+            let user_shares = _get_user_shares_for_epoch(e, &user, epoch);
+            let total_shares = get_epoch_total_shares(e, epoch);
+            let yield_amount = get_epoch_yield(e, epoch);
+            let yield_earned = if total_shares > 0 {
+                yield_amount * user_shares / total_shares
+            } else {
+                0
+            };
+            result.push_back(UserEpochYield {
+                epoch,
+                user_shares,
+                yield_earned,
+                claimed: get_has_claimed_epoch(e, &user, epoch),
+            });
+        }
+        result
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -765,7 +941,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // --- Checks ---
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_state(e, VaultState::Cancelled);
 
         let shares = get_share_balance(e, &caller);
@@ -901,7 +1077,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // --- Checks ---
         acquire_lock(e);
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted(e, &caller);
         require_not_blacklisted(e, &owner);
         require_not_blacklisted(e, &receiver);
@@ -962,7 +1138,7 @@ impl SingleRWAVault {
     /// Request early redemption (pending operator approval).
     pub fn request_early_redemption(e: &Env, caller: Address, shares: i128) -> u32 {
         caller.require_auth();
-        require_not_paused(e);
+        require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_closed(e);
         require_not_blacklisted(e, &caller);
         require_lock_up_period_elapsed(e, &caller);
@@ -1246,6 +1422,7 @@ impl SingleRWAVault {
         // TreasuryManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::TreasuryManager);
         put_paused(e, true);
+        put_freeze_flags(e, Self::FREEZE_ALL);
         emit_emergency_action(e, true, reason);
         bump_instance(e);
     }
@@ -1259,12 +1436,25 @@ impl SingleRWAVault {
         caller.require_auth();
         require_admin(e, &caller);
         put_paused(e, false);
+        put_freeze_flags(e, 0u32);
         emit_emergency_action(e, false, String::from_str(e, ""));
         bump_instance(e);
     }
 
     pub fn paused(e: &Env) -> bool {
         get_paused(e)
+    }
+
+    pub fn freeze_flags(e: &Env) -> u32 {
+        get_freeze_flags(e)
+    }
+
+    pub fn set_freeze_flags(e: &Env, caller: Address, flags: u32) {
+        caller.require_auth();
+        // TreasuryManager role required — also passes for FullOperator and admin.
+        require_role(e, &caller, Role::TreasuryManager);
+        put_freeze_flags(e, flags);
+        bump_instance(e);
     }
 
     /// Drain all vault assets to `recipient` and pause the vault.
@@ -1283,6 +1473,7 @@ impl SingleRWAVault {
 
         // --- Effects (pause before transferring) ---
         put_paused(e, true);
+        put_freeze_flags(e, Self::FREEZE_ALL);
         emit_emergency_action(
             e,
             true,
@@ -1397,8 +1588,35 @@ impl SingleRWAVault {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // View helpers
+    // Versioning and migration
     // ─────────────────────────────────────────────────────────────────
+
+    /// Admin-only migration entry point. Updates storage schema to the latest version.
+    /// Emits DataMigrated event. No-op if already up-to-date.
+    pub fn migrate(e: &Env, caller: Address) {
+        caller.require_auth();
+        require_admin(e, &caller);
+
+        let old_version = get_storage_schema_version(e);
+        if old_version >= CURRENT_SCHEMA_VERSION {
+            // Already up-to-date; no-op
+            return;
+        }
+
+        crate::migrations::run_migrations(e, old_version);
+        emit_data_migrated(e, old_version, CURRENT_SCHEMA_VERSION);
+        bump_instance(e);
+    }
+
+    /// Returns the current storage schema version.
+    pub fn storage_schema_version(e: &Env) -> u32 {
+        get_storage_schema_version(e)
+    }
+
+    /// Returns the contract’s immutable code version.
+    pub fn contract_version(e: &Env) -> u32 {
+        get_contract_version(e)
+    }
 
     pub fn asset(e: &Env) -> Address {
         get_asset(e)
@@ -1518,6 +1736,8 @@ impl SingleRWAVault {
 
     pub fn burn(e: &Env, from: Address, amount: i128) {
         from.require_auth();
+        // Snapshot before balance change so epoch yield is attributed to pre-burn shares.
+        update_user_snapshot(e, &from);
         _burn(e, &from, amount);
         emit_burn(e, from, amount);
         bump_instance(e);
@@ -1530,6 +1750,8 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InsufficientAllowance);
         }
         put_share_allowance(e, &from, &spender, allowance - amount);
+        // Snapshot before balance change so epoch yield is attributed to pre-burn shares.
+        update_user_snapshot(e, &from);
         _burn(e, &from, amount);
         emit_burn(e, from, amount);
         bump_instance(e);
@@ -1629,6 +1851,10 @@ fn _mint(e: &Env, to: &Address, amount: i128) {
 }
 
 fn _burn(e: &Env, from: &Address, amount: i128) {
+    // Defensive snapshot: ensure the user's share balance is recorded for all
+    // epochs up to now BEFORE the balance decreases.  This prevents stale
+    // balances from being used in yield calculations for past epochs.
+    update_user_snapshot(e, from);
     let bal = get_share_balance(e, from);
     if bal < amount {
         panic_with_error!(e, Error::InsufficientBalance);
@@ -1681,6 +1907,14 @@ fn _get_user_shares_for_epoch(e: &Env, user: &Address, epoch: u32) -> i128 {
 // Guard helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Require that storage schema is current; panics with MigrationRequired otherwise.
+/// Skipped for migrate, version, and admin functions.
+fn require_current_schema(e: &Env) {
+    if get_storage_schema_version(e) != CURRENT_SCHEMA_VERSION {
+        panic_with_error!(e, Error::MigrationRequired);
+    }
+}
+
 fn require_admin(e: &Env, caller: &Address) {
     if *caller != get_admin(e) {
         panic_with_error!(e, Error::NotAdmin);
@@ -1705,8 +1939,10 @@ fn require_role(e: &Env, caller: &Address, role: Role) {
     }
 }
 
-fn require_not_paused(e: &Env) {
-    if get_paused(e) {
+fn require_not_frozen(e: &Env, flag: u32) {
+    let flags = get_freeze_flags(e);
+    if (flags & flag) != 0 {
+        // Reuse VaultPaused error for backwards compatibility with existing tests.
         panic_with_error!(e, Error::VaultPaused);
     }
 }
@@ -1960,6 +2196,9 @@ mod test_redemption;
 mod test_withdraw;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod test_freeze_flags;
 
 #[cfg(test)]
 mod test_close_vault;

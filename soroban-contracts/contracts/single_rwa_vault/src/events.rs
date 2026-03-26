@@ -199,3 +199,9 @@ pub fn emit_emergency_claimed(e: &Env, user: Address, amount: i128) {
     e.events()
         .publish((symbol_short!("emerg_clm"), user), amount);
 }
+
+/// Emitted by `migrate` — storage schema upgraded.
+pub fn emit_data_migrated(e: &Env, old_version: u32, new_version: u32) {
+    e.events()
+        .publish((symbol_short!("data_mig"), old_version, new_version), ());
+}
