@@ -58,4 +58,6 @@ pub enum Error {
     InvalidDepositLimits = 33,
     /// Shares are still within lock-up period and cannot be transferred
     SharesLocked = 34,
+    /// Vault has insufficient balance to cover the requested transfer
+    InsufficientVaultBalance = 35,
 }
