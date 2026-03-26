@@ -130,6 +130,9 @@ impl VaultFactory {
             0i128,  // min_deposit
             0i128,  // max_deposit_per_user
             200u32, // early_redemption_fee_bps (2 %)
+            None,   // vault_admin (use factory admin)
+            None,   // zkme_verifier (use factory default)
+            None,   // cooperator (use factory default)
         )
     }
 
@@ -162,6 +165,9 @@ impl VaultFactory {
             params.min_deposit,
             params.max_deposit_per_user,
             params.early_redemption_fee_bps,
+            params.vault_admin,
+            params.zkme_verifier,
+            params.cooperator,
         )
     }
 
@@ -194,6 +200,9 @@ impl VaultFactory {
             params.min_deposit,
             params.max_deposit_per_user,
             params.early_redemption_fee_bps,
+            params.vault_admin,
+            params.zkme_verifier,
+            params.cooperator,
         )
     }
 
@@ -233,6 +242,9 @@ impl VaultFactory {
                 p.min_deposit,
                 p.max_deposit_per_user,
                 p.early_redemption_fee_bps,
+                p.vault_admin,
+                p.zkme_verifier,
+                p.cooperator,
             );
             vaults.push_back(vault);
         }
@@ -522,6 +534,9 @@ impl VaultFactory {
         min_deposit: i128,
         max_deposit_per_user: i128,
         early_redemption_fee_bps: u32,
+        vault_admin: Option<Address>,
+        zkme_verifier: Option<Address>,
+        cooperator: Option<Address>,
     ) -> Address {
         // --- Validation ---
         if asset == e.current_contract_address() {
@@ -551,9 +566,9 @@ impl VaultFactory {
         };
 
         let wasm_hash = get_vault_wasm_hash(e);
-        let admin = get_admin(e);
-        let zkme = get_default_zkme_verifier(e);
-        let coop = get_default_cooperator(e);
+        let admin = vault_admin.unwrap_or_else(|| get_admin(e));
+        let zkme = zkme_verifier.unwrap_or_else(|| get_default_zkme_verifier(e));
+        let coop = cooperator.unwrap_or_else(|| get_default_cooperator(e));
 
         // Deploy a fresh vault contract instance.
         // The salt combines a monotonic counter, the vault name, and the
@@ -619,6 +634,7 @@ impl VaultFactory {
             VaultType::SingleRwa,
             name,
             e.current_contract_address(),
+            admin.clone(),
         );
 
         bump_instance(e);
