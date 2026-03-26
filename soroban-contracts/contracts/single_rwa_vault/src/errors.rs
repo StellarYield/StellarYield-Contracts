@@ -45,12 +45,14 @@ pub enum Error {
     InvalidInitParams = 26,
     /// Vault cannot be closed because it still contains shares/assets.
     VaultNotEmpty = 27,
+    /// Epoch range is invalid (zero start, start > end, or exceeds max batch of 50).
+    InvalidEpochRange = 28,
     /// Vault is not in Emergency state.
-    NotInEmergency = 28,
+    NotInEmergency = 29,
     /// User has already claimed their emergency distribution.
-    AlreadyClaimedEmergency = 29,
+    AlreadyClaimedEmergency = 30,
     /// Storage schema version is outdated; migrate() must be called.
-    MigrationRequired = 30,
+    MigrationRequired = 31,
     /// Burn requires pending yield to be claimed first (Option A).
     BurnRequiresYieldClaim = 31,
     /// Caller is not a configured emergency signer.

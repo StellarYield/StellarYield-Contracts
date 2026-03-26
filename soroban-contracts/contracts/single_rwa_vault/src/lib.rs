@@ -11,9 +11,15 @@ mod types;
 #[cfg(test)]
 mod fuzz_tests;
 #[cfg(test)]
+mod test_burn_snapshot;
+#[cfg(test)]
 mod test_burn_yield_accounting;
 #[cfg(test)]
+mod test_claim_cursor;
+#[cfg(test)]
 mod test_convert_erc4626;
+#[cfg(test)]
+mod test_epoch_history;
 #[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
@@ -54,6 +60,9 @@ const EMERGENCY_PROPOSAL_TIMEOUT_SECS: u64 = 86_400;
 
 #[contract]
 pub struct SingleRWAVault;
+
+/// Fixed-point precision for yield_per_share calculations (10^6).
+const PRECISION: i128 = 1_000_000;
 
 #[contractimpl]
 impl SingleRWAVault {
@@ -614,6 +623,7 @@ impl SingleRWAVault {
         put_current_epoch(e, epoch);
         put_epoch_yield(e, epoch, amount);
         put_epoch_total_shares(e, epoch, get_total_supply(e));
+        put_epoch_timestamp(e, epoch, e.ledger().timestamp());
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
         put_total_deposited(e, get_total_deposited(e) + amount);
 
@@ -648,13 +658,14 @@ impl SingleRWAVault {
 
         // --- Effects ---
         let epoch = get_current_epoch(e);
-        for i in 1..=epoch {
-            if !get_has_claimed_epoch(e, &caller, i)
-                && _get_user_shares_for_epoch(e, &caller, i) > 0
-            {
-                put_has_claimed_epoch(e, &caller, i, true);
-            }
+        let last_claimed = get_last_claimed_epoch(e, &caller);
+        // Mark every epoch in the unclaimed window as claimed — including epochs
+        // where the user had 0 shares.  This prevents the loop from re-scanning
+        // dead epochs on every subsequent call (O(new_epochs) instead of O(total)).
+        for i in (last_claimed + 1)..=epoch {
+            put_has_claimed_epoch(e, &caller, i, true);
         }
+        put_last_claimed_epoch(e, &caller, epoch);
 
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
@@ -689,6 +700,15 @@ impl SingleRWAVault {
 
         // --- Effects ---
         put_has_claimed_epoch(e, &caller, epoch, true);
+        // Advance the cursor: if this epoch is the next sequential one after
+        // the cursor, walk forward over any already-claimed epochs too.
+        let mut cursor = get_last_claimed_epoch(e, &caller);
+        let current = get_current_epoch(e);
+        while cursor < current && get_has_claimed_epoch(e, &caller, cursor + 1) {
+            cursor += 1;
+        }
+        put_last_claimed_epoch(e, &caller, cursor);
+
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
 
@@ -700,8 +720,10 @@ impl SingleRWAVault {
 
     pub fn pending_yield(e: &Env, user: Address) -> i128 {
         let epoch = get_current_epoch(e);
+        // Start from the cursor so we skip already-claimed epochs entirely.
+        let start = get_last_claimed_epoch(e, &user) + 1;
         let mut total = 0i128;
-        for i in 1..=epoch {
+        for i in start..=epoch {
             if !get_has_claimed_epoch(e, &user, i) {
                 total += Self::pending_yield_for_epoch(e, user.clone(), i);
             }
@@ -733,6 +755,116 @@ impl SingleRWAVault {
     }
     pub fn total_yield_claimed(e: &Env, user: Address) -> i128 {
         get_total_yield_claimed(e, &user)
+    }
+
+    /// The highest epoch at which all epochs ≤ cursor have been fully claimed
+    /// by `user`.  `pending_yield` scans from `last_claimed_epoch + 1` onwards.
+    pub fn last_claimed_epoch(e: &Env, user: Address) -> u32 {
+        get_last_claimed_epoch(e, &user)
+    }
+
+    /// Get detailed data for a single epoch.
+    pub fn get_epoch_data(e: &Env, epoch: u32) -> EpochData {
+        let yield_amount = get_epoch_yield(e, epoch);
+        let total_shares = get_epoch_total_shares(e, epoch);
+        let yield_per_share = if total_shares > 0 {
+            yield_amount * PRECISION / total_shares
+        } else {
+            0
+        };
+        EpochData {
+            epoch,
+            yield_amount,
+            total_shares,
+            yield_per_share,
+            timestamp: get_epoch_timestamp(e, epoch),
+        }
+    }
+
+    /// Get epoch data for a range [start, end] inclusive.
+    /// Maximum range size is 50 epochs.
+    pub fn get_epoch_range(e: &Env, start: u32, end: u32) -> Vec<EpochData> {
+        const MAX_RANGE: u32 = 50;
+        if start == 0 || start > end {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let current = get_current_epoch(e);
+        let actual_end = end.min(current);
+        if actual_end < start {
+            return Vec::new(e);
+        }
+        if actual_end - start + 1 > MAX_RANGE {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let mut result: Vec<EpochData> = Vec::new(e);
+        for epoch in start..=actual_end {
+            result.push_back(Self::get_epoch_data(e, epoch));
+        }
+        result
+    }
+
+    /// Get aggregate yield statistics for the vault.
+    pub fn get_yield_summary(e: &Env) -> YieldSummary {
+        let total_epochs = get_current_epoch(e);
+        let total_yield = get_total_yield_distributed(e);
+        let average_yield = if total_epochs > 0 {
+            total_yield / total_epochs as i128
+        } else {
+            0
+        };
+        let latest_epoch_yield = if total_epochs > 0 {
+            get_epoch_yield(e, total_epochs)
+        } else {
+            0
+        };
+        YieldSummary {
+            total_epochs,
+            total_yield_distributed: total_yield,
+            average_yield_per_epoch: average_yield,
+            latest_epoch_yield,
+            earliest_epoch: if total_epochs > 0 { 1 } else { 0 },
+            latest_epoch: total_epochs,
+        }
+    }
+
+    /// Get per-epoch yield breakdown for a user over a range [start_epoch, end_epoch].
+    /// Maximum range size is 50 epochs.
+    pub fn get_user_yield_history(
+        e: &Env,
+        user: Address,
+        start_epoch: u32,
+        end_epoch: u32,
+    ) -> Vec<UserEpochYield> {
+        const MAX_RANGE: u32 = 50;
+        if start_epoch == 0 || start_epoch > end_epoch {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let current = get_current_epoch(e);
+        let actual_end = end_epoch.min(current);
+        if actual_end < start_epoch {
+            return Vec::new(e);
+        }
+        if actual_end - start_epoch + 1 > MAX_RANGE {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let mut result: Vec<UserEpochYield> = Vec::new(e);
+        for epoch in start_epoch..=actual_end {
+            let user_shares = _get_user_shares_for_epoch(e, &user, epoch);
+            let total_shares = get_epoch_total_shares(e, epoch);
+            let yield_amount = get_epoch_yield(e, epoch);
+            let yield_earned = if total_shares > 0 {
+                yield_amount * user_shares / total_shares
+            } else {
+                0
+            };
+            result.push_back(UserEpochYield {
+                epoch,
+                user_shares,
+                yield_earned,
+                claimed: get_has_claimed_epoch(e, &user, epoch),
+            });
+        }
+        result
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1860,13 +1992,8 @@ impl SingleRWAVault {
 
     pub fn burn(e: &Env, from: Address, amount: i128) {
         from.require_auth();
-        // --- Effects ---
-        // Snapshot user and auto-claim pending yield to prevent accounting loss
+        // Snapshot before balance change so epoch yield is attributed to pre-burn shares.
         update_user_snapshot(e, &from);
-        let pending = Self::pending_yield(e, from.clone());
-        if pending > 0 {
-            claim_yield_no_auth(e, &from);
-        }
         _burn(e, &from, amount);
         emit_burn(e, from, amount);
         bump_instance(e);
@@ -1879,13 +2006,8 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InsufficientAllowance);
         }
         put_share_allowance(e, &from, &spender, allowance - amount);
-        // --- Effects ---
-        // Snapshot user and auto-claim pending yield to prevent accounting loss
+        // Snapshot before balance change so epoch yield is attributed to pre-burn shares.
         update_user_snapshot(e, &from);
-        let pending = Self::pending_yield(e, from.clone());
-        if pending > 0 {
-            claim_yield_no_auth(e, &from);
-        }
         _burn(e, &from, amount);
         emit_burn(e, from, amount);
         bump_instance(e);
@@ -1985,6 +2107,10 @@ fn _mint(e: &Env, to: &Address, amount: i128) {
 }
 
 fn _burn(e: &Env, from: &Address, amount: i128) {
+    // Defensive snapshot: ensure the user's share balance is recorded for all
+    // epochs up to now BEFORE the balance decreases.  This prevents stale
+    // balances from being used in yield calculations for past epochs.
+    update_user_snapshot(e, from);
     let bal = get_share_balance(e, from);
     if bal < amount {
         panic_with_error!(e, Error::InsufficientBalance);
@@ -2043,41 +2169,6 @@ fn require_current_schema(e: &Env) {
     if get_storage_schema_version(e) != CURRENT_SCHEMA_VERSION {
         panic_with_error!(e, Error::MigrationRequired);
     }
-}
-
-/// Internal yield claim helper that performs the same state transitions as
-/// `claim_yield` but skips `require_auth`.
-///
-/// Used by `burn`/`burn_from` to prevent loss of pending yield when shares are
-/// burned.
-fn claim_yield_no_auth(e: &Env, caller: &Address) {
-    // --- Checks ---
-    require_current_schema(e);
-    acquire_lock(e);
-    require_not_frozen(e, SingleRWAVault::FREEZE_YIELD);
-    require_active_or_matured(e);
-    require_not_blacklisted(e, caller);
-
-    let amount = SingleRWAVault::pending_yield(e, caller.clone());
-    if amount <= 0 {
-        release_lock(e);
-        return;
-    }
-
-    // --- Effects ---
-    let epoch = get_current_epoch(e);
-    for i in 1..=epoch {
-        if !get_has_claimed_epoch(e, caller, i) && _get_user_shares_for_epoch(e, caller, i) > 0 {
-            put_has_claimed_epoch(e, caller, i, true);
-        }
-    }
-
-    put_total_yield_claimed(e, caller, get_total_yield_claimed(e, caller) + amount);
-    transfer_asset_from_vault(e, caller, amount);
-
-    emit_yield_claimed(e, caller.clone(), amount, epoch);
-    bump_instance(e);
-    release_lock(e);
 }
 
 fn require_admin(e: &Env, caller: &Address) {

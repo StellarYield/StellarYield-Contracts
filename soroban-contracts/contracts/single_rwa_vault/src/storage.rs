@@ -85,8 +85,12 @@ pub enum DataKey {
     TotalYieldDistributed,
     EpochYield(u32),
     EpochTotalShares(u32),
+    EpochTimestamp(u32),
     TotalYieldClaimed(Address),
     HasClaimedEpoch(Address, u32),
+    /// Cursor: the highest epoch at which all epochs ≤ cursor have been claimed.
+    /// Allows pending_yield / claim_yield to scan only new epochs.
+    LastClaimedEpoch(Address),
 
     // --- User share snapshots ---
     UserSharesAtEpoch(Address, u32),
@@ -182,6 +186,7 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     let addr_keys = [
         DataKey::TotalYieldClaimed(addr.clone()),
         DataKey::LastInteractionEpoch(addr.clone()),
+        DataKey::LastClaimedEpoch(addr.clone()),
     ];
     for key in &addr_keys {
         if e.storage().persistent().has(key) {
@@ -388,6 +393,18 @@ pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
         .set(&DataKey::EpochTotalShares(epoch), &val);
 }
 
+pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
+    e.storage()
+        .instance()
+        .get(&DataKey::EpochTimestamp(epoch))
+        .unwrap_or(0)
+}
+pub fn put_epoch_timestamp(e: &Env, epoch: u32, val: u64) {
+    e.storage()
+        .instance()
+        .set(&DataKey::EpochTimestamp(epoch), &val);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Allowance data type
 // ─────────────────────────────────────────────────────────────────────────────
@@ -516,6 +533,20 @@ pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
 }
 pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
     let key = DataKey::TotalYieldClaimed(addr.clone());
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn get_last_claimed_epoch(e: &Env, addr: &Address) -> u32 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::LastClaimedEpoch(addr.clone()))
+        .unwrap_or(0)
+}
+pub fn put_last_claimed_epoch(e: &Env, addr: &Address, val: u32) {
+    let key = DataKey::LastClaimedEpoch(addr.clone());
     e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()

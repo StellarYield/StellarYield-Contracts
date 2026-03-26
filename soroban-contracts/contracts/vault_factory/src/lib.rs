@@ -472,7 +472,11 @@ impl VaultFactory {
     pub fn set_vault_wasm_hash(e: &Env, caller: Address, hash: BytesN<32>) {
         caller.require_auth();
         require_admin(e, &caller);
-        put_vault_wasm_hash(e, hash);
+        if hash == BytesN::from_array(e, &[0u8; 32]) {
+            panic_with_error!(e, Error::InvalidWasmHash);
+        }
+        put_vault_wasm_hash(e, hash.clone());
+        emit_wasm_hash_updated(e, hash, caller);
         bump_instance(e);
     }
 
@@ -490,6 +494,10 @@ impl VaultFactory {
     }
     pub fn default_cooperator(e: &Env) -> Address {
         get_default_cooperator(e)
+    }
+
+    pub fn vault_wasm_hash(e: &Env) -> BytesN<32> {
+        get_vault_wasm_hash(e)
     }
 
     // ─────────────────────────────────────────────────────────────────

@@ -163,3 +163,42 @@ pub struct RedemptionRequest {
     pub request_time: u64,
     pub processed: bool,
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Epoch data structs (for historical yield queries)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Per-epoch yield data returned by historical query functions.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EpochData {
+    pub epoch: u32,
+    pub yield_amount: i128,
+    pub total_shares: i128,
+    /// Computed: yield_amount * PRECISION / total_shares; 0 if total_shares == 0.
+    pub yield_per_share: i128,
+    /// Unix timestamp when this epoch was created by distribute_yield.
+    pub timestamp: u64,
+}
+
+/// Aggregate yield statistics for the vault.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct YieldSummary {
+    pub total_epochs: u32,
+    pub total_yield_distributed: i128,
+    pub average_yield_per_epoch: i128,
+    pub latest_epoch_yield: i128,
+    pub earliest_epoch: u32,
+    pub latest_epoch: u32,
+}
+
+/// Per-epoch yield breakdown for a specific user.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct UserEpochYield {
+    pub epoch: u32,
+    pub user_shares: i128,
+    pub yield_earned: i128,
+    pub claimed: bool,
+}
