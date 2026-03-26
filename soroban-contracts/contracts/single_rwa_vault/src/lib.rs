@@ -1025,11 +1025,86 @@ impl SingleRWAVault {
 
     pub fn set_deposit_limits(e: &Env, caller: Address, min_amount: i128, max_amount: i128) {
         caller.require_auth();
-        // LifecycleManager role required — also passes for FullOperator and admin.
-        require_role(e, &caller, Role::LifecycleManager);
+
+        // --- Validation ---
+        if min_amount < 0 || max_amount < 0 {
+            panic_with_error!(e, Error::InvalidDepositLimits);
+        }
+        // When both limits are non-zero, max must be >= min.
+        if min_amount > 0 && max_amount > 0 && max_amount < min_amount {
+            panic_with_error!(e, Error::InvalidDepositLimits);
+        }
+
+        // --- State guard ---
+        // Funding: any operator may update limits.
+        // Active:  only the admin may update limits (requires their explicit auth).
+        // All other states: not permitted.
+        let state = get_vault_state(e);
+        match state {
+            VaultState::Funding => require_role(e, &caller, Role::FullOperator),
+            VaultState::Active => require_admin(e, &caller),
+            _ => panic_with_error!(e, Error::InvalidVaultState),
+        }
+
         put_min_deposit(e, min_amount);
         put_max_user_dep(e, max_amount);
         emit_deposit_limits_updated(e, min_amount, max_amount);
+        bump_instance(e);
+    }
+
+    /// Set only the minimum deposit amount.
+    ///
+    /// State guard: callable by any operator during Funding; only by admin during Active.
+    pub fn set_min_deposit(e: &Env, caller: Address, amount: i128) {
+        caller.require_auth();
+
+        if amount < 0 {
+            panic_with_error!(e, Error::InvalidDepositLimits);
+        }
+        // Ensure min ≤ max when both are non-zero.
+        let current_max = get_max_deposit_per_user(e);
+        if amount > 0 && current_max > 0 && amount > current_max {
+            panic_with_error!(e, Error::InvalidDepositLimits);
+        }
+
+        let state = get_vault_state(e);
+        match state {
+            VaultState::Funding => require_role(e, &caller, Role::FullOperator),
+            VaultState::Active => require_admin(e, &caller),
+            _ => panic_with_error!(e, Error::InvalidVaultState),
+        }
+
+        put_min_deposit(e, amount);
+        emit_deposit_limits_updated(e, amount, get_max_deposit_per_user(e));
+        bump_instance(e);
+    }
+
+    /// Set only the maximum deposit per user.
+    ///
+    /// State guard: callable by any operator during Funding; only by admin during Active.
+    /// Lowering the cap below an existing depositor's balance does not affect their
+    /// existing position — only new deposits will be blocked.
+    pub fn set_max_deposit_per_user(e: &Env, caller: Address, amount: i128) {
+        caller.require_auth();
+
+        if amount < 0 {
+            panic_with_error!(e, Error::InvalidDepositLimits);
+        }
+        // Ensure max ≥ min when both are non-zero.
+        let current_min = get_min_deposit(e);
+        if amount > 0 && current_min > 0 && amount < current_min {
+            panic_with_error!(e, Error::InvalidDepositLimits);
+        }
+
+        let state = get_vault_state(e);
+        match state {
+            VaultState::Funding => require_role(e, &caller, Role::FullOperator),
+            VaultState::Active => require_admin(e, &caller),
+            _ => panic_with_error!(e, Error::InvalidVaultState),
+        }
+
+        put_max_deposit_per_user(e, amount);
+        emit_deposit_limits_updated(e, get_min_deposit(e), amount);
         bump_instance(e);
     }
 
@@ -2298,6 +2373,8 @@ mod test_freeze_flags;
 mod test_close_vault;
 #[cfg(test)]
 mod test_constructor_validation;
+#[cfg(test)]
+mod test_deposit_limits;
 #[cfg(test)]
 mod test_overflow;
 #[cfg(test)]

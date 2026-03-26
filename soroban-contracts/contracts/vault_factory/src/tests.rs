@@ -43,7 +43,7 @@ fn setup_factory(e: &Env) -> (VaultFactoryClient<'_>, Address) {
 /// Returns the generated vault address.
 fn inject_vault(e: &Env, factory_id: &Address, active: bool) -> Address {
     let vault = Address::generate(e);
-    let asset = Address::generate(e);
+    let _asset = Address::generate(e);
     let info = VaultInfo {
         vault: vault.clone(),
         asset: Address::generate(e),

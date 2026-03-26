@@ -4,6 +4,7 @@
 //! Transitions require preconditions (funding target, maturity date) and guards (operator-only).
 
 use crate::test_helpers::{advance_time, mint_usdc, setup_with_kyc_bypass};
+use crate::VaultState;
 use soroban_sdk::testutils::Ledger;
 
 // ─────────────────────────────────────────────────────────────────────────────
