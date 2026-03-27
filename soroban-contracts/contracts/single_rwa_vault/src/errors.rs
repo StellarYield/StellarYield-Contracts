@@ -45,8 +45,29 @@ pub enum Error {
     InvalidInitParams = 26,
     /// Vault cannot be closed because it still contains shares/assets.
     VaultNotEmpty = 27,
+    /// Epoch range is invalid (zero start, start > end, or exceeds max batch of 50).
+    InvalidEpochRange = 28,
     /// Vault is not in Emergency state.
-    NotInEmergency = 28,
+    NotInEmergency = 29,
     /// User has already claimed their emergency distribution.
-    AlreadyClaimedEmergency = 29,
+    AlreadyClaimedEmergency = 30,
+    /// Storage schema version is outdated; migrate() must be called.
+    MigrationRequired = 31,
+    /// Burn requires pending yield to be claimed first (Option A).
+    BurnRequiresYieldClaim = 32,
+    InvalidDepositLimits = 33,
+    /// Caller is not in the emergency signers list.
+    NotEmergencySigner = 34,
+    /// The referenced emergency proposal does not exist.
+    ProposalNotFound = 35,
+    /// The emergency proposal has passed its expiry timeout.
+    ProposalExpired = 36,
+    /// The emergency proposal has already been executed.
+    ProposalAlreadyExecuted = 37,
+    /// Approval threshold has not been reached yet.
+    ThresholdNotMet = 38,
+    /// This signer has already approved this proposal.
+    AlreadyApproved = 39,
+    /// Threshold must be >= 1 and <= number of signers.
+    InvalidThreshold = 40,
 }

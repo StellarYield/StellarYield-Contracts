@@ -199,3 +199,33 @@ pub fn emit_emergency_claimed(e: &Env, user: Address, amount: i128) {
     e.events()
         .publish((symbol_short!("emerg_clm"), user), amount);
 }
+
+/// Emitted by `migrate` — storage schema upgraded.
+pub fn emit_data_migrated(e: &Env, old_version: u32, new_version: u32) {
+    e.events()
+        .publish((symbol_short!("data_mig"), old_version, new_version), ());
+}
+
+/// Emitted by `propose_emergency_withdraw` — a new multi-sig proposal was created.
+pub fn emit_emergency_proposed(e: &Env, proposal_id: u32, proposer: Address, recipient: Address) {
+    e.events().publish(
+        (symbol_short!("emg_prop"), proposal_id),
+        (proposer, recipient),
+    );
+}
+
+/// Emitted by `approve_emergency_withdraw` — a signer approved a proposal.
+pub fn emit_emergency_approved(e: &Env, proposal_id: u32, approver: Address, approval_count: u32) {
+    e.events().publish(
+        (symbol_short!("emg_appr"), proposal_id),
+        (approver, approval_count),
+    );
+}
+
+/// Emitted by `execute_emergency_withdraw` — the multi-sig withdrawal was executed.
+pub fn emit_emergency_executed(e: &Env, proposal_id: u32, recipient: Address, amount: i128) {
+    e.events().publish(
+        (symbol_short!("emg_exec"), proposal_id),
+        (recipient, amount),
+    );
+}
