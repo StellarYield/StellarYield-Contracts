@@ -135,8 +135,8 @@ fn setup_2_of_3(
     e: &Env,
 ) -> (
     Address,
-    MockTokenClient,
-    SingleRWAVaultClient,
+    MockTokenClient<'_>,
+    SingleRWAVaultClient<'_>,
     Address,
     Address,
     Address,
