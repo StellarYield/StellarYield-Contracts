@@ -38,6 +38,8 @@ pub struct InitParams {
     // Timelock configuration
     /// Delay in seconds for critical admin operations (default: 48 hours)
     pub timelock_delay: u64,
+    /// Yield vesting period in seconds (0 = instant claiming for backward compatibility)
+    pub yield_vesting_period: u64,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

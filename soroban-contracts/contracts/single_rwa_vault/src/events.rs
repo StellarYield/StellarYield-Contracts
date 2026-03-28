@@ -215,6 +215,10 @@ pub fn emit_early_redemption_fee_set(e: &Env, fee_bps: u32) {
     e.events().publish((symbol_short!("fee_set"),), fee_bps);
 }
 
+pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
+    e.events().publish((symbol_short!("vest_set"),), vesting_period);
+}
+
 /// Emitted by `set_funding_target`.
 pub fn emit_funding_target_set(e: &Env, target: i128) {
     e.events().publish((symbol_short!("fund_set"),), target);
