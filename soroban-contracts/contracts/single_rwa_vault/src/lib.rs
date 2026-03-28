@@ -580,6 +580,16 @@ impl SingleRWAVault {
         get_redemption_request(e, request_id)
     }
 
+    /// Returns the current redemption request counter (total number of requests ever made).
+    pub fn redemption_counter(e: &Env) -> u32 {
+        get_redemption_counter(e)
+    }
+
+    /// Returns all redemption request IDs for a given user.
+    pub fn get_user_redemption_requests(e: &Env, user: Address) -> Vec<u32> {
+        get_user_redemption_requests(e, &user)
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // ERC-4626 max helpers
     // ─────────────────────────────────────────────────────────────────
@@ -1302,12 +1312,14 @@ impl SingleRWAVault {
             e,
             id,
             RedemptionRequest {
-                user: caller,
+                user: caller.clone(),
                 shares,
                 request_time: e.ledger().timestamp(),
                 processed: false,
             },
         );
+        // Track the request ID in the user's list for queryability
+        push_user_redemption_request(e, &user, id);
 
         emit_early_redemption_requested(e, user, id, shares);
         bump_instance(e);

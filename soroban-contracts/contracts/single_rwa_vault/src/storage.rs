@@ -112,6 +112,7 @@ pub enum DataKey {
     RedemptionCounter,
     RedemptionRequest(u32),
     EscrowedShares(Address),
+    // UserRedemptionRequests(Address) - removed due to contracttype size limits
 
     // --- Blacklist ---
     Blacklisted(Address),
@@ -648,6 +649,39 @@ pub fn get_escrowed_shares(e: &Env, addr: &Address) -> i128 {
 pub fn put_escrowed_shares(e: &Env, addr: &Address, amount: i128) {
     let key = DataKey::EscrowedShares(addr.clone());
     e.storage().persistent().set(&key, &amount);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User redemption request tracking (persistent)
+// Uses a custom key struct to avoid adding to DataKey enum
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Custom storage key for per-user redemption request lists.
+/// This avoids adding to the DataKey enum which has reached size limits.
+#[contracttype]
+#[derive(Clone)]
+pub struct UserRedemptionKey {
+    pub user: Address,
+}
+
+/// Returns the list of redemption request IDs for a given user.
+pub fn get_user_redemption_requests(e: &Env, user: &Address) -> Vec<u32> {
+    let key = UserRedemptionKey { user: user.clone() };
+    e.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(Vec::new(e))
+}
+
+/// Appends a new redemption request ID to the user's list.
+pub fn push_user_redemption_request(e: &Env, user: &Address, request_id: u32) {
+    let key = UserRedemptionKey { user: user.clone() };
+    let mut requests = get_user_redemption_requests(e, user);
+    requests.push_back(request_id);
+    e.storage().persistent().set(&key, &requests);
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
