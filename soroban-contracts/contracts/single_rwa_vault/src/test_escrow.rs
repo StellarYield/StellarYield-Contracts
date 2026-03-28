@@ -32,6 +32,10 @@ fn test_early_redemption_escrow_and_transfer_lock() {
     assert_eq!(initial_balance, deposit_amount);
     assert_eq!(v.escrowed_balance(&ctx.user), 0);
 
+    // Record vault token balance before request
+    let asset = ctx.asset();
+    let vault_token_balance_before = asset.balance(&ctx.vault_id);
+
     // 3. Request early redemption for half
     let request_shares = 5_000_000i128;
     let request_id = v.request_early_redemption(&ctx.user, &request_shares);
@@ -45,8 +49,13 @@ fn test_early_redemption_escrow_and_transfer_lock() {
     assert_eq!(v.balance(&ctx.user), initial_balance);
     assert_eq!(v.escrowed_balance(&ctx.user), 0);
 
+    // Verify request is marked as processed after cancellation
     let req = v.redemption_request(&request_id);
     assert!(req.processed);
+
+    // Verify vault's token balance is unchanged (cancellation only affects shares, not tokens)
+    let vault_token_balance_after = asset.balance(&ctx.vault_id);
+    assert_eq!(vault_token_balance_after, vault_token_balance_before);
 }
 
 #[test]
@@ -69,16 +78,43 @@ fn test_early_redemption_process_burns_from_escrow() {
     assert_eq!(v.balance(&ctx.user), 0);
     assert_eq!(v.escrowed_balance(&ctx.user), request_shares);
 
+    // Record asset balances before processing
+    let asset = ctx.asset();
+    let user_token_balance_before = asset.balance(&ctx.user);
+    let vault_token_balance_before = asset.balance(&ctx.vault_id);
+
+    // Calculate expected refund amount after fee (default fee: 200 bps = 2%)
+    let assets = request_shares; // 1:1 share-to-asset ratio at start
+    let fee_bps = 200i128;
+    let fee = (assets * fee_bps) / 10000;
+    let expected_net_assets = assets - fee;
+
     // Process
     v.process_early_redemption(&ctx.operator, &request_id);
 
-    // Verify
+    // Verify shares are burned from escrow
     assert_eq!(v.balance(&ctx.user), 0);
     assert_eq!(v.escrowed_balance(&ctx.user), 0);
     assert_eq!(v.total_supply(), supply_before - request_shares);
 
     let req = v.redemption_request(&request_id);
     assert!(req.processed);
+
+    // Verify exact refund amount: user receives (assets - fee)
+    let user_token_balance_after = asset.balance(&ctx.user);
+    assert_eq!(
+        user_token_balance_after,
+        user_token_balance_before + expected_net_assets,
+        "User did not receive exact refund amount after fee"
+    );
+
+    // Verify vault's internal accounting: token balance decreased by net_assets only (fee stays)
+    let vault_token_balance_after = asset.balance(&ctx.vault_id);
+    assert_eq!(
+        vault_token_balance_after,
+        vault_token_balance_before - expected_net_assets,
+        "Vault token balance does not match expected post-refund state"
+    );
 }
 
 #[test]
