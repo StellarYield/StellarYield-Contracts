@@ -164,6 +164,17 @@ pub fn bump_balance(e: &Env, addr: &Address) {
     }
 }
 
+/// Extend the TTL for allowance entries to match balance lifetime thresholds.
+/// Call this whenever allowance data is written or read to prevent silent archival.
+pub fn bump_allowance(e: &Env, owner: &Address, spender: &Address) {
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    if e.storage().persistent().has(&key) {
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+    }
+}
+
 /// Extend the TTL for all persistent per-user yield/snapshot entries for a
 /// given address and epoch.  Call this any time user data is written so that
 /// no entry can silently expire and cause double-claims or missed payouts.
@@ -445,10 +456,19 @@ pub fn put_share_balance(e: &Env, addr: &Address, val: i128) {
 /// Returns the current allowance for `(owner, spender)`.
 /// Returns 0 if no allowance is recorded **or** if it has expired
 /// (`expiration_ledger < current ledger sequence`).
+/// 
+/// # TTL Management
+/// This function implements bump-on-read behavior: if an allowance entry exists
+/// (regardless of expiration), its TTL is extended to prevent silent archival.
+/// This ensures that active allowances remain available and don't unexpectedly
+/// return 0 due to storage archival.
 pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 {
     let key = DataKey::Allowance(owner.clone(), spender.clone());
     match e.storage().persistent().get::<_, AllowanceData>(&key) {
         Some(data) => {
+            // Bump TTL on read to prevent silent archival of active allowances
+            bump_allowance(e, owner, spender);
+            
             if e.ledger().sequence() > data.expiration_ledger {
                 0 // allowance has expired
             } else {
@@ -462,6 +482,10 @@ pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 
 /// Decrements an existing allowance to `new_amount`, preserving the stored
 /// `expiration_ledger`.  Only call this after confirming the allowance is
 /// sufficient and non-expired via `get_share_allowance`.
+/// 
+/// # TTL Management
+/// Uses standard BALANCE_LIFETIME_THRESHOLD/BALANCE_BUMP_AMOUNT to prevent
+/// silent archival, consistent with other persistent user data.
 pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amount: i128) {
     let key = DataKey::Allowance(owner.clone(), spender.clone());
     // Read back the expiration that was set when the allowance was approved.
@@ -478,18 +502,16 @@ pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amou
             expiration_ledger,
         },
     );
-    // Keep the entry alive until it naturally expires.
-    let current = e.ledger().sequence();
-    if expiration_ledger > current {
-        let live_for = expiration_ledger - current + 1;
-        e.storage()
-            .persistent()
-            .extend_ttl(&key, live_for, live_for);
-    }
+    // Use standard TTL bumping to prevent silent archival
+    bump_allowance(e, owner, spender);
 }
 
 /// Stores a fresh allowance with an on-chain `expiration_ledger` and sets the
 /// persistent entry TTL to match, enabling automatic ledger-level cleanup.
+/// 
+/// # TTL Management
+/// Uses standard BALANCE_LIFETIME_THRESHOLD/BALANCE_BUMP_AMOUNT to prevent
+/// silent archival, while still respecting the expiration_ledger for business logic.
 pub fn put_share_allowance_with_expiry(
     e: &Env,
     owner: &Address,
@@ -505,15 +527,8 @@ pub fn put_share_allowance_with_expiry(
             expiration_ledger,
         },
     );
-    // Align the persistent TTL with the expiration so Soroban's archival
-    // mechanism cleans up the entry automatically once it expires.
-    let current = e.ledger().sequence();
-    if expiration_ledger >= current {
-        let live_for = expiration_ledger - current + 1;
-        e.storage()
-            .persistent()
-            .extend_ttl(&key, live_for, live_for);
-    }
+    // Use standard TTL bumping to prevent silent archival
+    bump_allowance(e, owner, spender);
 }
 
 pub fn get_user_deposited(e: &Env, addr: &Address) -> i128 {

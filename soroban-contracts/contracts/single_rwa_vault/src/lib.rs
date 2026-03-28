@@ -11,6 +11,8 @@ mod types;
 #[cfg(test)]
 mod fuzz_tests;
 #[cfg(test)]
+mod test_allowance_ttl;
+#[cfg(test)]
 mod test_access_control;
 #[cfg(test)]
 mod test_burn_snapshot;
