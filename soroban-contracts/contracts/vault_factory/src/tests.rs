@@ -615,6 +615,75 @@ fn test_batch_create_vaults_at_limit_ok() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// #208 — View functions on non-existent vault addresses
+//
+// Calling view functions for a vault that is not registered should have
+// well-defined behavior (error or empty response). This test confirms the
+// current behavior for non-existent vault addresses.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Test view functions behavior when called with non-existent vault addresses.
+///
+/// Current behavior:
+/// - get_vault_info() returns None for non-existent vaults
+/// - is_registered_vault() returns false for non-existent vaults
+/// - set_vault_status() panics with VaultNotFound error for non-existent vaults
+#[test]
+fn test_view_functions_non_existent_vault() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, admin) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    // Generate a vault address that is not registered
+    let non_existent_vault = Address::generate(&e);
+
+    // Test get_vault_info returns None for non-existent vault
+    let vault_info = client.get_vault_info(&non_existent_vault);
+    assert!(
+        vault_info.is_none(),
+        "get_vault_info should return None for non-existent vault"
+    );
+
+    // Test is_registered_vault returns false for non-existent vault
+    let is_registered = client.is_registered_vault(&non_existent_vault);
+    assert!(
+        !is_registered,
+        "is_registered_vault should return false for non-existent vault"
+    );
+
+    // Test set_vault_status panics with VaultNotFound for non-existent vault
+    // This is an admin function, not a view function, but it's included to show
+    // the complete behavior for non-existent vault addresses
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.set_vault_status(&admin, &non_existent_vault, &false);
+    }));
+    
+    assert!(
+        result.is_err(),
+        "set_vault_status should panic for non-existent vault"
+    );
+    
+    // Verify the panic message contains the expected error code
+    if let Err(panic_payload) = result {
+        let panic_msg = if let Some(s) = panic_payload.downcast_ref::<std::string::String>() {
+            s.clone()
+        } else if let Some(s) = panic_payload.downcast_ref::<&str>() {
+            std::string::String::from(*s)
+        } else {
+            std::string::String::from("")
+        };
+        
+        // The error code for VaultNotFound is #2 based on the existing tests
+        assert!(
+            panic_msg.contains("#2") || panic_msg.contains("VaultNotFound"),
+            "set_vault_status should panic with VaultNotFound error for non-existent vault"
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // #214 — Forward-looking: mixed vault types (SingleRwa + Aggregator)
 //
 // The Aggregator vault type is already declared in VaultType but not yet

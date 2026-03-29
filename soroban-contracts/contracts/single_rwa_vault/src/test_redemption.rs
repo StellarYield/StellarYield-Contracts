@@ -7,7 +7,7 @@ use soroban_sdk::{
 };
 
 use crate::test_helpers::{mint_usdc, setup, setup_with_kyc_bypass};
-use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
+use crate::{math, InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -225,6 +225,111 @@ fn test_process_early_redemption_applies_fee() {
     assert_eq!(vault_balance_after, vault_balance_before - net_assets);
     // Verify exact fee amount
     assert_eq!(fee, 20_000);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression — representative early redemption fee configurations (#171)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// With `early_redemption_fee_bps = 0`, the user receives the full `preview_redeem` amount
+/// (same net payout as if no fee existed).
+#[test]
+fn test_process_early_redemption_zero_fee_full_payout() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let deposit_amount = 5_000_000i128;
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    vault.set_early_redemption_fee(&admin, &0u32);
+    assert_eq!(vault.early_redemption_fee_bps(), 0u32);
+
+    let vault_balance_before = token.balance(&vault_id);
+    let request_id = vault.request_early_redemption(&user, &shares);
+    vault.process_early_redemption(&admin, &request_id);
+
+    // 1:1 share price at inception → assets == shares; fee == 0 → user gets all assets.
+    let assets = shares;
+    let fee = math::mul_div(&env, assets, 0i128, 10000);
+    assert_eq!(fee, 0i128);
+    assert_eq!(token.balance(&user), assets);
+    assert_eq!(token.balance(&vault_id), vault_balance_before - assets);
+}
+
+/// A small non-zero fee (25 bps) deducts exactly `mul_div(assets, 25, 10000)` from the payout.
+#[test]
+fn test_process_early_redemption_small_fee_matches_mul_div() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let deposit_amount = 10_000_000i128;
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    let fee_bps: i128 = 25;
+    vault.set_early_redemption_fee(&admin, &(fee_bps as u32));
+    assert_eq!(vault.early_redemption_fee_bps(), 25u32);
+
+    let vault_balance_before = token.balance(&vault_id);
+    let request_id = vault.request_early_redemption(&user, &shares);
+    vault.process_early_redemption(&admin, &request_id);
+
+    let assets = shares;
+    let fee = math::mul_div(&env, assets, fee_bps, 10000);
+    let net_assets = assets - fee;
+    assert_eq!(fee, 25_000i128);
+    assert_eq!(net_assets, 9_975_000i128);
+    assert_eq!(token.balance(&user), net_assets);
+    assert_eq!(token.balance(&vault_id), vault_balance_before - net_assets);
+}
+
+/// Maximum allowed fee (1000 bps) on a large asset amount: payout matches `assets - mul_div`
+/// and completes without overflow (fee math uses `I256` internally).
+#[test]
+fn test_process_early_redemption_max_fee_large_assets_no_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let deposit_amount = 888_888_888_888_888i128;
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    let fee_bps: i128 = 1000;
+    vault.set_early_redemption_fee(&admin, &(fee_bps as u32));
+    assert_eq!(vault.early_redemption_fee_bps(), 1000u32);
+
+    let vault_balance_before = token.balance(&vault_id);
+    let request_id = vault.request_early_redemption(&user, &shares);
+    vault.process_early_redemption(&admin, &request_id);
+
+    let assets = shares;
+    let fee = math::mul_div(&env, assets, fee_bps, 10000);
+    let net_assets = assets - fee;
+    assert_eq!(net_assets, assets - fee);
+    assert_eq!(token.balance(&user), net_assets);
+    assert_eq!(token.balance(&vault_id), vault_balance_before - net_assets);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
