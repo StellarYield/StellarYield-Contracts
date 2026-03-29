@@ -90,12 +90,12 @@ fn test_set_deposit_limits_funding_state_operator_succeeds() {
 #[should_panic(expected = "Error(Contract, #3)")]
 fn test_set_deposit_limits_non_operator_panics() {
     let ctx = setup_with_kyc_bypass();
-    
+
     // Because ALL roles map to the same storage key in this contract's buggy IntoVal,
-    // ctx.user has the operator role if ctx.operator does. We revoke it from operator first 
+    // ctx.user has the operator role if ctx.operator does. We revoke it from operator first
     // to ensure NO ONE has the role, so the panic triggers correctly for ctx.user.
     ctx.vault().set_operator(&ctx.admin, &ctx.operator, &false);
-    
+
     ctx.vault()
         .set_deposit_limits(&ctx.user, &500_000i128, &20_000_000i128);
 }
@@ -357,33 +357,34 @@ fn test_deposit_exceeds_funding_target_panics() {
 #[test]
 fn test_deposit_exceeds_funding_target_by_small_amount_preserves_state() {
     // Regression test for Issue #150: Exceeding the funding target by a small amount
-    // should follow current strict rules (reject the entire over-deposit) and explicitly 
+    // should follow current strict rules (reject the entire over-deposit) and explicitly
     // lock in the behavior that state and balances remain unchanged.
     let ctx = setup_with_kyc_bypass();
-    
+
     // Fill vault exactly to target
     mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_000);
     ctx.vault().deposit(&ctx.user, &100_000_000i128, &ctx.user);
-    
+
     // Create another user to attempt a slight over-deposit
     let user2 = Address::generate(&ctx.env);
-    // Minimum deposit limit is 1_000_000 by default, so let's adjust it to 0 for this test or 
+    // Minimum deposit limit is 1_000_000 by default, so let's adjust it to 0 for this test or
     // just deposit a small amount above the minimum if the limit is checked first.
     // Let's drop the minimum to 0 so we can attempt a tiny 2 USDC deposit.
-    ctx.vault().set_deposit_limits(&ctx.operator, &0i128, &0i128);
+    ctx.vault()
+        .set_deposit_limits(&ctx.operator, &0i128, &0i128);
 
     mint_usdc(&ctx.env, &ctx.asset_id, &user2, 2);
-    
+
     // Attempt deposit that slightly exceeds target
     let res = ctx.vault().try_deposit(&user2, &2i128, &user2);
-    
+
     // Must error with FundingTargetExceeded (#41)
     assert!(res.is_err());
-    
+
     // Assert the state and balances are unchanged
     assert_eq!(ctx.vault().total_assets(), 100_000_000i128);
-    
-    // We cannot reliably assert user2's balance is 0 because the contract's IntoVal impl for Key 
+
+    // We cannot reliably assert user2's balance is 0 because the contract's IntoVal impl for Key
     // maps all UsrDep and Balance keys to single integers (40 and 37).
     // The regression is locked in by the error being thrown without crashing.
 }

@@ -72,8 +72,7 @@ fn setup() -> TestCtx {
     let vault_id = env.register(
         SingleRWAVault,
         (InitParams {
-            yield_vesting_period: 0,
-        asset: token_id.clone(),
+            asset: token_id.clone(),
             share_name: String::from_str(&env, "Fuzz Share"),
             share_symbol: String::from_str(&env, "FZ"),
             share_decimals: 6u32,

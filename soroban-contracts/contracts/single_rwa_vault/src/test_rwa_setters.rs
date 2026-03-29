@@ -65,8 +65,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
     let vault_id = env.register(
         SingleRWAVault,
         (InitParams {
-            yield_vesting_period: 0,
-        asset: token_id.clone(),
+            asset: token_id.clone(),
             share_name: String::from_str(env, "Test Share"),
             share_symbol: String::from_str(env, "TS"),
             share_decimals: 6u32,

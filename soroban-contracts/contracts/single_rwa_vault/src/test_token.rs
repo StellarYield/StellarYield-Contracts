@@ -18,7 +18,7 @@ use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
     InitParams {
-            yield_vesting_period: 0,
+        yield_vesting_period: 0,
         asset: asset.clone(),
         share_name: String::from_str(env, "Vault Share"),
         share_symbol: String::from_str(env, "VS"),
@@ -38,7 +38,6 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         rwa_category: String::from_str(env, "Real Estate"),
         expected_apy: 500_u32,
         timelock_delay: 172800u64, // 48 hours
-        yield_vesting_period: 0u64,
     }
 }
 

@@ -10,7 +10,7 @@ use crate::{InitParams, SingleRWAVault};
 
 fn get_valid_params(e: &Env) -> InitParams {
     InitParams {
-            yield_vesting_period: 0,
+        yield_vesting_period: 0,
         asset: Address::generate(e),
         share_name: String::from_str(e, "Test"),
         share_symbol: String::from_str(e, "T"),
@@ -30,7 +30,6 @@ fn get_valid_params(e: &Env) -> InitParams {
         rwa_category: String::from_str(e, "cat"),
         expected_apy: 500,
         timelock_delay: 172800u64, // 48 hours
-        yield_vesting_period: 0u64,
     }
 }
 
@@ -117,7 +116,7 @@ fn test_constructor_minimal_config() {
     //   early_redemption_fee_bps = 0   (0 is allowed; >1000 is rejected)
     //   maturity_date        = timestamp + 1  (smallest future value)
     let params = InitParams {
-            yield_vesting_period: 0,
+        yield_vesting_period: 0,
         asset: Address::generate(&e),
         share_name: String::from_str(&e, "Min"),
         share_symbol: String::from_str(&e, "M"),
@@ -175,7 +174,7 @@ fn test_constructor_maximum_config() {
     let admin = Address::generate(&e);
 
     let params = InitParams {
-            yield_vesting_period: 0,
+        yield_vesting_period: 0,
         asset: Address::generate(&e),
         share_name: String::from_str(&e, "Maximum Vault Share"),
         share_symbol: String::from_str(&e, "MAXVS"),
