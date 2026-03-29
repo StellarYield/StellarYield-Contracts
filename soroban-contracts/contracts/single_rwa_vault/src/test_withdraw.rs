@@ -7,7 +7,10 @@
 //!  - Edge cases: drain entire balance, non-1:1 share price validation
 
 use crate::test_helpers::{mint_usdc, normalize_amount, setup_with_kyc_bypass, TestContext};
-use soroban_sdk::{testutils::{Address as _, Ledger as _}, Address, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, String,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: deposit `assets` for `user` and return the shares received.
