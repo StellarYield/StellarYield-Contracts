@@ -814,3 +814,90 @@ fn test_get_all_vaults_returns_vaults_in_creation_order() {
     // Verify vault count matches
     assert_eq!(client.get_vault_count(), 4);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #192: Factory vault count stays consistent after multiple removals
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Create five vaults, remove three of them (first, middle, last), and verify:
+/// - `get_vault_count()` decrements correctly after each removal
+/// - `get_all_vaults()` excludes every removed vault and retains the rest
+/// - `get_single_rwa_vaults()` reflects the same exclusions
+/// - `is_registered_vault()` returns false for removed vaults
+/// - The count in instance storage always equals the length of the vault list
+#[test]
+fn test_vault_count_correct_after_multiple_removals() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, admin) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    // ── Create 5 inactive vaults ──────────────────────────────────────────────
+    let v1 = inject_vault(&e, &factory_id, false);
+    let v2 = inject_vault(&e, &factory_id, false);
+    let v3 = inject_vault(&e, &factory_id, false);
+    let v4 = inject_vault(&e, &factory_id, false);
+    let v5 = inject_vault(&e, &factory_id, false);
+
+    assert_eq!(client.get_vault_count(), 5);
+    assert_eq!(client.get_all_vaults().len(), 5);
+
+    // ── Remove first vault (v1) ───────────────────────────────────────────────
+    client.remove_vault(&admin, &v1);
+    assert_eq!(client.get_vault_count(), 4, "count after removing v1");
+
+    let all = client.get_all_vaults();
+    assert_eq!(all.len(), 4);
+    assert!(!all.contains(v1.clone()), "v1 must not appear in list after removal");
+    assert!(all.contains(v2.clone()));
+    assert!(all.contains(v5.clone()));
+    assert!(!client.is_registered_vault(&v1), "v1 must not be registered");
+
+    // count in instance storage == list length
+    e.as_contract(&factory_id, || {
+        assert_eq!(get_vault_count(&e) as usize, get_all_vaults(&e).len() as usize);
+    });
+
+    // ── Remove middle vault (v3) ──────────────────────────────────────────────
+    client.remove_vault(&admin, &v3);
+    assert_eq!(client.get_vault_count(), 3, "count after removing v3");
+
+    let all = client.get_all_vaults();
+    assert_eq!(all.len(), 3);
+    assert!(!all.contains(v3.clone()), "v3 must not appear in list after removal");
+    assert!(all.contains(v2.clone()));
+    assert!(all.contains(v4.clone()));
+    assert!(all.contains(v5.clone()));
+    assert!(!client.is_registered_vault(&v3), "v3 must not be registered");
+
+    // count in instance storage == list length
+    e.as_contract(&factory_id, || {
+        assert_eq!(get_vault_count(&e) as usize, get_all_vaults(&e).len() as usize);
+    });
+
+    // ── Remove last vault (v5) ────────────────────────────────────────────────
+    client.remove_vault(&admin, &v5);
+    assert_eq!(client.get_vault_count(), 2, "count after removing v5");
+
+    let all = client.get_all_vaults();
+    assert_eq!(all.len(), 2);
+    assert!(!all.contains(v5.clone()), "v5 must not appear in list after removal");
+    assert!(all.contains(v2.clone()));
+    assert!(all.contains(v4.clone()));
+    assert!(!client.is_registered_vault(&v5), "v5 must not be registered");
+
+    // single_rwa list must also exclude all removed vaults
+    let srwa = client.get_single_rwa_vaults();
+    assert_eq!(srwa.len(), 2);
+    assert!(!srwa.contains(v1.clone()));
+    assert!(!srwa.contains(v3.clone()));
+    assert!(!srwa.contains(v5.clone()));
+    assert!(srwa.contains(v2.clone()));
+    assert!(srwa.contains(v4.clone()));
+
+    // count in instance storage == list length
+    e.as_contract(&factory_id, || {
+        assert_eq!(get_vault_count(&e) as usize, get_all_vaults(&e).len() as usize);
+    });
+}
