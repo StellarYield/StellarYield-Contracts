@@ -271,5 +271,6 @@ fn default_params(
         rwa_category: String::from_str(env, "Government Bond"),
         expected_apy: 500u32, // 5 %
         timelock_delay: 172800u64, // 48 hours
+        yield_vesting_period: 0u64, // Default to 0 for instant claiming (backward compatibility)
     }
 }
