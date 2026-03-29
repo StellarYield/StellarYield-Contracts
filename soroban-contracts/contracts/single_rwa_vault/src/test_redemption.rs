@@ -8,6 +8,7 @@ use soroban_sdk::{
 
 use crate::test_helpers::{mint_usdc, setup, setup_with_kyc_bypass};
 use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
+use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -630,6 +631,10 @@ fn test_claim_yield_earned_before_early_full_redemption_succeeds() {
         claimed, pending_before,
         "claimed amount must equal pre-redemption pending yield"
     );
+    assert_eq!(
+        claimed, pending_before,
+        "claimed amount must equal pre-redemption pending yield"
+    );
 
     // All yield is now claimed.
     assert_eq!(
@@ -793,7 +798,8 @@ fn test_claim_yield_zero_shares_panics() {
 
     // KYC approve the user
 
-    crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id).approve_user(&user_with_zero_shares);
+    crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id)
+        .approve_user(&user_with_zero_shares);
 
     // User has zero shares (never deposited)
 
@@ -912,5 +918,5 @@ fn test_multiple_users_claim_same_epoch_yield() {
     let rounding_loss = epoch_yield - total_claimed;
 
     assert!(rounding_loss < 3); // At most 2 for 3 users
-}
+
 }

@@ -1,10 +1,6 @@
 //! Shared types used across the SingleRWA_Vault contract.
 
-<<<<<<< HEAD
-use soroban_sdk::{contracttype, Address, Bytes, String};
-=======
 use soroban_sdk::{contracttype, Address, Bytes, Env, IntoVal, String, TryFromVal, Val};
->>>>>>> f043d40 (fixed pipeline failure)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Initialisation parameters struct
