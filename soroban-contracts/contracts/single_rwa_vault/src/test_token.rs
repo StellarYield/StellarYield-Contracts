@@ -7,10 +7,11 @@ use soroban_sdk::{
 };
 
 use crate::storage::{
-    get_current_epoch, get_has_snapshot_for_epoch, get_share_balance, get_total_supply,
-    get_user_shares_at_epoch, put_current_epoch, put_epoch_total_shares, put_epoch_yield,
-    put_share_balance, put_total_supply,
+    get_current_epoch, get_has_snapshot_for_epoch, get_share_balance, get_total_deposited,
+    get_total_supply, get_user_shares_at_epoch, put_current_epoch, put_epoch_total_shares,
+    put_epoch_yield, put_share_balance, put_total_deposited, put_total_supply,
 };
+use crate::test_helpers::{mint_usdc, setup_with_kyc_bypass};
 use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         rwa_category: String::from_str(env, "Real Estate"),
         expected_apy: 500_u32,
         timelock_delay: 172800u64, // 48 hours
+        yield_vesting_period: 0u64,
     }
 }
 
@@ -66,6 +68,10 @@ fn give_shares(env: &Env, vault_id: &Address, user: &Address, amount: i128) {
         put_share_balance(env, user, bal + amount);
         let sup = get_total_supply(env);
         put_total_supply(env, sup + amount);
+        // `total_assets` tracks principal (`total_deposited`); keep it in sync so
+        // preview_* redeem/withdraw math matches share supply.
+        let td = get_total_deposited(env);
+        put_total_deposited(env, td + amount);
     });
 }
 
@@ -511,4 +517,59 @@ fn test_preview_calls_return_consistent_results() {
     let redeem1 = client.preview_redeem(&shares_in);
     let redeem2 = client.preview_redeem(&shares_in);
     assert_eq!(redeem1, redeem2, "preview_redeem must be idempotent");
+}
+
+// ─── Zero-amount edge cases (#174) ────────────────────────────────────────────
+
+/// All ERC-4626 preview helpers accept `amount = 0` and return 0 without panicking.
+#[test]
+fn test_preview_methods_zero_amount_return_zero() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    assert_eq!(client.preview_deposit(&0_i128), 0_i128);
+    assert_eq!(client.preview_mint(&0_i128), 0_i128);
+    assert_eq!(client.preview_withdraw(&0_i128), 0_i128);
+    assert_eq!(client.preview_redeem(&0_i128), 0_i128);
+
+    let holder = Address::generate(&env);
+    give_shares(&env, &vault_id, &holder, 10_000_i128);
+    assert_eq!(client.preview_withdraw(&0_i128), 0_i128);
+    assert_eq!(client.preview_redeem(&0_i128), 0_i128);
+}
+
+/// deposit with `assets = 0` is rejected when `min_deposit` is strictly positive.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_deposit_zero_below_minimum_panics() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let user = Address::generate(&env);
+    client.deposit(&user, &0_i128, &user);
+}
+
+/// withdraw with `assets = 0` is rejected with Error::ZeroAmount.
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_withdraw_zero_amount_panics() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+    let dep = ctx.params.funding_target;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, dep);
+    v.deposit(&ctx.user, &dep, &ctx.user);
+    v.activate_vault(&ctx.operator);
+    v.withdraw(&ctx.user, &0_i128, &ctx.user, &ctx.user);
+}
+
+/// redeem with `shares = 0` is rejected with Error::ZeroAmount.
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_redeem_zero_shares_panics() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+    let dep = ctx.params.funding_target;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, dep);
+    v.deposit(&ctx.user, &dep, &ctx.user);
+    v.activate_vault(&ctx.operator);
+    v.redeem(&ctx.user, &0_i128, &ctx.user, &ctx.user);
 }

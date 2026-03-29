@@ -3,7 +3,7 @@
 extern crate std;
 
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, Env};
+use soroban_sdk::Address;
 
 use crate::test_helpers::{mint_usdc, setup};
 
@@ -81,7 +81,7 @@ fn test_allowance_ttl_bumped_on_read() {
         .approve(&owner, &spender, &allowance_amount, &expiration_ledger);
 
     // Simulate many reads over time without writes
-    for i in 0..200 {
+    for _ in 0..200 {
         ctx.env
             .ledger()
             .set_sequence_number(ctx.env.ledger().sequence() + 5);
@@ -151,7 +151,7 @@ fn test_allowance_persistence_vs_balance_consistency() {
         .approve(&user, &spender, &allowance_amount, &expiration_ledger);
 
     // Simulate long period with interactions
-    for i in 0..50 {
+    for _ in 0..50 {
         ctx.env
             .ledger()
             .set_sequence_number(ctx.env.ledger().sequence() + 100);

@@ -89,6 +89,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             rwa_category: String::from_str(env, "Bond"),
             expected_apy: 500u32,
             timelock_delay: 172800u64, // 48 hours
+            yield_vesting_period: 0u64,
         },),
     );
 
@@ -391,4 +392,55 @@ fn test_multiple_consecutive_pauses_and_unpauses() {
     assert!(!vault.paused());
     assert_eq!(vault.balance(&user), 500_000);
     assert_eq!(token.balance(&user), 14_500_000); // 15_000_000 - 500_000
+}
+
+#[test]
+fn test_share_transfer_succeeds_while_vault_paused() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let token = MockTokenClient::new(&e, &token_id);
+    let zkme = MockZkmeClient::new(&e, &zkme_id);
+    let from_user = Address::generate(&e);
+    let to_user = Address::generate(&e);
+
+    vault.set_operator(&admin, &admin, &true);
+    zkme.approve_user(&from_user);
+    zkme.approve_user(&to_user);
+
+    token.mint(&from_user, &1_000_000);
+    vault.deposit(&from_user, &500_000, &from_user);
+    assert_eq!(vault.balance(&from_user), 500_000);
+    assert_eq!(vault.balance(&to_user), 0);
+
+    vault.pause(&admin, &String::from_str(&e, "Paused for transfer test"));
+    assert!(vault.paused());
+
+    let xfer = 200_000i128;
+    vault.transfer(&from_user, &to_user, &xfer);
+
+    assert_eq!(vault.balance(&from_user), 300_000);
+    assert_eq!(vault.balance(&to_user), xfer);
+    assert!(vault.paused());
+}
+
+/// While paused, `pause` freezes deposit / withdraw / redeem / yield entrypoints
+/// but does not consult those guards on `transfer` / `transfer_from` (#207).
+#[test]
+fn test_pause_does_not_add_share_transfer_state_guard_in_contract() {
+    let src = include_str!("lib.rs");
+    assert!(
+        src.contains("pub fn transfer(e: &Env, from: Address, to: Address, amount: i128)"),
+        "transfer entrypoint must remain present for this invariant test"
+    );
+    let transfer_fn_start = src
+        .find("pub fn transfer(e: &Env, from: Address, to: Address, amount: i128)")
+        .unwrap();
+    let transfer_fn_tail = &src[transfer_fn_start..transfer_fn_start + 800];
+    assert!(
+        !transfer_fn_tail.contains("get_paused")
+            && !transfer_fn_tail.contains("require_not_frozen"),
+        "share transfer must not gate on pause/freeze so holders can still move claims off-wallet"
+    );
 }

@@ -269,8 +269,8 @@ fn default_params(
         rwa_symbol: String::from_str(env, "USTB26"),
         rwa_document_uri: String::from_str(env, "https://example.com/ustb26"),
         rwa_category: String::from_str(env, "Government Bond"),
-        expected_apy: 500u32,      // 5 %
-        timelock_delay: 172800u64, // 48 hours
+        expected_apy: 500u32,       // 5 %
+        timelock_delay: 172800u64,  // 48 hours
         yield_vesting_period: 0u64, // Default to 0 for instant claiming (backward compatibility)
     }
 }

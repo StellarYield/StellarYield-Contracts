@@ -90,6 +90,7 @@ pub fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             rwa_category: String::from_str(env, "Bond"),
             expected_apy: 500u32,
             timelock_delay: 172800u64, // 48 hours
+            yield_vesting_period: 0u64,
         },),
     );
 

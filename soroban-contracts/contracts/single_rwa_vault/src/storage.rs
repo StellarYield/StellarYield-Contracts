@@ -133,73 +133,138 @@ pub enum Key {
     TlkAct(u32),
 }
 
-// Manual serialization for Key enum to avoid contracttype symbol length issues
+// Manual serialization for `Key`: unit variants use a bare `u32` tag; any key that
+// carries an address, epoch, or role must encode as `(tag, …payload)` so entries
+// do not collide (the previous `u32`-only encoding mapped every `Balance(_)` to
+// the same key, etc.).
+const K_TAG_ROLE: u32 = 200;
+const K_TAG_EP_YIELD: u32 = 201;
+const K_TAG_EP_TOT_SHR: u32 = 202;
+const K_TAG_EP_TIMEST: u32 = 203;
+const K_TAG_TOT_YLD_CLM: u32 = 204;
+const K_TAG_HAS_CLM_EP: u32 = 205;
+const K_TAG_LST_CLM_EP: u32 = 206;
+const K_TAG_USR_EP_YLD_CLM: u32 = 207;
+const K_TAG_USR_SHR_EP: u32 = 208;
+const K_TAG_HAS_SN_EP: u32 = 209;
+const K_TAG_LST_INT_EP: u32 = 210;
+const K_TAG_BALANCE: u32 = 211;
+const K_TAG_ALLOWANCE: u32 = 212;
+const K_TAG_USR_DEP: u32 = 213;
+const K_TAG_RED_REQ: u32 = 214;
+const K_TAG_ESC_SHR: u32 = 215;
+const K_TAG_BLACKLST: u32 = 216;
+const K_TAG_HAS_CLM_EMG: u32 = 217;
+const K_TAG_TLK_ACT: u32 = 218;
+
 impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
     fn into_val(&self, env: &Env) -> soroban_sdk::Val {
-        let n: u32 = match self {
-            Key::ShareName => 0,
-            Key::ShrSymb => 1,
-            Key::ShrDec => 2,
-            Key::Asset => 3,
-            Key::Admin => 4,
-            Key::Role(_, _) => 5,
-            Key::ZkmeVer => 6,
-            Key::Coop => 7,
-            Key::RwaName => 8,
-            Key::RwaSymbol => 9,
-            Key::RwaDocUri => 10,
-            Key::RwaCat => 11,
-            Key::ExpApy => 12,
-            Key::FundTgt => 13,
-            Key::MatDate => 14,
-            Key::MinDep => 15,
-            Key::MaxDepUsr => 16,
-            Key::ERedFee => 17,
-            Key::VaultSt => 18,
-            Key::Paused => 19,
-            Key::FrzFlags => 20,
-            Key::ActTimest => 21,
-            Key::Locked => 22,
-            Key::FundDeadl => 23,
-            Key::CtrVers => 24,
-            Key::StorSch => 25,
-            Key::CurEpoch => 26,
-            Key::TotYield => 27,
-            Key::EpYield(n) => 28 + *n,
-            Key::EpTotShr(n) => 29 + *n,
-            Key::EpTimest(n) => 30 + *n,
-            Key::TotYldClm(_) => 31,
-            Key::HasClmEp(_, _) => 32,
-            Key::LstClmEp(_) => 33,
-            Key::UsrShrEp(_, _) => 34,
-            Key::HasSnEp(_, _) => 35,
-            Key::LstIntEp(_) => 36,
-            Key::Balance(_) => 37,
-            Key::Allowance(_, _) => 38,
-            Key::TotSup => 39,
-            Key::UsrDep(_) => 40,
-            Key::TotDep => 41,
-            Key::RedCnt => 42,
-            Key::RedReq(n) => 43 + *n,
-            Key::EscShr(_) => 44,
-            Key::Blacklst(_) => 45,
-            Key::XferKyc => 46,
-            Key::EmgBal => 47,
-            Key::HasClmEmg(_) => 48,
-            Key::EmgTotSup => 49,
-            Key::TlkDelay => 50,
-            Key::TlkCount => 51,
-            Key::TlkAct(n) => 52 + *n,
-            Key::YldVstPer => 100, // Unique ID for yield vesting period
-            Key::UsrEpYldClm(_, _) => 101, // Unique ID for user epoch yield claimed
-        };
-        n.into_val(env)
+        match self {
+            Key::Role(a, r) => (K_TAG_ROLE, a.clone(), r.clone()).into_val(env),
+            Key::EpYield(e) => (K_TAG_EP_YIELD, *e).into_val(env),
+            Key::EpTotShr(e) => (K_TAG_EP_TOT_SHR, *e).into_val(env),
+            Key::EpTimest(e) => (K_TAG_EP_TIMEST, *e).into_val(env),
+            Key::TotYldClm(a) => (K_TAG_TOT_YLD_CLM, a.clone()).into_val(env),
+            Key::HasClmEp(a, e) => (K_TAG_HAS_CLM_EP, a.clone(), *e).into_val(env),
+            Key::LstClmEp(a) => (K_TAG_LST_CLM_EP, a.clone()).into_val(env),
+            Key::UsrEpYldClm(a, e) => (K_TAG_USR_EP_YLD_CLM, a.clone(), *e).into_val(env),
+            Key::UsrShrEp(a, e) => (K_TAG_USR_SHR_EP, a.clone(), *e).into_val(env),
+            Key::HasSnEp(a, e) => (K_TAG_HAS_SN_EP, a.clone(), *e).into_val(env),
+            Key::LstIntEp(a) => (K_TAG_LST_INT_EP, a.clone()).into_val(env),
+            Key::Balance(a) => (K_TAG_BALANCE, a.clone()).into_val(env),
+            Key::Allowance(o, s) => (K_TAG_ALLOWANCE, o.clone(), s.clone()).into_val(env),
+            Key::UsrDep(a) => (K_TAG_USR_DEP, a.clone()).into_val(env),
+            Key::RedReq(n) => (K_TAG_RED_REQ, *n).into_val(env),
+            Key::EscShr(a) => (K_TAG_ESC_SHR, a.clone()).into_val(env),
+            Key::Blacklst(a) => (K_TAG_BLACKLST, a.clone()).into_val(env),
+            Key::HasClmEmg(a) => (K_TAG_HAS_CLM_EMG, a.clone()).into_val(env),
+            Key::TlkAct(n) => (K_TAG_TLK_ACT, *n).into_val(env),
+
+            Key::ShareName => 0u32.into_val(env),
+            Key::ShrSymb => 1u32.into_val(env),
+            Key::ShrDec => 2u32.into_val(env),
+            Key::Asset => 3u32.into_val(env),
+            Key::Admin => 4u32.into_val(env),
+            Key::ZkmeVer => 6u32.into_val(env),
+            Key::Coop => 7u32.into_val(env),
+            Key::RwaName => 8u32.into_val(env),
+            Key::RwaSymbol => 9u32.into_val(env),
+            Key::RwaDocUri => 10u32.into_val(env),
+            Key::RwaCat => 11u32.into_val(env),
+            Key::ExpApy => 12u32.into_val(env),
+            Key::FundTgt => 13u32.into_val(env),
+            Key::MatDate => 14u32.into_val(env),
+            Key::MinDep => 15u32.into_val(env),
+            Key::MaxDepUsr => 16u32.into_val(env),
+            Key::ERedFee => 17u32.into_val(env),
+            Key::YldVstPer => 100u32.into_val(env),
+            Key::VaultSt => 18u32.into_val(env),
+            Key::Paused => 19u32.into_val(env),
+            Key::FrzFlags => 20u32.into_val(env),
+            Key::ActTimest => 21u32.into_val(env),
+            Key::Locked => 22u32.into_val(env),
+            Key::FundDeadl => 23u32.into_val(env),
+            Key::CtrVers => 24u32.into_val(env),
+            Key::StorSch => 25u32.into_val(env),
+            Key::CurEpoch => 26u32.into_val(env),
+            Key::TotYield => 27u32.into_val(env),
+            Key::TotSup => 39u32.into_val(env),
+            Key::TotDep => 41u32.into_val(env),
+            Key::RedCnt => 42u32.into_val(env),
+            Key::XferKyc => 46u32.into_val(env),
+            Key::EmgBal => 47u32.into_val(env),
+            Key::EmgTotSup => 49u32.into_val(env),
+            Key::TlkDelay => 50u32.into_val(env),
+            Key::TlkCount => 51u32.into_val(env),
+        }
     }
 }
 
 impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
     type Error = soroban_sdk::Error;
     fn try_from_val(env: &Env, val: &soroban_sdk::Val) -> Result<Self, Self::Error> {
+        if let Ok((tag, a, r)) = <(u32, Address, Role)>::try_from_val(env, val) {
+            if tag == K_TAG_ROLE {
+                return Ok(Key::Role(a, r));
+            }
+        }
+        if let Ok((tag, a, e)) = <(u32, Address, u32)>::try_from_val(env, val) {
+            return Ok(match tag {
+                K_TAG_HAS_CLM_EP => Key::HasClmEp(a, e),
+                K_TAG_USR_EP_YLD_CLM => Key::UsrEpYldClm(a, e),
+                K_TAG_USR_SHR_EP => Key::UsrShrEp(a, e),
+                K_TAG_HAS_SN_EP => Key::HasSnEp(a, e),
+                _ => return Err(soroban_sdk::Error::from_contract_error(1)),
+            });
+        }
+        if let Ok((tag, a)) = <(u32, Address)>::try_from_val(env, val) {
+            return Ok(match tag {
+                K_TAG_TOT_YLD_CLM => Key::TotYldClm(a),
+                K_TAG_LST_CLM_EP => Key::LstClmEp(a),
+                K_TAG_LST_INT_EP => Key::LstIntEp(a),
+                K_TAG_BALANCE => Key::Balance(a),
+                K_TAG_USR_DEP => Key::UsrDep(a),
+                K_TAG_ESC_SHR => Key::EscShr(a),
+                K_TAG_BLACKLST => Key::Blacklst(a),
+                K_TAG_HAS_CLM_EMG => Key::HasClmEmg(a),
+                _ => return Err(soroban_sdk::Error::from_contract_error(1)),
+            });
+        }
+        if let Ok((tag, o, s)) = <(u32, Address, Address)>::try_from_val(env, val) {
+            if tag == K_TAG_ALLOWANCE {
+                return Ok(Key::Allowance(o, s));
+            }
+        }
+        if let Ok((tag, n)) = <(u32, u32)>::try_from_val(env, val) {
+            return Ok(match tag {
+                K_TAG_EP_YIELD => Key::EpYield(n),
+                K_TAG_EP_TOT_SHR => Key::EpTotShr(n),
+                K_TAG_EP_TIMEST => Key::EpTimest(n),
+                K_TAG_RED_REQ => Key::RedReq(n),
+                K_TAG_TLK_ACT => Key::TlkAct(n),
+                _ => return Err(soroban_sdk::Error::from_contract_error(1)),
+            });
+        }
         let n = u32::try_from_val(env, val)?;
         match n {
             0 => Ok(Key::ShareName),
@@ -207,7 +272,6 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             2 => Ok(Key::ShrDec),
             3 => Ok(Key::Asset),
             4 => Ok(Key::Admin),
-            5 => Ok(Key::Role(Address::from_str(env, "0"), Role::FullOperator)),
             6 => Ok(Key::ZkmeVer),
             7 => Ok(Key::Coop),
             8 => Ok(Key::RwaName),
@@ -413,10 +477,7 @@ instance_get!(get_early_redemption_fee_bps, ERedFee, u32);
 instance_put!(put_early_redemption_fee_bps, ERedFee, u32);
 
 pub fn get_yield_vesting_period(e: &Env) -> u64 {
-    e.storage()
-        .instance()
-        .get(&Key::YldVstPer)
-        .unwrap_or(0) // Default to 0 for backward compatibility (instant claiming)
+    e.storage().instance().get(&Key::YldVstPer).unwrap_or(0) // Default to 0 for backward compatibility (instant claiming)
 }
 pub fn put_yield_vesting_period(e: &Env, val: u64) {
     e.storage().instance().set(&Key::YldVstPer, &val);
@@ -892,6 +953,7 @@ pub fn put_timelock_action(e: &Env, action_id: u32, action: crate::types::Timelo
     e.storage().instance().set(&Key::TlkAct(action_id), &action);
 }
 
+#[allow(dead_code)]
 pub fn has_timelock_action(e: &Env, action_id: u32) -> bool {
     e.storage().instance().has(&Key::TlkAct(action_id))
 }

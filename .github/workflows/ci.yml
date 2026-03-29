@@ -43,7 +43,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
       - name: Build WASM (required by vault_factory contractimport)
-        working-directory: soroban-contracts
         run: cargo build --target wasm32-unknown-unknown --release -p single_rwa_vault
       - name: Run clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -68,7 +67,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-test-
       - name: Build WASM (required by vault_factory contractimport)
-        working-directory: soroban-contracts
         run: cargo build --target wasm32-unknown-unknown --release -p single_rwa_vault
       - name: Run tests
         run: cargo test --workspace
@@ -108,11 +106,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Contract | Size | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
-<<<<<<< HEAD
-          for wasm in $(find target/wasm32-unknown-unknown/release -name "*.wasm" -type f 2>/dev/null); do
-=======
-          for wasm in $(find soroban-contracts/target/wasm32v1-none/release -name "*.wasm" -type f); do
->>>>>>> 6165bcefd0a3ea8c32c44bb5933646ec2920edd3
+          for wasm in $(find target/wasm32v1-none/release -name "*.wasm" -type f 2>/dev/null); do
             size=$(wc -c < "$wasm" | tr -d ' ')
             name=$(basename "$wasm")
             size_kb=$((size / 1024))
@@ -127,11 +121,7 @@ jobs:
       - name: Check WASM size limits
         run: |
           failed=0
-<<<<<<< HEAD
-          for wasm in $(find target/wasm32-unknown-unknown/release -name "*.wasm" -type f 2>/dev/null); do
-=======
-          for wasm in $(find soroban-contracts/target/wasm32v1-none/release -name "*.wasm" -type f); do
->>>>>>> 6165bcefd0a3ea8c32c44bb5933646ec2920edd3
+          for wasm in $(find target/wasm32v1-none/release -name "*.wasm" -type f 2>/dev/null); do
             size=$(wc -c < "$wasm" | tr -d ' ')
             name=$(basename "$wasm")
             limit=$((256 * 1024))

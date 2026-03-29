@@ -190,6 +190,7 @@ pub fn emit_early_redemption_cancelled(e: &Env, user: Address, request_id: u32, 
 }
 
 /// Emitted by `transfer_admin`.
+#[allow(dead_code)]
 pub fn emit_admin_transferred(e: &Env, old_admin: Address, new_admin: Address) {
     e.events()
         .publish((symbol_short!("adm_xfr"),), (old_admin, new_admin));
@@ -216,7 +217,8 @@ pub fn emit_early_redemption_fee_set(e: &Env, fee_bps: u32) {
 }
 
 pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
-    e.events().publish((symbol_short!("vest_set"),), vesting_period);
+    e.events()
+        .publish((symbol_short!("vest_set"),), vesting_period);
 }
 
 /// Emitted by `set_funding_target`.
@@ -278,6 +280,7 @@ pub fn emit_action_proposed(
 }
 
 /// Emitted when a timelock action is executed.
+#[allow(dead_code)]
 pub fn emit_action_executed(e: &Env, action_id: u32, action_type: crate::types::ActionType) {
     e.events()
         .publish((symbol_short!("act_exec"), action_id), action_type);

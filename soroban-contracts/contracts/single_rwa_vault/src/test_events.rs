@@ -13,11 +13,7 @@
 
 extern crate std;
 
-use soroban_sdk::{
-    symbol_short,
-    testutils::{Address as _, Events as _},
-    IntoVal,
-};
+use soroban_sdk::{symbol_short, testutils::Events as _, IntoVal};
 
 use crate::test_helpers::{mint_usdc, setup_with_kyc_bypass, TestContext};
 

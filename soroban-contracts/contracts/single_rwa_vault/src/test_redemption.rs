@@ -93,6 +93,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             rwa_category: String::from_str(env, "Bond"),
             expected_apy: 500u32,
             timelock_delay: 172800u64, // 48 hours
+            yield_vesting_period: 0u64,
         },),
     );
 
@@ -723,4 +724,60 @@ fn test_redeem_blacklisted_address_panics() {
 
     // Try to redeem — should panic with AddressBlacklisted
     vault.redeem(&user, &shares, &user, &user);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-epoch yield distribution (#161)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Three consecutive `distribute_yield` calls advance epochs and cumulative
+/// accounting; per-epoch amounts and `total_yield_distributed` stay consistent (#161).
+#[test]
+fn test_multiple_consecutive_yield_distributions_interleaved_claims() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+    let deposit_amount = 2_000_000i128;
+
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    let y1 = 60_000_i128;
+    let y2 = 120_000_i128;
+    let y3 = 180_000_i128;
+    let total_distributed = y1 + y2 + y3;
+
+    assert_eq!(vault.current_epoch(), 0u32);
+
+    assert_eq!(
+        distribute_yield(&env, &vault_id, &token_id, &admin, y1),
+        1u32
+    );
+    assert_eq!(vault.epoch_yield(&1u32), y1);
+    assert_eq!(vault.current_epoch(), 1u32);
+
+    assert_eq!(
+        distribute_yield(&env, &vault_id, &token_id, &admin, y2),
+        2u32
+    );
+    assert_eq!(vault.epoch_yield(&2u32), y2);
+    assert_eq!(vault.current_epoch(), 2u32);
+
+    assert_eq!(
+        distribute_yield(&env, &vault_id, &token_id, &admin, y3),
+        3u32
+    );
+    assert_eq!(vault.epoch_yield(&3u32), y3);
+    assert_eq!(vault.current_epoch(), 3u32);
+
+    assert_eq!(vault.total_yield_distributed(), total_distributed);
+    assert_eq!(
+        vault.total_assets(),
+        deposit_amount + total_distributed,
+        "underlying accounting accumulates deposits plus all epoch yield"
+    );
 }

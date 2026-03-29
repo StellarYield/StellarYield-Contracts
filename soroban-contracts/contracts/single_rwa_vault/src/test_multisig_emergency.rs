@@ -5,7 +5,7 @@ extern crate std;
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
-    Address, Env, Vec,
+    Address, Env, String, Vec,
 };
 
 use crate::tests::{make_vault, MockTokenClient};
@@ -107,6 +107,7 @@ fn test_emergency_withdraw_fallback_works_without_multisig() {
     let recipient = Address::generate(&e);
 
     token.mint(&vault_id, &5000);
+    vault.pause(&admin, &String::from_str(&e, "emergency"));
     vault.emergency_withdraw(&admin, &recipient);
     assert_eq!(token.balance(&recipient), 5000);
     assert!(vault.paused());
@@ -308,7 +309,8 @@ fn test_clear_multisig_re_enables_single_admin() {
     let empty: Vec<Address> = Vec::new(&e);
     vault.set_emergency_signers(&admin, &empty, &0u32);
 
-    // Single-admin path should work again
+    // Single-admin path should work again (requires pause per `emergency_withdraw` guard)
+    vault.pause(&admin, &String::from_str(&e, "clear multisig"));
     vault.emergency_withdraw(&admin, &recipient);
     assert_eq!(token.balance(&recipient), 3000);
 }
