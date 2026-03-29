@@ -38,7 +38,7 @@ pub fn run_migrations(e: &Env, from_version: u32) {
     if from_version < 2 {
         migrate_v1_to_v2(e);
     }
-    // .... further versions
+    // ... further versions
 }
 ```
 
