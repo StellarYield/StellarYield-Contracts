@@ -190,6 +190,75 @@ fn test_transfer_updates_snapshots() {
     assert_eq!(client.balance(&bob), 400_i128);
 }
 
+/// Mid-epoch transfer: shares transfer during an active epoch preserves the
+/// pre-transfer snapshot so yield for that epoch is split on pre-transfer balances.
+///
+/// Timeline:
+///   epoch 1 opens (advance_epoch records 1_000 shares, 100 yield)
+///   Alice (1_000 shares) transfers 400 → Bob (0 shares)   ← snapshot captured here
+///   epoch 2 opens (advance_epoch records current supply, new yield)
+///
+/// Expected pending_yield_for_epoch(epoch=1):
+///   Alice: 100 * 1_000 / 1_000 = 100   (full epoch-1 yield, snapshot was 1_000)
+///   Bob  : 100 *     0 / 1_000 =   0   (snapshot was 0 before transfer)
+///
+/// Expected pending_yield_for_epoch(epoch=2):
+///   Alice: 200 *   600 / 1_000 = 120   (post-transfer balance 600 out of 1_000)
+///   Bob  : 200 *   400 / 1_000 =  80   (post-transfer balance 400 out of 1_000)
+#[test]
+fn test_transfer_during_active_epoch_yield_attribution() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    // Give Alice 1_000 shares; Bob starts with 0.
+    give_shares(&env, &vault_id, &alice, 1_000_i128);
+
+    // Open epoch 1: 100 yield distributed over 1_000 total shares.
+    advance_epoch(&env, &vault_id, 1, 100_i128, 1_000_i128);
+
+    // Mid-epoch transfer: Alice → Bob, 400 shares.
+    // update_user_snapshot fires for both before balances change, so:
+    //   alice snapshot at epoch 1 = 1_000 (pre-transfer)
+    //   bob   snapshot at epoch 1 =     0 (pre-transfer)
+    client.transfer(&alice, &bob, &400_i128);
+
+    // Confirm post-transfer live balances.
+    assert_eq!(client.balance(&alice), 600_i128);
+    assert_eq!(client.balance(&bob), 400_i128);
+
+    // Open epoch 2: 200 yield distributed over the same 1_000 total shares.
+    // No transfer happens this epoch, so neither user has a snapshot yet —
+    // pending_yield_for_epoch falls back to live balance.
+    advance_epoch(&env, &vault_id, 2, 200_i128, 1_000_i128);
+
+    // ── Epoch 1 yield: attributed to pre-transfer balances ───────────────────
+    // Alice held 1_000 / 1_000 → gets all 100.
+    let alice_epoch1 = client.pending_yield_for_epoch(&alice, &1u32);
+    assert_eq!(alice_epoch1, 100_i128, "alice epoch-1 yield must equal full 100");
+
+    // Bob held 0 / 1_000 → gets 0.
+    let bob_epoch1 = client.pending_yield_for_epoch(&bob, &1u32);
+    assert_eq!(bob_epoch1, 0_i128, "bob epoch-1 yield must be 0 (no pre-transfer shares)");
+
+    // ── Epoch 2 yield: attributed to post-transfer balances ──────────────────
+    // Alice: 600 / 1_000 * 200 = 120.
+    let alice_epoch2 = client.pending_yield_for_epoch(&alice, &2u32);
+    assert_eq!(alice_epoch2, 120_i128, "alice epoch-2 yield must equal 120");
+
+    // Bob: 400 / 1_000 * 200 = 80.
+    let bob_epoch2 = client.pending_yield_for_epoch(&bob, &2u32);
+    assert_eq!(bob_epoch2, 80_i128, "bob epoch-2 yield must equal 80");
+
+    // Total yield across both epochs must equal what was distributed.
+    assert_eq!(
+        alice_epoch1 + bob_epoch1 + alice_epoch2 + bob_epoch2,
+        300_i128,
+        "combined yield claims must equal total distributed (100 + 200)"
+    );
+}
+
 // ─── Allowance & transfer_from ────────────────────────────────────────────────
 
 /// approve stores the allowance; a second approve overwrites it.
