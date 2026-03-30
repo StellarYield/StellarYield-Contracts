@@ -1100,3 +1100,97 @@ fn test_partial_early_redemption_then_full_redemption_at_maturity() {
         "total received must be at least the deposited principal"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #221: emergency_withdraw does not corrupt snapshot-based yield
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// After an emergency withdrawal drains the vault's underlying assets, the
+/// remaining users' share balances and snapshot-based yield accounting are
+/// completely unaffected. `emergency_withdraw` only moves tokens — it never
+/// burns shares or modifies any snapshot storage.
+///
+/// Scenario:
+///   1. Two users deposit equal amounts → each holds 50 % of supply.
+///   2. Yield distributed (epoch 1) → each has `yield / 2` pending.
+///   3. Vault is paused, then `emergency_withdraw` drains all tokens.
+///   4. Remaining user's shares, snapshot, and `pending_yield_for_epoch`
+///      are all unchanged.
+#[test]
+fn test_emergency_withdraw_does_not_affect_remaining_user_yield_snapshot() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // ── Setup ────────────────────────────────────────────────────────────────
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let deposit_amount = 1_000_000i128;
+
+    // Both users deposit equal amounts — each holds 50 % of total shares.
+    let shares1 = fund_user(&env, &vault_id, &token_id, &zkme_id, &user1, deposit_amount);
+    let shares2 = fund_user(&env, &vault_id, &token_id, &zkme_id, &user2, deposit_amount);
+    assert_eq!(shares1, shares2, "equal deposits must yield equal shares");
+
+    activate(&env, &vault_id, &admin);
+
+    // ── Distribute yield (epoch 1) ────────────────────────────────────────────
+    let yield_amount = 100_000i128;
+    distribute_yield(&env, &vault_id, &token_id, &admin, yield_amount);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let token = MockTokenClient::new(&env, &token_id);
+
+    // Each user is entitled to half the yield.
+    let expected_per_user = yield_amount / 2; // 50_000
+    let user1_pending_before = vault.pending_yield_for_epoch(&user1, &1u32);
+    let user2_pending_before = vault.pending_yield_for_epoch(&user2, &1u32);
+    assert_eq!(user1_pending_before, expected_per_user);
+    assert_eq!(user2_pending_before, expected_per_user);
+
+    // ── Emergency withdraw ────────────────────────────────────────────────────
+    // Pause the vault first (required by emergency_withdraw guard).
+    vault.pause(&admin, &String::from_str(&env, "Emergency"));
+
+    let vault_balance_before = token.balance(&vault_id);
+    assert!(vault_balance_before > 0, "vault must hold funds before emergency_withdraw");
+
+    vault.emergency_withdraw(&admin, &recipient);
+
+    // Vault assets are fully drained; recipient received them.
+    assert_eq!(
+        token.balance(&vault_id),
+        0,
+        "vault must be empty after emergency_withdraw"
+    );
+    assert_eq!(
+        token.balance(&recipient),
+        vault_balance_before,
+        "recipient must receive all vault funds"
+    );
+
+    // ── Snapshot integrity: user2's yield accounting is unaffected ────────────
+    // Shares are unchanged — emergency_withdraw never burns or modifies shares.
+    assert_eq!(
+        vault.balance(&user2),
+        shares2,
+        "user2 shares must be unchanged after emergency_withdraw"
+    );
+
+    // The pending yield view still returns the correct snapshot-based amount;
+    // emergency_withdraw only moves assets, not snapshot storage.
+    let user2_pending_after = vault.pending_yield_for_epoch(&user2, &1u32);
+    assert_eq!(
+        user2_pending_after, user2_pending_before,
+        "user2 pending yield for epoch 1 must be unchanged after emergency_withdraw"
+    );
+
+    // user1's snapshot is equally unaffected.
+    let user1_pending_after = vault.pending_yield_for_epoch(&user1, &1u32);
+    assert_eq!(
+        user1_pending_after, user1_pending_before,
+        "user1 pending yield for epoch 1 must be unchanged after emergency_withdraw"
+    );
+}
