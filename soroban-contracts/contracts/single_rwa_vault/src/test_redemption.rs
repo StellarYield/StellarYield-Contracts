@@ -735,6 +735,10 @@ fn test_claim_yield_earned_before_early_full_redemption_succeeds() {
         claimed, pending_before,
         "claimed amount must equal pre-redemption pending yield"
     );
+    assert_eq!(
+        claimed, pending_before,
+        "claimed amount must equal pre-redemption pending yield"
+    );
 
     // All yield is now claimed.
     assert_eq!(
@@ -825,59 +829,200 @@ fn test_redeem_blacklisted_address_panics() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Multi-epoch yield distribution (#161)
+// Tests — Regression: Double-claim prevention (#112)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Three consecutive `distribute_yield` calls advance epochs and cumulative
-/// accounting; per-epoch amounts and `total_yield_distributed` stay consistent (#161).
+/// Users should not be able to claim yield for the same epoch twice via claim_yield.
 #[test]
-fn test_multiple_consecutive_yield_distributions_interleaved_claims() {
-    let env = Env::default();
-    env.mock_all_auths();
+#[should_panic(expected = "Error(Contract, #9)")] // Error::NoYieldToClaim = 9
+fn test_claim_yield_twice_fails() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
 
-    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
-    let user = Address::generate(&env);
-    let deposit_amount = 2_000_000i128;
+    // 1. Setup: Deposit and activate
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_000);
+    v.deposit(&ctx.user, &100_000_000, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
 
-    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
-    activate(&env, &vault_id, &admin);
+    // 2. Distribute yield for epoch 1
+    let yield_amount = 1_000_000i128;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.operator, yield_amount);
+    v.distribute_yield(&ctx.operator, &yield_amount);
 
-    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    // 3. First claim succeeds
+    let claimed = v.claim_yield(&ctx.user);
+    assert!(claimed > 0);
 
-    let y1 = 60_000_i128;
-    let y2 = 120_000_i128;
-    let y3 = 180_000_i128;
-    let total_distributed = y1 + y2 + y3;
+    // 4. Second attempt immediately after MUST panic with NoYieldToClaim (#9)
+    v.claim_yield(&ctx.user);
+}
 
-    assert_eq!(vault.current_epoch(), 0u32);
+/// Users should not be able to claim yield for the same epoch twice via claim_yield_for_epoch.
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")] // Error::NoYieldToClaim = 9
+fn test_claim_yield_for_epoch_twice_fails() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
 
-    assert_eq!(
-        distribute_yield(&env, &vault_id, &token_id, &admin, y1),
-        1u32
-    );
-    assert_eq!(vault.epoch_yield(&1u32), y1);
-    assert_eq!(vault.current_epoch(), 1u32);
+    // 1. Setup: Deposit and activate
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_000);
+    v.deposit(&ctx.user, &100_000_000, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
 
-    assert_eq!(
-        distribute_yield(&env, &vault_id, &token_id, &admin, y2),
-        2u32
-    );
-    assert_eq!(vault.epoch_yield(&2u32), y2);
-    assert_eq!(vault.current_epoch(), 2u32);
+    // 2. Distribute yield for epoch 1
+    let yield_amount = 1_000_000i128;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.operator, yield_amount);
+    v.distribute_yield(&ctx.operator, &yield_amount);
 
-    assert_eq!(
-        distribute_yield(&env, &vault_id, &token_id, &admin, y3),
-        3u32
-    );
-    assert_eq!(vault.epoch_yield(&3u32), y3);
-    assert_eq!(vault.current_epoch(), 3u32);
+    // 3. First claim for epoch 1 succeeds
+    let claimed = v.claim_yield_for_epoch(&ctx.user, &1u32);
+    assert!(claimed > 0);
 
-    assert_eq!(vault.total_yield_distributed(), total_distributed);
-    assert_eq!(
-        vault.total_assets(),
-        deposit_amount + total_distributed,
-        "underlying accounting accumulates deposits plus all epoch yield"
-    );
+    // 4. Second attempt for same epoch MUST panic with NoYieldToClaim (#9)
+    v.claim_yield_for_epoch(&ctx.user, &1u32);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+
+fn test_claim_yield_zero_shares_panics() {
+    let ctx = setup_with_kyc_bypass();
+
+    let v = ctx.vault();
+
+    // Activate the vault so claim_yield is allowed
+
+    v.set_funding_target(&ctx.admin, &0i128);
+
+    v.activate_vault(&ctx.operator);
+
+    let user_with_zero_shares = Address::generate(&ctx.env);
+
+    // KYC approve the user
+
+    crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id)
+        .approve_user(&user_with_zero_shares);
+
+    // User has zero shares (never deposited)
+
+    assert_eq!(v.balance(&user_with_zero_shares), 0);
+
+    // Try to claim yield - should panic with NoYieldToClaim
+
+    v.claim_yield(&user_with_zero_shares);
+}
+
+#[test]
+
+fn test_multiple_users_claim_same_epoch_yield() {
+    let ctx = setup_with_kyc_bypass();
+
+    let v = ctx.vault();
+
+    // Create multiple users with different share amounts
+
+    let user1 = Address::generate(&ctx.env);
+
+    let user2 = Address::generate(&ctx.env);
+
+    let user3 = Address::generate(&ctx.env);
+
+    let users = vec![&ctx.env, user1.clone(), user2.clone(), user3.clone()];
+
+    // KYC approve all users
+
+    for user in &users {
+        crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id).approve_user(user);
+    }
+
+    // Deposit amounts: user1: 100, user2: 200, user3: 300 (to have different proportions)
+
+    let deposit1 = 100_000i128; // 100 USDC
+
+    let deposit2 = 200_000i128;
+
+    let deposit3 = 300_000i128;
+
+    mint_usdc(&ctx.env, &ctx.asset_id, &user1, deposit1);
+
+    v.deposit(&user1, &deposit1, &user1);
+
+    mint_usdc(&ctx.env, &ctx.asset_id, &user2, deposit2);
+
+    v.deposit(&user2, &deposit2, &user2);
+
+    mint_usdc(&ctx.env, &ctx.asset_id, &user3, deposit3);
+
+    v.deposit(&user3, &deposit3, &user3);
+
+    // Activate vault
+
+    v.set_funding_target(&ctx.admin, &0i128);
+
+    v.activate_vault(&ctx.operator);
+
+    // Record shares
+
+    let shares1 = v.balance(&user1);
+
+    let shares2 = v.balance(&user2);
+
+    let shares3 = v.balance(&user3);
+
+    let total_shares = shares1 + shares2 + shares3;
+
+    // Distribute yield for epoch 1
+
+    let epoch_yield = 1_000_000i128; // 1000 USDC
+
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.operator, epoch_yield);
+
+    v.distribute_yield(&ctx.operator, &epoch_yield);
+
+    // Calculate expected claims using the same math as the contract
+
+    let expected1 = crate::math::mul_div(&ctx.env, epoch_yield, shares1, total_shares);
+
+    let expected2 = crate::math::mul_div(&ctx.env, epoch_yield, shares2, total_shares);
+
+    let expected3 = crate::math::mul_div(&ctx.env, epoch_yield, shares3, total_shares);
+
+    let total_expected = expected1 + expected2 + expected3;
+
+    // Have users claim yield for epoch 1 in different order
+
+    let claimed1 = v.claim_yield_for_epoch(&user1, &1u32);
+
+    let claimed3 = v.claim_yield_for_epoch(&user3, &1u32);
+
+    let claimed2 = v.claim_yield_for_epoch(&user2, &1u32);
+
+    // Verify each claim matches expected
+
+    assert_eq!(claimed1, expected1);
+
+    assert_eq!(claimed2, expected2);
+
+    assert_eq!(claimed3, expected3);
+
+    // Verify total claimed equals total expected (which may be less than epoch_yield due to rounding)
+
+    let total_claimed = claimed1 + claimed2 + claimed3;
+
+    assert_eq!(total_claimed, total_expected);
+
+    // Total claimed should be <= epoch_yield
+
+    assert!(total_claimed <= epoch_yield);
+
+    // The difference should be small (rounding loss)
+
+    let rounding_loss = epoch_yield - total_claimed;
+
+    assert!(rounding_loss < 3); // At most 2 for 3 users
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

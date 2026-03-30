@@ -7,7 +7,10 @@
 //!  - Edge cases: drain entire balance, non-1:1 share price validation
 
 use crate::test_helpers::{mint_usdc, normalize_amount, setup_with_kyc_bypass, TestContext};
-use soroban_sdk::{testutils::Address as _, Address, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, String,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: deposit `assets` for `user` and return the shares received.
@@ -354,4 +357,36 @@ fn test_withdraw_zero_assets_panics() {
 
     // Must panic with ZeroAmount — passing 0 assets.
     v.withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. Boundary: withdrawal right before maturity_date (#173)
+// ─────────────────────────────────────────────────────────────────────────────
+#[test]
+fn test_withdraw_just_before_maturity() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+    let deposit_amount = normalize_amount(100.0, 6);
+    let withdraw_amount = normalize_amount(50.0, 6);
+
+    // Initial deposit and activation
+    deposit(&ctx, &ctx.user.clone(), deposit_amount);
+    activate(&ctx);
+
+    // Advance time to 1 second before maturity
+    let maturity = v.maturity_date();
+    ctx.env.ledger().with_mut(|li| li.timestamp = maturity - 1);
+    assert_eq!(ctx.env.ledger().timestamp(), maturity - 1);
+
+    // Vault should still be Active
+    assert_eq!(v.vault_state(), crate::VaultState::Active);
+
+    let shares_before = v.balance(&ctx.user);
+    // Withdraw 50 USDC
+    v.withdraw(&ctx.user, &withdraw_amount, &ctx.user, &ctx.user);
+
+    // Verify results
+    assert_eq!(v.balance(&ctx.user), shares_before - withdraw_amount);
+    assert_eq!(ctx.asset().balance(&ctx.user), withdraw_amount);
+    assert_eq!(v.vault_state(), crate::VaultState::Active);
 }

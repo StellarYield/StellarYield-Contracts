@@ -1,0 +1,97 @@
+   Compiling single_rwa_vault v0.1.0 (/home/wilfred/Projects/STELLAR-YIELD/StellarYield-Contracts/soroban-contracts/contracts/single_rwa_vault)
+warning: unused imports: `Env`, `IntoVal`, and `Val`
+ --> soroban-contracts/contracts/single_rwa_vault/src/types.rs:3:42
+  |
+3 | use soroban_sdk::{contracttype, Address, Env, String, Val, IntoVal, TryFromVal, Bytes};
+  |                                          ^^^          ^^^  ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `Env`
+ --> soroban-contracts/contracts/single_rwa_vault/src/test_allowance_ttl.rs:6:28
+  |
+6 | use soroban_sdk::{Address, Env};
+  |                            ^^^
+
+warning: unused import: `Address as _`
+  --> soroban-contracts/contracts/single_rwa_vault/src/test_events.rs:18:17
+   |
+18 |     testutils::{Address as _, Events as _},
+   |                 ^^^^^^^^^^^^
+
+warning: unused imports: `Symbol`, `TryIntoVal`, and `Val`
+  --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:70:76
+   |
+70 |     contract, contractimpl, panic_with_error, token, Address, Env, String, Symbol, TryIntoVal, Val,
+   |                                                                            ^^^^^^  ^^^^^^^^^^  ^^^
+
+error[E0599]: no method named `with_mut` found for struct `soroban_sdk::ledger::Ledger` in the current scope
+   --> soroban-contracts/contracts/single_rwa_vault/src/test_withdraw.rs:380:22
+    |
+380 |     ctx.env.ledger().with_mut(|li| li.timestamp = maturity - 1);
+    |                      ^^^^^^^^ method not found in `soroban_sdk::ledger::Ledger`
+    |
+   ::: /home/wilfred/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.11/src/testutils.rs:284:8
+    |
+284 |     fn with_mut<F>(&self, f: F)
+    |        -------- the method is available for `soroban_sdk::ledger::Ledger` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Ledger` which provides `with_mut` is implemented but not in scope; perhaps you want to import it
+    |
+  9 + use soroban_sdk::testutils::Ledger;
+    |
+
+warning: unreachable statement
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1599:9
+     |
+1577 | /         match action.action_type {
+1578 | |             ActionType::EmergencyWithdraw => {
+...    |
+1596 | |         }
+     | |_________- any code following this `match` expression is unreachable, as all arms diverge
+...
+1599 |           action.executed = true;
+     |           ^^^^^^^^^^^^^^^^^^^^^^^ unreachable statement
+     |
+     = note: `#[warn(unreachable_code)]` on by default
+
+warning: unused import: `TryFromVal`
+ --> soroban-contracts/contracts/single_rwa_vault/src/types.rs:3:69
+  |
+3 | use soroban_sdk::{contracttype, Address, Env, String, Val, IntoVal, TryFromVal, Bytes};
+  |                                                                     ^^^^^^^^^^
+
+warning: unused variable: `i`
+  --> soroban-contracts/contracts/single_rwa_vault/src/test_allowance_ttl.rs:77:9
+   |
+77 |     for i in 0..200 {
+   |         ^ help: if this is intentional, prefix it with an underscore: `_i`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `i`
+   --> soroban-contracts/contracts/single_rwa_vault/src/test_allowance_ttl.rs:143:9
+    |
+143 |     for i in 0..50 {
+    |         ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `new_admin`
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1512:53
+     |
+1512 |     pub fn transfer_admin(e: &Env, caller: Address, new_admin: Address) {
+     |                                                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_new_admin`
+
+warning: variable does not need to be mutable
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1563:13
+     |
+1563 |         let mut action = get_timelock_action(e, action_id)
+     |             ----^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` on by default
+
+For more information about this error, try `rustc --explain E0599`.
+warning: `single_rwa_vault` (lib test) generated 10 warnings
+error: could not compile `single_rwa_vault` (lib test) due to 1 previous error; 10 warnings emitted
