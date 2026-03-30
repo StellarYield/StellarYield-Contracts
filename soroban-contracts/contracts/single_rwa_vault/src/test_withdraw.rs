@@ -217,7 +217,24 @@ fn test_redeem_insufficient_shares_panics() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. Error: withdraw while vault is paused
+// 7. Error: non-depositor cannot withdraw
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #20)")]
+fn test_withdraw_without_deposit_panics() {
+    let ctx = setup_with_kyc_bypass();
+    let non_depositor = Address::generate(&ctx.env);
+
+    deposit(&ctx, &ctx.user.clone(), 5_000_000);
+    activate(&ctx);
+
+    ctx.vault()
+        .withdraw(&non_depositor, &1_000_000i128, &non_depositor, &non_depositor);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. Error: withdraw while vault is paused
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -236,7 +253,7 @@ fn test_withdraw_while_paused_panics() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. Edge case: withdraw entire balance — share balance reaches 0
+// 9. Edge case: withdraw entire balance — share balance reaches 0
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -257,7 +274,7 @@ fn test_withdraw_entire_balance() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. Non-1:1 share price: distribute yield, verify preview and redeem output
+// 10. Non-1:1 share price: distribute yield, verify preview and redeem output
 //
 // Mechanism: use distribute_yield to inject extra assets without creating new
 // shares, so each existing share is worth more than 1 asset unit.
@@ -300,7 +317,7 @@ fn test_redeem_at_non_unit_share_price() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Non-1:1: withdraw by asset amount, verify shares burned < assets
+// 11. Non-1:1: withdraw by asset amount, verify shares burned < assets
 //     (because each share is worth more than 1 asset, fewer shares cover assets)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -340,7 +357,7 @@ fn test_withdraw_at_non_unit_share_price() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 11. Error: withdraw zero assets must panic with ZeroAmount
+// 12. Error: withdraw zero assets must panic with ZeroAmount
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -357,7 +374,7 @@ fn test_withdraw_zero_assets_panics() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12. Error: redeem zero shares must panic with ZeroAmount
+// 13. Error: redeem zero shares must panic with ZeroAmount
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
