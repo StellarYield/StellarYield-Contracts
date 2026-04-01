@@ -130,6 +130,11 @@ impl VaultFactory {
             0i128,  // min_deposit
             0i128,  // max_deposit_per_user
             200u32, // early_redemption_fee_bps (2 %)
+            None,   // vault_admin (use factory admin)
+            None,   // zkme_verifier (use factory default)
+            None,   // cooperator (use factory default)
+            0u32,   // max_investors (0 = unlimited)
+            0u64,   // lock_up_period (0 = no lock-up)
         )
     }
 
@@ -162,6 +167,11 @@ impl VaultFactory {
             params.min_deposit,
             params.max_deposit_per_user,
             params.early_redemption_fee_bps,
+            params.vault_admin,
+            params.zkme_verifier,
+            params.cooperator,
+            0u32,   // max_investors (default to unlimited)
+            0u64,   // lock_up_period (default to no lock-up)
         )
     }
 
@@ -194,6 +204,11 @@ impl VaultFactory {
             params.min_deposit,
             params.max_deposit_per_user,
             params.early_redemption_fee_bps,
+            params.vault_admin,
+            params.zkme_verifier,
+            params.cooperator,
+            0u32,   // max_investors (default to unlimited)
+            0u64,   // lock_up_period (default to no lock-up)
         )
     }
 
@@ -233,6 +248,11 @@ impl VaultFactory {
                 p.min_deposit,
                 p.max_deposit_per_user,
                 p.early_redemption_fee_bps,
+                p.vault_admin.clone(),
+                p.zkme_verifier.clone(),
+                p.cooperator.clone(),
+                0u32,   // max_investors (default to unlimited)
+                0u64,   // lock_up_period (default to no lock-up)
             );
             vaults.push_back(vault);
         }
@@ -522,6 +542,11 @@ impl VaultFactory {
         min_deposit: i128,
         max_deposit_per_user: i128,
         early_redemption_fee_bps: u32,
+        vault_admin: Option<Address>,
+        zkme_verifier: Option<Address>,
+        cooperator: Option<Address>,
+        max_investors: u32,
+        lock_up_period: u64,
     ) -> Address {
         // --- Validation ---
         if asset == e.current_contract_address() {
@@ -551,9 +576,9 @@ impl VaultFactory {
         };
 
         let wasm_hash = get_vault_wasm_hash(e);
-        let admin = get_admin(e);
-        let zkme = get_default_zkme_verifier(e);
-        let coop = get_default_cooperator(e);
+        let admin = vault_admin.unwrap_or_else(|| get_admin(e));
+        let zkme = zkme_verifier.unwrap_or_else(|| get_default_zkme_verifier(e));
+        let coop = cooperator.unwrap_or_else(|| get_default_cooperator(e));
 
         // Deploy a fresh vault contract instance.
         // The salt combines a monotonic counter, the vault name, and the
@@ -590,6 +615,8 @@ impl VaultFactory {
             rwa_document_uri,
             rwa_category,
             expected_apy,
+            max_investors,
+            lock_up_period,
         };
 
         let vault_addr = e
@@ -619,6 +646,7 @@ impl VaultFactory {
             VaultType::SingleRwa,
             name,
             e.current_contract_address(),
+            admin.clone(),
         );
 
         bump_instance(e);

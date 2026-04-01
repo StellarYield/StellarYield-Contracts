@@ -158,6 +158,9 @@ impl SingleRWAVault {
         put_max_deposit_per_user(e, params.max_deposit_per_user);
         put_early_redemption_fee_bps(e, params.early_redemption_fee_bps);
         put_yield_vesting_period(e, params.yield_vesting_period);
+        put_lock_up_period(e, params.lock_up_period);
+        put_investor_count(e, 0u32);
+        put_max_investors(e, params.max_investors);
 
         // Initial state
         put_vault_state(e, VaultState::Funding);
@@ -352,6 +355,17 @@ impl SingleRWAVault {
             }
         }
 
+        // --- Investor cap check ---
+        let max_investors = get_max_investors(e);
+        if max_investors > 0 {
+            let current_balance = get_share_balance(e, &receiver);
+            let investor_count = get_investor_count(e);
+            // Check if this is a new investor (current balance is 0)
+            if current_balance == 0 && investor_count >= max_investors {
+                panic_with_error!(e, Error::MaxInvestorsReached);
+            }
+        }
+
         // Shares = assets (1:1 at start; yield accrual changes the price)
         let shares = preview_deposit(e, assets);
 
@@ -359,6 +373,16 @@ impl SingleRWAVault {
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
+        
+        // Update investor count if this is a new investor
+        let current_balance = get_share_balance(e, &receiver);
+        if current_balance == 0 {
+            put_investor_count(e, get_investor_count(e) + 1);
+        }
+        
+        // Update deposit timestamp for lock-up period
+        put_deposit_timestamp(e, &receiver, e.ledger().timestamp());
+        
         _mint(e, &receiver, shares);
 
         // --- Interaction (external call last) ---
@@ -407,10 +431,31 @@ impl SingleRWAVault {
             }
         }
 
+        // --- Investor cap check ---
+        let max_investors = get_max_investors(e);
+        if max_investors > 0 {
+            let current_balance = get_share_balance(e, &receiver);
+            let investor_count = get_investor_count(e);
+            // Check if this is a new investor (current balance is 0)
+            if current_balance == 0 && investor_count >= max_investors {
+                panic_with_error!(e, Error::MaxInvestorsReached);
+            }
+        }
+
         // --- Effects (state changes first) ---
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
+        
+        // Update investor count if this is a new investor
+        let current_balance = get_share_balance(e, &receiver);
+        if current_balance == 0 {
+            put_investor_count(e, get_investor_count(e) + 1);
+        }
+        
+        // Update deposit timestamp for lock-up period
+        put_deposit_timestamp(e, &receiver, e.ledger().timestamp());
+        
         _mint(e, &receiver, shares);
 
         // --- Interaction (external call last) ---
@@ -447,6 +492,16 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
+        
+        // --- Lock-up period check ---
+        let lock_up_period = get_lock_up_period(e);
+        if lock_up_period > 0 {
+            let deposit_timestamp = get_deposit_timestamp(e, &owner);
+            let current_time = e.ledger().timestamp();
+            if current_time < deposit_timestamp + lock_up_period {
+                panic_with_error!(e, Error::SharesLocked);
+            }
+        }
 
         if assets <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -465,9 +520,15 @@ impl SingleRWAVault {
 
         // --- Effects ---
         update_user_snapshot(e, &owner);
+        let current_balance = get_share_balance(e, &owner);
         _burn(e, &owner, shares);
         put_total_deposited(e, get_total_deposited(e) - assets);
-
+        
+        // Update investor count if user fully exits (balance becomes 0)
+        if current_balance == shares {
+            put_investor_count(e, get_investor_count(e) - 1);
+        }
+        
         let user_dep = get_user_deposited(e, &owner);
         put_user_deposited(e, &owner, (user_dep - assets).max(0));
 
@@ -500,6 +561,16 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
+        
+        // --- Lock-up period check ---
+        let lock_up_period = get_lock_up_period(e);
+        if lock_up_period > 0 {
+            let deposit_timestamp = get_deposit_timestamp(e, &owner);
+            let current_time = e.ledger().timestamp();
+            if current_time < deposit_timestamp + lock_up_period {
+                panic_with_error!(e, Error::SharesLocked);
+            }
+        }
 
         if shares <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -516,10 +587,16 @@ impl SingleRWAVault {
 
         // --- Effects ---
         update_user_snapshot(e, &owner);
+        let current_balance = get_share_balance(e, &owner);
         let assets = preview_redeem(e, shares);
         _burn(e, &owner, shares);
         put_total_deposited(e, get_total_deposited(e) - assets);
-
+        
+        // Update investor count if user fully exits (balance becomes 0)
+        if current_balance == shares {
+            put_investor_count(e, get_investor_count(e) - 1);
+        }
+        
         let user_dep = get_user_deposited(e, &owner);
         put_user_deposited(e, &owner, (user_dep - assets).max(0));
 
@@ -2170,6 +2247,17 @@ impl SingleRWAVault {
         if get_transfer_requires_kyc(e) {
             require_kyc_verified(e, &to);
         }
+        
+        // --- Lock-up period check ---
+        let lock_up_period = get_lock_up_period(e);
+        if lock_up_period > 0 {
+            let deposit_timestamp = get_deposit_timestamp(e, &from);
+            let current_time = e.ledger().timestamp();
+            if current_time < deposit_timestamp + lock_up_period {
+                panic_with_error!(e, Error::SharesLocked);
+            }
+        }
+        
         update_user_snapshots_for_transfer(e, &from, &to);
         spend_share_balance(e, &from, amount);
         receive_share_balance(e, &to, amount);
@@ -2185,6 +2273,17 @@ impl SingleRWAVault {
         if get_transfer_requires_kyc(e) {
             require_kyc_verified(e, &to);
         }
+        
+        // --- Lock-up period check ---
+        let lock_up_period = get_lock_up_period(e);
+        if lock_up_period > 0 {
+            let deposit_timestamp = get_deposit_timestamp(e, &from);
+            let current_time = e.ledger().timestamp();
+            if current_time < deposit_timestamp + lock_up_period {
+                panic_with_error!(e, Error::SharesLocked);
+            }
+        }
+        
         update_user_snapshots_for_transfer(e, &from, &to);
         let allowance = get_share_allowance(e, &from, &spender);
         if allowance < amount {
@@ -2317,13 +2416,85 @@ fn asset_balance_of_vault(e: &Env) -> i128 {
 fn transfer_asset_to_vault(e: &Env, from: &Address, amount: i128) {
     let asset = get_asset(e);
     let client = token::Client::new(e, &asset);
+    
+    // Document atomicity: Soroban transactions are atomic, so if this transfer fails,
+    // all state changes including share minting will be rolled back.
     client.transfer(from, &e.current_contract_address(), &amount);
 }
 
 fn transfer_asset_from_vault(e: &Env, to: &Address, amount: i128) {
     let asset = get_asset(e);
     let client = token::Client::new(e, &asset);
+    
+    // Pre-check vault balance to provide better error diagnostics
+    let vault_balance = client.balance(&e.current_contract_address());
+    if vault_balance < amount {
+        panic_with_error!(e, Error::InsufficientVaultBalance);
+    }
+    
+    // Document atomicity: Soroban transactions are atomic, so if this transfer fails,
+    // all state changes including share burning will be rolled back.
     client.transfer(&e.current_contract_address(), to, &amount);
+}
+
+/// Public view function to check vault's asset balance
+pub fn vault_asset_balance(e: &Env) -> i128 {
+    let asset = get_asset(e);
+    let client = token::Client::new(e, &asset);
+    client.balance(&e.current_contract_address())
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Admin view functions for investor caps and lock-up
+// ─────────────────────────────────────────────────────────────────
+
+/// Returns the current number of investors
+pub fn investor_count(e: &Env) -> u32 {
+    get_investor_count(e)
+}
+
+/// Returns the maximum number of investors allowed
+pub fn max_investors(e: &Env) -> u32 {
+    get_max_investors(e)
+}
+
+/// Returns the lock-up period in seconds
+pub fn lock_up_period(e: &Env) -> u64 {
+    get_lock_up_period(e)
+}
+
+/// Returns remaining lock-up time for a user (0 if not locked)
+pub fn lock_up_remaining(e: &Env, user: Address) -> u64 {
+    let lock_up = get_lock_up_period(e);
+    if lock_up == 0 {
+        return 0;
+    }
+    let deposit_timestamp = get_deposit_timestamp(e, &user);
+    let current_time = e.ledger().timestamp();
+    let lock_end = deposit_timestamp + lock_up;
+    if current_time >= lock_end {
+        0
+    } else {
+        lock_end - current_time
+    }
+}
+
+/// Admin function to set maximum investors
+pub fn set_max_investors(e: &Env, caller: Address, max_investors: u32) {
+    caller.require_auth();
+    require_admin(e, &caller);
+    put_max_investors(e, max_investors);
+    emit_max_investors_updated(e, max_investors);
+    bump_instance(e);
+}
+
+/// Admin function to set lock-up period for future deposits
+pub fn set_lock_up_period(e: &Env, caller: Address, lock_up_period: u64) {
+    caller.require_auth();
+    require_admin(e, &caller);
+    put_lock_up_period(e, lock_up_period);
+    emit_lock_up_period_updated(e, lock_up_period);
+    bump_instance(e);
 }
 
 fn _mint(e: &Env, to: &Address, amount: i128) {

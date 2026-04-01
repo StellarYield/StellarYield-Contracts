@@ -86,4 +86,10 @@ pub enum Error {
     PreviewZeroShares = 47,
     /// Shares correspond to zero assets during preview.
     PreviewZeroAssets = 48,
+    /// Maximum number of investors reached.
+    MaxInvestorsReached = 49,
+    /// Shares are still within lock-up period.
+    SharesLocked = 50,
+    /// Vault has insufficient balance for the requested transfer.
+    InsufficientVaultBalance = 51,
 }

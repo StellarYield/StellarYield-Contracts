@@ -48,6 +48,10 @@ pub struct SingleRwaVaultInitParams {
     pub rwa_document_uri: String,
     pub rwa_category: String,
     pub expected_apy: u32,
+    /// Maximum number of investors (0 = unlimited)
+    pub max_investors: u32,
+    /// Lock-up period in seconds after deposit during which shares are non-transferable
+    pub lock_up_period: u64,
 }
 
 /// Parameters for batch vault creation (mirrors BatchVaultParams in Solidity).
@@ -68,6 +72,12 @@ pub struct BatchVaultParams {
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
+    /// Optional vault admin override. If None, uses factory admin.
+    pub vault_admin: Option<Address>,
+    /// Optional zkMe verifier override. If None, uses factory default.
+    pub zkme_verifier: Option<Address>,
+    /// Optional cooperator override. If None, uses factory default.
+    pub cooperator: Option<Address>,
 }
 
 /// Parameters for `create_single_rwa_vault_full`.

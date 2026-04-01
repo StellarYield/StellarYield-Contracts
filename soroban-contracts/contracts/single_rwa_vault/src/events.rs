@@ -51,6 +51,16 @@ pub fn emit_role_revoked(e: &Env, addr: Address, role: Role) {
     e.events().publish((symbol_short!("role_rvk"), addr), role);
 }
 
+/// Emitted when max investors limit is updated
+pub fn emit_max_investors_updated(e: &Env, max_investors: u32) {
+    e.events().publish((symbol_short!("max_inv_upd"),), max_investors);
+}
+
+/// Emitted when lock-up period is updated
+pub fn emit_lock_up_period_updated(e: &Env, lock_up_period: u64) {
+    e.events().publish((symbol_short!("lock_upd"),), lock_up_period);
+}
+
 pub fn emit_emergency_action(e: &Env, paused: bool, reason: String) {
     e.events()
         .publish((symbol_short!("emergency"),), (paused, reason));

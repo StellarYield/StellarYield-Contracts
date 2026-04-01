@@ -122,6 +122,12 @@ pub enum Key {
     // --- Transfer KYC gate ---
     XferKyc,
 
+    // --- Investor tracking ---
+    InvCount,
+    MaxInvestors,
+    DepTimestamp(Address),
+    LockUpPeriod,
+
     // --- Emergency pro-rata distribution ---
     EmgBal,
     HasClmEmg(Address),
@@ -156,6 +162,9 @@ const K_TAG_ESC_SHR: u32 = 215;
 const K_TAG_BLACKLST: u32 = 216;
 const K_TAG_HAS_CLM_EMG: u32 = 217;
 const K_TAG_TLK_ACT: u32 = 218;
+const K_TAG_DEP_TIMESTAMP: u32 = 219;
+const K_TAG_LOCK_UP_PERIOD: u32 = 220;
+const K_TAG_MAX_INVESTORS: u32 = 221;
 
 impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
     fn into_val(&self, env: &Env) -> soroban_sdk::Val {
@@ -179,6 +188,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::Blacklst(a) => (K_TAG_BLACKLST, a.clone()).into_val(env),
             Key::HasClmEmg(a) => (K_TAG_HAS_CLM_EMG, a.clone()).into_val(env),
             Key::TlkAct(n) => (K_TAG_TLK_ACT, *n).into_val(env),
+            Key::DepTimestamp(a) => (K_TAG_DEP_TIMESTAMP, a.clone()).into_val(env),
 
             Key::ShareName => 0u32.into_val(env),
             Key::ShrSymb => 1u32.into_val(env),
@@ -216,6 +226,9 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::EmgTotSup => 49u32.into_val(env),
             Key::TlkDelay => 50u32.into_val(env),
             Key::TlkCount => 51u32.into_val(env),
+            Key::InvCount => 52u32.into_val(env),
+            Key::LockUpPeriod => 53u32.into_val(env),
+            Key::MaxInvestors => 54u32.into_val(env),
         }
     }
 }
@@ -247,6 +260,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
                 K_TAG_ESC_SHR => Key::EscShr(a),
                 K_TAG_BLACKLST => Key::Blacklst(a),
                 K_TAG_HAS_CLM_EMG => Key::HasClmEmg(a),
+                K_TAG_DEP_TIMESTAMP => Key::DepTimestamp(a),
                 _ => return Err(soroban_sdk::Error::from_contract_error(1)),
             });
         }
@@ -302,6 +316,9 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             49 => Ok(Key::EmgTotSup),
             50 => Ok(Key::TlkDelay),
             51 => Ok(Key::TlkCount),
+            52 => Ok(Key::InvCount),
+            53 => Ok(Key::LockUpPeriod),
+            54 => Ok(Key::MaxInvestors),
             100 => Ok(Key::YldVstPer),
             _ => Err(soroban_sdk::Error::from_contract_error(1)),
         }
@@ -517,6 +534,22 @@ instance_put!(put_total_deposited, TotDep, i128);
 // RedemptionCounter
 instance_get!(get_redemption_counter, RedCnt, u32);
 instance_put!(put_redemption_counter, RedCnt, u32);
+
+// Investor tracking
+instance_get!(get_investor_count, InvCount, u32);
+instance_put!(put_investor_count, InvCount, u32);
+
+// Lock-up period
+pub fn get_lock_up_period(e: &Env) -> u64 {
+    e.storage().instance().get(&Key::LockUpPeriod).unwrap_or(0)
+}
+pub fn put_lock_up_period(e: &Env, val: u64) {
+    e.storage().instance().set(&Key::LockUpPeriod, &val);
+}
+
+// Max investors
+instance_get!(get_max_investors, MaxInvestors, u32);
+instance_put!(put_max_investors, MaxInvestors, u32);
 
 // Versioning
 instance_get!(get_contract_version, CtrVers, u32);
@@ -1017,6 +1050,25 @@ pub fn get_emergency_proposal(e: &Env, id: u32) -> Option<crate::types::Emergenc
 pub fn put_emergency_proposal(e: &Env, id: u32, proposal: crate::types::EmergencyProposal) {
     let key = EmergencyDataKey::Proposal(id);
     e.storage().persistent().set(&key, &proposal);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deposit timestamp functions (for lock-up period enforcement)
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub fn get_deposit_timestamp(e: &Env, addr: &Address) -> u64 {
+    e.storage()
+        .persistent()
+        .get(&Key::DepTimestamp(addr.clone()))
+        .unwrap_or(0)
+}
+
+pub fn put_deposit_timestamp(e: &Env, addr: &Address, timestamp: u64) {
+    let key = Key::DepTimestamp(addr.clone());
+    e.storage().persistent().set(&key, &timestamp);
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
