@@ -82,14 +82,14 @@ pub fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             funding_deadline: 9_999_999_999u64,
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
+            max_investors: 100u32,
             early_redemption_fee_bps: 200u32,
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),
             rwa_category: String::from_str(env, "Bond"),
             expected_apy: 500u32,
-            timelock_delay: 172800u64, // 48 hours
-            yield_vesting_period: 0u64,
+            lock_up_period: 0u64,
         },),
     );
 

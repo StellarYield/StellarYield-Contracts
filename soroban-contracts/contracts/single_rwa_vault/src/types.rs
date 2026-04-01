@@ -26,6 +26,7 @@ pub struct InitParams {
     pub maturity_date: u64,
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
+    pub max_investors: u32,
     pub early_redemption_fee_bps: u32,
     /// Unix timestamp after which funding can be cancelled if target not met.
     pub funding_deadline: u64,
@@ -35,11 +36,8 @@ pub struct InitParams {
     pub rwa_document_uri: String,
     pub rwa_category: String,
     pub expected_apy: u32,
-    // Timelock configuration
-    /// Delay in seconds for critical admin operations (default: 48 hours)
-    pub timelock_delay: u64,
-    /// Yield vesting period in seconds (0 = instant claiming for backward compatibility)
-    pub yield_vesting_period: u64,
+    /// Lock-up period in seconds after deposit during which shares cannot be transferred
+    pub lock_up_period: u64,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -264,13 +264,13 @@ fn default_params(
         funding_deadline: 9_999_999_999u64, // far future (no effective deadline by default)
         min_deposit: 1_000_000i128,         // 1 USDC
         max_deposit_per_user: 0i128,        // unlimited
+        max_investors: 100u32,              // reasonable default for tests
         early_redemption_fee_bps: 200u32,   // 2 %
         rwa_name: String::from_str(env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(env, "USTB26"),
         rwa_document_uri: String::from_str(env, "https://example.com/ustb26"),
         rwa_category: String::from_str(env, "Government Bond"),
-        expected_apy: 500u32,       // 5 %
-        timelock_delay: 172800u64,  // 48 hours
-        yield_vesting_period: 0u64, // Default to 0 for instant claiming (backward compatibility)
+        expected_apy: 500u32, // 5 %
+        lock_up_period: 0u64, // no lock-up by default
     }
 }

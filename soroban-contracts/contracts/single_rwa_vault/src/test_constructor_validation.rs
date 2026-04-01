@@ -22,14 +22,14 @@ fn get_valid_params(e: &Env) -> InitParams {
         funding_deadline: 0,
         min_deposit: 10,
         max_deposit_per_user: 100,
+        max_investors: 100,
         early_redemption_fee_bps: 200,
         rwa_name: String::from_str(e, "RWA"),
         rwa_symbol: String::from_str(e, "R"),
         rwa_document_uri: String::from_str(e, "uri"),
         rwa_category: String::from_str(e, "cat"),
         expected_apy: 500,
-        timelock_delay: 172800u64, // 48 hours
-        yield_vesting_period: 0u64,
+        lock_up_period: 0u64,
     }
 }
 

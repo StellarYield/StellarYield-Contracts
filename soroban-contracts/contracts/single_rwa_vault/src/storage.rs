@@ -59,13 +59,13 @@ pub enum Key {
     ExpApy,
 
     // --- Vault config ---
-    FundTgt,
-    MatDate,
-    MinDep,
-    MaxDepUsr,
-    ERedFee,
-    /// Yield vesting period in seconds (0 = instant claiming for backward compatibility)
-    YldVstPer,
+    FundingTarget,
+    MaturityDate,
+    MinDeposit,
+    MaxDepositPerUser,
+    MaxInvestors,
+    EarlyRedemptionFeeBps,
+    LockUpPeriod,
 
     // --- Vault state ---
     VaultSt,
@@ -106,10 +106,14 @@ pub enum Key {
     TotSup,
 
     // --- User deposit tracking ---
-    UsrDep(Address),
+    UserDeposited(Address),
+    DepositTimestamp(Address),
 
     // --- Total deposited principal ---
     TotDep,
+
+    // --- Investor tracking ---
+    InvestorCount,
 
     // --- Early redemption ---
     RedCnt,
@@ -469,18 +473,23 @@ pub fn put_funding_deadline(e: &Env, val: u64) {
     e.storage().instance().set(&Key::FundDeadl, &val);
 }
 
-instance_get!(get_min_deposit, MinDep, i128);
-instance_put!(put_min_deposit, MinDep, i128);
-instance_get!(get_max_deposit_per_user, MaxDepUsr, i128);
-instance_put!(put_max_deposit_per_user, MaxDepUsr, i128);
-instance_get!(get_early_redemption_fee_bps, ERedFee, u32);
-instance_put!(put_early_redemption_fee_bps, ERedFee, u32);
+instance_get!(get_min_deposit, MinDeposit, i128);
+instance_put!(put_min_deposit, MinDeposit, i128);
+instance_get!(get_max_deposit_per_user, MaxDepositPerUser, i128);
+instance_put!(put_max_deposit_per_user, MaxDepositPerUser, i128);
+instance_get!(get_max_investors, MaxInvestors, u32);
+instance_put!(put_max_investors, MaxInvestors, u32);
+instance_get!(get_early_redemption_fee_bps, EarlyRedemptionFeeBps, u32);
+instance_put!(put_early_redemption_fee_bps, EarlyRedemptionFeeBps, u32);
 
-pub fn get_yield_vesting_period(e: &Env) -> u64 {
-    e.storage().instance().get(&Key::YldVstPer).unwrap_or(0) // Default to 0 for backward compatibility (instant claiming)
+pub fn get_lock_up_period(e: &Env) -> u64 {
+    e.storage()
+        .instance()
+        .get(&DataKey::LockUpPeriod)
+        .unwrap_or(0)
 }
-pub fn put_yield_vesting_period(e: &Env, val: u64) {
-    e.storage().instance().set(&Key::YldVstPer, &val);
+pub fn put_lock_up_period(e: &Env, val: u64) {
+    e.storage().instance().set(&DataKey::LockUpPeriod, &val);
 }
 
 // State
@@ -513,6 +522,10 @@ instance_put!(put_total_supply, TotSup, i128);
 // TotalDeposited (principal tracking)
 instance_get!(get_total_deposited, TotDep, i128);
 instance_put!(put_total_deposited, TotDep, i128);
+
+// InvestorCount (unique investor tracking)
+instance_get!(get_investor_count, InvestorCount, u32);
+instance_put!(put_investor_count, InvestorCount, u32);
 
 // RedemptionCounter
 instance_get!(get_redemption_counter, RedCnt, u32);
@@ -718,6 +731,23 @@ pub fn put_user_deposited(e: &Env, addr: &Address, val: i128) {
         .set(&Key::UsrDep(addr.clone()), &val);
     e.storage().persistent().extend_ttl(
         &Key::UsrDep(addr.clone()),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
+}
+
+pub fn get_deposit_timestamp(e: &Env, addr: &Address) -> u64 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::DepositTimestamp(addr.clone()))
+        .unwrap_or(0)
+}
+pub fn put_deposit_timestamp(e: &Env, addr: &Address, val: u64) {
+    e.storage()
+        .persistent()
+        .set(&DataKey::DepositTimestamp(addr.clone()), &val);
+    e.storage().persistent().extend_ttl(
+        &DataKey::DepositTimestamp(addr.clone()),
         BALANCE_LIFETIME_THRESHOLD,
         BALANCE_BUMP_AMOUNT,
     );
