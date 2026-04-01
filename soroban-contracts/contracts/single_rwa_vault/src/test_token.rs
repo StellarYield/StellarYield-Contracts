@@ -7,10 +7,11 @@ use soroban_sdk::{
 };
 
 use crate::storage::{
-    get_has_snapshot_for_epoch, get_share_balance, get_total_supply, get_user_shares_at_epoch,
-    put_current_epoch, put_epoch_total_shares, put_epoch_yield, put_share_balance,
-    put_total_supply,
+    get_current_epoch, get_has_snapshot_for_epoch, get_share_balance, get_total_deposited,
+    get_total_supply, get_user_shares_at_epoch, put_current_epoch, put_epoch_total_shares,
+    put_epoch_yield, put_share_balance, put_total_deposited, put_total_supply,
 };
+use crate::test_helpers::{mint_usdc, setup_with_kyc_bypass};
 use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -66,6 +67,10 @@ fn give_shares(env: &Env, vault_id: &Address, user: &Address, amount: i128) {
         put_share_balance(env, user, bal + amount);
         let sup = get_total_supply(env);
         put_total_supply(env, sup + amount);
+        // `total_assets` tracks principal (`total_deposited`); keep it in sync so
+        // preview_* redeem/withdraw math matches share supply.
+        let td = get_total_deposited(env);
+        put_total_deposited(env, td + amount);
     });
 }
 
@@ -345,4 +350,221 @@ fn test_transfer_from_expired_allowance_panics() {
 
     // This must panic because get_share_allowance returns 0 for expired allowances.
     client.transfer_from(&spender, &alice, &bob, &100_i128);
+}
+
+// ─── preview_* purity (#179) ──────────────────────────────────────────────────
+
+/// preview_deposit called repeatedly must not mutate total_supply or the
+/// current epoch — it is a pure view.
+#[test]
+fn test_preview_deposit_does_not_mutate_state() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Seed some shares so the ratio is non-trivial.
+    let alice = Address::generate(&env);
+    give_shares(&env, &vault_id, &alice, 5_000_i128);
+
+    let (supply_before, epoch_before) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    // Call three times with different inputs — none must mutate state.
+    let _ = client.preview_deposit(&1_000_i128);
+    let _ = client.preview_deposit(&5_000_i128);
+    let _ = client.preview_deposit(&10_000_i128);
+
+    let (supply_after, epoch_after) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    assert_eq!(
+        supply_before, supply_after,
+        "preview_deposit must not change total_supply"
+    );
+    assert_eq!(
+        epoch_before, epoch_after,
+        "preview_deposit must not change current_epoch"
+    );
+}
+
+/// preview_mint called repeatedly must not mutate total_supply or the
+/// current epoch.
+#[test]
+fn test_preview_mint_does_not_mutate_state() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    let alice = Address::generate(&env);
+    give_shares(&env, &vault_id, &alice, 5_000_i128);
+
+    let (supply_before, epoch_before) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    let _ = client.preview_mint(&500_i128);
+    let _ = client.preview_mint(&2_000_i128);
+    let _ = client.preview_mint(&5_000_i128);
+
+    let (supply_after, epoch_after) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    assert_eq!(
+        supply_before, supply_after,
+        "preview_mint must not change total_supply"
+    );
+    assert_eq!(
+        epoch_before, epoch_after,
+        "preview_mint must not change current_epoch"
+    );
+}
+
+/// preview_withdraw called repeatedly must not mutate total_supply or the
+/// current epoch.
+#[test]
+fn test_preview_withdraw_does_not_mutate_state() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    let alice = Address::generate(&env);
+    give_shares(&env, &vault_id, &alice, 5_000_i128);
+
+    let (supply_before, epoch_before) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    let _ = client.preview_withdraw(&100_i128);
+    let _ = client.preview_withdraw(&1_000_i128);
+    let _ = client.preview_withdraw(&3_000_i128);
+
+    let (supply_after, epoch_after) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    assert_eq!(
+        supply_before, supply_after,
+        "preview_withdraw must not change total_supply"
+    );
+    assert_eq!(
+        epoch_before, epoch_after,
+        "preview_withdraw must not change current_epoch"
+    );
+}
+
+/// preview_redeem called repeatedly must not mutate total_supply or the
+/// current epoch.
+#[test]
+fn test_preview_redeem_does_not_mutate_state() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    let alice = Address::generate(&env);
+    give_shares(&env, &vault_id, &alice, 5_000_i128);
+
+    let (supply_before, epoch_before) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    let _ = client.preview_redeem(&500_i128);
+    let _ = client.preview_redeem(&2_000_i128);
+    let _ = client.preview_redeem(&5_000_i128);
+
+    let (supply_after, epoch_after) = env.as_contract(&vault_id, || {
+        (get_total_supply(&env), get_current_epoch(&env))
+    });
+
+    assert_eq!(
+        supply_before, supply_after,
+        "preview_redeem must not change total_supply"
+    );
+    assert_eq!(
+        epoch_before, epoch_after,
+        "preview_redeem must not change current_epoch"
+    );
+}
+
+/// Repeated calls to every preview_* function return consistent results —
+/// calling the same function twice with the same input yields the same output.
+#[test]
+fn test_preview_calls_return_consistent_results() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    let alice = Address::generate(&env);
+    give_shares(&env, &vault_id, &alice, 5_000_i128);
+
+    let assets_in = 2_000_i128;
+    let shares_in = 1_500_i128;
+
+    let deposit1 = client.preview_deposit(&assets_in);
+    let deposit2 = client.preview_deposit(&assets_in);
+    assert_eq!(deposit1, deposit2, "preview_deposit must be idempotent");
+
+    let mint1 = client.preview_mint(&shares_in);
+    let mint2 = client.preview_mint(&shares_in);
+    assert_eq!(mint1, mint2, "preview_mint must be idempotent");
+
+    let withdraw1 = client.preview_withdraw(&assets_in);
+    let withdraw2 = client.preview_withdraw(&assets_in);
+    assert_eq!(withdraw1, withdraw2, "preview_withdraw must be idempotent");
+
+    let redeem1 = client.preview_redeem(&shares_in);
+    let redeem2 = client.preview_redeem(&shares_in);
+    assert_eq!(redeem1, redeem2, "preview_redeem must be idempotent");
+}
+
+// ─── Zero-amount edge cases (#174) ────────────────────────────────────────────
+
+/// All ERC-4626 preview helpers accept `amount = 0` and return 0 without panicking.
+#[test]
+fn test_preview_methods_zero_amount_return_zero() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+
+    assert_eq!(client.preview_deposit(&0_i128), 0_i128);
+    assert_eq!(client.preview_mint(&0_i128), 0_i128);
+    assert_eq!(client.preview_withdraw(&0_i128), 0_i128);
+    assert_eq!(client.preview_redeem(&0_i128), 0_i128);
+
+    let holder = Address::generate(&env);
+    give_shares(&env, &vault_id, &holder, 10_000_i128);
+    assert_eq!(client.preview_withdraw(&0_i128), 0_i128);
+    assert_eq!(client.preview_redeem(&0_i128), 0_i128);
+}
+
+/// deposit with `assets = 0` is rejected when `min_deposit` is strictly positive.
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_deposit_zero_below_minimum_panics() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let user = Address::generate(&env);
+    client.deposit(&user, &0_i128, &user);
+}
+
+/// withdraw with `assets = 0` is rejected with Error::ZeroAmount.
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_withdraw_zero_amount_panics() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+    let dep = ctx.params.funding_target;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, dep);
+    v.deposit(&ctx.user, &dep, &ctx.user);
+    v.activate_vault(&ctx.operator);
+    v.withdraw(&ctx.user, &0_i128, &ctx.user, &ctx.user);
+}
+
+/// redeem with `shares = 0` is rejected with Error::ZeroAmount.
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_redeem_zero_shares_panics() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+    let dep = ctx.params.funding_target;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, dep);
+    v.deposit(&ctx.user, &dep, &ctx.user);
+    v.activate_vault(&ctx.operator);
+    v.redeem(&ctx.user, &0_i128, &ctx.user, &ctx.user);
 }

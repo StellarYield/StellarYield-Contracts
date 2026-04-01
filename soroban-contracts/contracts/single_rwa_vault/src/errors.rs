@@ -62,4 +62,34 @@ pub enum Error {
     InsufficientVaultBalance = 35,
     /// Maximum number of investors has been reached
     MaxInvestorsReached = 36,
+    /// Timelock action not found or invalid.
+    TimelockActionNotFound = 34,
+    /// Timelock delay has not passed yet.
+    TimelockDelayNotPassed = 35,
+    /// Timelock action has already been executed.
+    TimelockActionAlreadyExecuted = 36,
+    /// Timelock action has been cancelled.
+    TimelockActionCancelled = 37,
+    /// Only admin can perform timelock operations.
+    TimelockAdminOnly = 38,
+    /// Caller is not in the emergency signers list.
+    NotEmergencySigner = 39,
+    /// The referenced emergency proposal does not exist.
+    ProposalNotFound = 40,
+    /// The emergency proposal has passed its expiry timeout.
+    ProposalExpired = 41,
+    /// The emergency proposal has already been executed.
+    ProposalAlreadyExecuted = 42,
+    /// Approval threshold has not been reached yet.
+    ThresholdNotMet = 43,
+    /// This signer has already approved this proposal.
+    AlreadyApproved = 44,
+    /// Threshold must be >= 1 and <= number of signers.
+    InvalidThreshold = 45,
+    /// Vault total assets exceeds the funding target during the funding phase.
+    FundingTargetExceeded = 46,
+    /// Amount corresponds to zero shares during preview.
+    PreviewZeroShares = 47,
+    /// Shares correspond to zero assets during preview.
+    PreviewZeroAssets = 48,
 }

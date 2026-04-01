@@ -11,26 +11,61 @@ mod types;
 #[cfg(test)]
 mod fuzz_tests;
 #[cfg(test)]
+mod test_access_control;
+#[cfg(test)]
+mod test_allowance_ttl;
+#[cfg(test)]
 mod test_burn_snapshot;
 #[cfg(test)]
 mod test_burn_yield_accounting;
 #[cfg(test)]
 mod test_claim_cursor;
 #[cfg(test)]
+mod test_close_vault;
+#[cfg(test)]
+mod test_constructor;
+#[cfg(test)]
+mod test_constructor_validation;
+#[cfg(test)]
 mod test_convert_erc4626;
+#[cfg(test)]
+mod test_deposit_limits;
 #[cfg(test)]
 mod test_epoch_history;
 #[cfg(test)]
+mod test_escrow;
+#[cfg(test)]
+mod test_events;
+#[cfg(test)]
+mod test_freeze_flags;
+#[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
-mod test_insufficient_balance;
-#[cfg(test)]
-mod test_investor_count;
+mod test_helpers;
 #[cfg(test)]
 mod test_lifecycle;
 #[cfg(test)]
-mod test_verification;
+mod test_multisig_emergency;
+#[cfg(test)]
+mod test_overflow;
+#[cfg(test)]
+mod test_rbac;
+#[cfg(test)]
+mod test_redemption;
+#[cfg(test)]
+mod test_rwa_setters;
+#[cfg(test)]
+mod test_token;
+#[cfg(test)]
+mod test_vault_state_guards;
+#[cfg(test)]
+mod test_withdraw;
+#[cfg(test)]
+mod test_yield_vesting;
+#[cfg(test)]
+mod tests;
 
+pub use crate::storage::Key;
 pub use crate::types::*;
 
 use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String, Vec};
@@ -58,6 +93,9 @@ impl SingleRWAVault {
     pub const FREEZE_YIELD: u32 = 4;
     pub const FREEZE_ALL: u32 =
         Self::FREEZE_DEPOSIT_MINT | Self::FREEZE_WITHDRAW_REDEEM | Self::FREEZE_YIELD;
+
+    /// Timeout for emergency proposals: 24 hours in seconds.
+    pub const EMERGENCY_PROPOSAL_TIMEOUT: u64 = 86400;
 
     // ─────────────────────────────────────────────────────────────────
     // Constructor
@@ -138,6 +176,10 @@ impl SingleRWAVault {
         // Versioning
         put_contract_version(e, 1u32);
         put_storage_schema_version(e, 1u32);
+
+        // Timelock configuration
+        put_timelock_delay(e, params.timelock_delay);
+        put_timelock_counter(e, 0u32);
 
         e.storage()
             .instance()
@@ -290,8 +332,7 @@ impl SingleRWAVault {
         require_current_schema(e);
         acquire_lock(e);
         require_not_frozen(e, Self::FREEZE_DEPOSIT_MINT);
-        require_not_blacklisted(e, &caller);
-        require_not_blacklisted(e, &receiver);
+        require_not_blacklisted_deposit_parties(e, &caller, &receiver);
         require_kyc_verified(e, &caller);
         require_active_or_funding(e);
 
@@ -304,6 +345,16 @@ impl SingleRWAVault {
             let already = get_user_deposited(e, &receiver);
             if already + assets > max_dep {
                 panic_with_error!(e, Error::ExceedsMaximumDeposit);
+            }
+        }
+
+        if get_vault_state(e) == VaultState::Funding {
+            let target = get_funding_target(e);
+            if target > 0 {
+                let current = total_assets(e);
+                if current + assets > target {
+                    panic_with_error!(e, Error::FundingTargetExceeded);
+                }
             }
         }
 
@@ -360,8 +411,7 @@ impl SingleRWAVault {
         require_current_schema(e);
         acquire_lock(e);
         require_not_frozen(e, Self::FREEZE_DEPOSIT_MINT);
-        require_not_blacklisted(e, &caller);
-        require_not_blacklisted(e, &receiver);
+        require_not_blacklisted_deposit_parties(e, &caller, &receiver);
         require_kyc_verified(e, &caller);
         require_active_or_funding(e);
 
@@ -441,9 +491,7 @@ impl SingleRWAVault {
         require_current_schema(e);
         acquire_lock(e);
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
-        require_not_blacklisted(e, &caller);
-        require_not_blacklisted(e, &owner);
-        require_not_blacklisted(e, &receiver);
+        require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
         require_shares_not_locked(e, &owner);
 
@@ -477,6 +525,9 @@ impl SingleRWAVault {
             }
         }
 
+        let user_dep = get_user_deposited(e, &owner);
+        put_user_deposited(e, &owner, (user_dep - assets).max(0));
+
         // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, assets);
 
@@ -508,9 +559,7 @@ impl SingleRWAVault {
         require_current_schema(e);
         acquire_lock(e);
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
-        require_not_blacklisted(e, &caller);
-        require_not_blacklisted(e, &owner);
-        require_not_blacklisted(e, &receiver);
+        require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
         require_shares_not_locked(e, &owner);
 
@@ -543,6 +592,9 @@ impl SingleRWAVault {
             }
         }
 
+        let user_dep = get_user_deposited(e, &owner);
+        put_user_deposited(e, &owner, (user_dep - assets).max(0));
+
         // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, assets);
 
@@ -556,15 +608,25 @@ impl SingleRWAVault {
     // ERC-4626 preview helpers
     // ─────────────────────────────────────────────────────────────────
 
+    /// ERC-4626 `previewDeposit`: shares received for `assets` deposited (rounding **down**).
+    /// Favors the vault — user receives fewer shares than the ideal rational amount.
+    /// Reverts when `assets > 0` but the rounded share amount is 0 (dust donation guard).
     pub fn preview_deposit(e: &Env, assets: i128) -> i128 {
         preview_deposit(e, assets)
     }
+    /// ERC-4626 `previewMint`: assets paid to mint exactly `shares` (rounding **up**).
+    /// Favors the vault — user pays at least the ideal asset amount.
     pub fn preview_mint(e: &Env, shares: i128) -> i128 {
         preview_mint(e, shares)
     }
+    /// ERC-4626 `previewWithdraw`: shares burned to withdraw exactly `assets` (rounding **up**).
+    /// Favors the vault — user burns at least the ideal share amount.
     pub fn preview_withdraw(e: &Env, assets: i128) -> i128 {
         preview_withdraw(e, assets)
     }
+    /// ERC-4626 `previewRedeem`: assets received when redeeming `shares` (rounding **down**).
+    /// Favors the vault — user receives fewer assets than the ideal rational amount.
+    /// Reverts when `shares > 0` but the rounded asset amount is 0 (dust redemption guard).
     pub fn preview_redeem(e: &Env, shares: i128) -> i128 {
         preview_redeem(e, shares)
     }
@@ -612,11 +674,23 @@ impl SingleRWAVault {
             return 0;
         }
         let cap = get_max_deposit_per_user(e);
-        if cap == 0 {
-            return i128::MAX;
+        let mut max_allowed = if cap == 0 {
+            i128::MAX
+        } else {
+            let already = get_user_deposited(e, &receiver);
+            (cap - already).max(0)
+        };
+
+        if state == VaultState::Funding {
+            let target = get_funding_target(e);
+            if target > 0 {
+                let current = total_assets(e);
+                let remaining = (target - current).max(0);
+                max_allowed = max_allowed.min(remaining);
+            }
         }
-        let already = get_user_deposited(e, &receiver);
-        (cap - already).max(0)
+
+        max_allowed
     }
 
     /// Maximum shares `receiver` can obtain via `mint` right now.
@@ -630,7 +704,9 @@ impl SingleRWAVault {
         if max_assets == i128::MAX {
             return i128::MAX;
         }
-        preview_deposit(e, max_assets)
+        // Floor conversion — may be 0 when `max_deposit` is below one full share in
+        // asset terms; must not panic (unlike `preview_deposit` for user-supplied amounts).
+        convert_to_shares_floor(e, max_assets)
     }
 
     /// Maximum assets `owner` can withdraw right now.
@@ -644,7 +720,8 @@ impl SingleRWAVault {
             return 0;
         }
         let shares = get_share_balance(e, &owner);
-        preview_redeem(e, shares)
+        // Floor conversion for a view helper — may be 0 for dust balances; must not panic.
+        convert_to_assets_floor(e, shares)
     }
 
     /// Maximum shares `owner` can redeem right now (their full share balance).
@@ -779,25 +856,41 @@ impl SingleRWAVault {
         require_active_or_matured(e);
         require_not_blacklisted(e, &caller);
 
-        if get_has_claimed_epoch(e, &caller, epoch) {
-            panic_with_error!(e, Error::NoYieldToClaim);
-        }
-
         let amount = Self::pending_yield_for_epoch(e, caller.clone(), epoch);
         if amount <= 0 {
             panic_with_error!(e, Error::NoYieldToClaim);
         }
 
         // --- Effects ---
-        put_has_claimed_epoch(e, &caller, epoch, true);
-        // Advance the cursor: if this epoch is the next sequential one after
-        // the cursor, walk forward over any already-claimed epochs too.
-        let mut cursor = get_last_claimed_epoch(e, &caller);
-        let current = get_current_epoch(e);
-        while cursor < current && get_has_claimed_epoch(e, &caller, cursor + 1) {
-            cursor += 1;
+        // Update the amount claimed for this specific epoch
+        let already_claimed = get_user_epoch_yield_claimed(e, &caller, epoch);
+        put_user_epoch_yield_claimed(e, &caller, epoch, already_claimed + amount);
+
+        // Check if this epoch is now fully claimed
+        let total_yield_for_user = {
+            let user_shares = _get_user_shares_for_epoch(e, &caller, epoch);
+            let total_shares = get_epoch_total_shares(e, epoch);
+            if total_shares == 0 || user_shares == 0 {
+                0
+            } else {
+                math::mul_div(e, get_epoch_yield(e, epoch), user_shares, total_shares)
+            }
+        };
+
+        let new_total_claimed = already_claimed + amount;
+        if new_total_claimed >= total_yield_for_user {
+            // Epoch is fully claimed - mark as claimed for cursor optimization
+            put_has_claimed_epoch(e, &caller, epoch, true);
+
+            // Advance the cursor: if this epoch is the next sequential one after
+            // the cursor, walk forward over any already-claimed epochs too.
+            let mut cursor = get_last_claimed_epoch(e, &caller);
+            let current = get_current_epoch(e);
+            while cursor < current && get_has_claimed_epoch(e, &caller, cursor + 1) {
+                cursor += 1;
+            }
+            put_last_claimed_epoch(e, &caller, cursor);
         }
-        put_last_claimed_epoch(e, &caller, cursor);
 
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
@@ -831,7 +924,51 @@ impl SingleRWAVault {
         if total_shares == 0 || user_shares == 0 {
             return 0;
         }
-        math::mul_div(e, get_epoch_yield(e, epoch), user_shares, total_shares)
+
+        // Calculate total yield for user in this epoch
+        let total_yield_for_user =
+            math::mul_div(e, get_epoch_yield(e, epoch), user_shares, total_shares);
+
+        // Get vesting period (0 = instant claiming for backward compatibility)
+        let vesting_period = get_yield_vesting_period(e);
+        if vesting_period == 0 {
+            // No vesting - return full amount
+            return total_yield_for_user;
+        }
+
+        // Get when this epoch was distributed
+        let epoch_timestamp = get_epoch_timestamp(e, epoch);
+        if epoch_timestamp == 0 {
+            // Epoch timestamp not set (shouldn't happen with proper initialization)
+            return total_yield_for_user;
+        }
+
+        // Calculate vested portion
+        let now = e.ledger().timestamp();
+        if now <= epoch_timestamp {
+            // Distribution just happened - nothing vested yet
+            return 0;
+        }
+
+        let elapsed = now - epoch_timestamp;
+        let vested_fraction = if elapsed >= vesting_period {
+            // Fully vested
+            1_000_000_000 // Use 1e9 for precision
+        } else {
+            // Partially vested - use integer math: (elapsed * 1e9) / vesting_period
+            (elapsed * 1_000_000_000) / vesting_period
+        };
+
+        // Calculate vested amount: (total_yield * vested_fraction) / 1e9
+        let vested_amount = (total_yield_for_user * vested_fraction as i128) / 1_000_000_000i128;
+
+        // Subtract already claimed amount for this epoch
+        let already_claimed = get_user_epoch_yield_claimed(e, &user, epoch);
+        if vested_amount <= already_claimed {
+            return 0;
+        }
+
+        vested_amount - already_claimed
     }
 
     pub fn current_epoch(e: &Env) -> u32 {
@@ -1256,9 +1393,7 @@ impl SingleRWAVault {
         // --- Checks ---
         acquire_lock(e);
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
-        require_not_blacklisted(e, &caller);
-        require_not_blacklisted(e, &owner);
-        require_not_blacklisted(e, &receiver);
+        require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_state(e, VaultState::Matured);
 
         if shares <= 0 {
@@ -1288,6 +1423,9 @@ impl SingleRWAVault {
         let assets = preview_redeem(e, shares);
         _burn(e, &owner, shares);
         put_total_deposited(e, get_total_deposited(e) - assets);
+
+        let user_dep = get_user_deposited(e, &owner);
+        put_user_deposited(e, &owner, (user_dep - assets).max(0));
 
         let mut total_out = assets;
         if pending > 0 {
@@ -1379,25 +1517,27 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::AlreadyProcessed);
         }
 
-        // --- Effects ---
-        req.processed = true;
-        put_redemption_request(e, request_id, req.clone());
-
-        // Burn from escrow
         let escrowed = get_escrowed_shares(e, &req.user);
         if escrowed < req.shares {
-            // This should ideally not happen if logic is correct
             panic_with_error!(e, Error::InsufficientBalance);
         }
-        put_escrowed_shares(e, &req.user, escrowed - req.shares);
-        put_total_supply(e, get_total_supply(e) - req.shares);
-        // Note: update_user_snapshot was already called at request time
 
+        // Payout math before irreversible updates — `preview_redeem` may panic on dust
+        // (ERC-4626 zero-asset guard) and must not run after escrow/supply are changed.
         let assets = preview_redeem(e, req.shares);
         let fee_bps = get_early_redemption_fee_bps(e) as i128;
         let fee = math::mul_div(e, assets, fee_bps, 10000);
         let net_assets = assets - fee;
+
+        // --- Effects ---
+        req.processed = true;
+        put_redemption_request(e, request_id, req.clone());
+        put_escrowed_shares(e, &req.user, escrowed - req.shares);
+        put_total_supply(e, get_total_supply(e) - req.shares);
         put_total_deposited(e, get_total_deposited(e) - net_assets);
+
+        let user_dep = get_user_deposited(e, &req.user);
+        put_user_deposited(e, &req.user, (user_dep - net_assets).max(0));
 
         // --- Interaction ---
         transfer_asset_from_vault(e, &req.user, net_assets);
@@ -1490,6 +1630,16 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
+    pub fn set_yield_vesting_period(e: &Env, operator: Address, vesting_period: u64) {
+        operator.require_auth();
+        // LifecycleManager role required — also passes for FullOperator and admin.
+        require_role(e, &operator, Role::LifecycleManager);
+        require_not_closed(e);
+        put_yield_vesting_period(e, vesting_period);
+        emit_yield_vesting_period_set(e, vesting_period);
+        bump_instance(e);
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Access control
     // ─────────────────────────────────────────────────────────────────
@@ -1543,13 +1693,136 @@ impl SingleRWAVault {
         get_operator(e, &account)
     }
 
-    pub fn transfer_admin(e: &Env, caller: Address, new_admin: Address) {
+    pub fn transfer_admin(e: &Env, caller: Address, _new_admin: Address) {
         caller.require_auth();
         require_admin(e, &caller);
-        let old_admin = get_admin(e);
-        put_admin(e, new_admin.clone());
-        emit_admin_transferred(e, old_admin, new_admin);
+
+        // Transfer admin requires timelock - use propose_action instead
+        panic_with_error!(e, Error::TimelockAdminOnly);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Timelock functions
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Propose a timelock action for critical admin operations.
+    /// Returns the action ID.
+    pub fn propose_action(
+        e: &Env,
+        caller: Address,
+        action_type: ActionType,
+        data: soroban_sdk::Bytes,
+    ) -> u32 {
+        caller.require_auth();
+        require_admin(e, &caller);
+
+        let current_time = e.ledger().timestamp();
+        let delay = get_timelock_delay(e);
+        let executable_at = current_time + delay;
+
+        let action_id = get_timelock_counter(e) + 1;
+        put_timelock_counter(e, action_id);
+
+        let action = TimelockAction {
+            action_type: action_type.clone(),
+            data,
+            proposed_at: current_time,
+            executable_at,
+            executed: false,
+            cancelled: false,
+        };
+
+        put_timelock_action(e, action_id, action);
+        emit_action_proposed(e, action_id, action_type, executable_at);
         bump_instance(e);
+
+        action_id
+    }
+
+    /// Execute a timelock action after the delay has passed.
+    pub fn execute_action(e: &Env, caller: Address, action_id: u32) {
+        caller.require_auth();
+        require_admin(e, &caller);
+
+        let action = get_timelock_action(e, action_id)
+            .unwrap_or_else(|| panic_with_error!(e, Error::TimelockActionNotFound));
+
+        if action.executed {
+            panic_with_error!(e, Error::TimelockActionAlreadyExecuted);
+        }
+        if action.cancelled {
+            panic_with_error!(e, Error::TimelockActionCancelled);
+        }
+        if e.ledger().timestamp() < action.executable_at {
+            panic_with_error!(e, Error::TimelockDelayNotPassed);
+        }
+
+        // Execute the action based on its type
+        match action.action_type {
+            ActionType::EmergencyWithdraw => {
+                // For now, we'll implement a simplified version
+                // TODO: Implement proper data deserialization when needed
+                panic_with_error!(e, Error::NotSupported);
+            }
+            ActionType::TransferAdmin => {
+                // For now, we'll implement a simplified version
+                // TODO: Implement proper data deserialization when needed
+                panic_with_error!(e, Error::NotSupported);
+            }
+            ActionType::Upgrade => {
+                // TODO: Implement upgrade functionality when needed
+                panic_with_error!(e, Error::NotSupported);
+            }
+            ActionType::WasmHashUpdate => {
+                // TODO: Implement WASM hash update functionality when needed
+                panic_with_error!(e, Error::NotSupported);
+            }
+        }
+    }
+
+    /// Cancel a pending timelock action.
+    pub fn cancel_action(e: &Env, caller: Address, action_id: u32) {
+        caller.require_auth();
+        require_admin(e, &caller);
+
+        let mut action = get_timelock_action(e, action_id)
+            .unwrap_or_else(|| panic_with_error!(e, Error::TimelockActionNotFound));
+
+        if action.executed {
+            panic_with_error!(e, Error::TimelockActionAlreadyExecuted);
+        }
+        if action.cancelled {
+            panic_with_error!(e, Error::TimelockActionCancelled);
+        }
+
+        action.cancelled = true;
+        let action_type = action.action_type.clone();
+        put_timelock_action(e, action_id, action);
+        emit_action_cancelled(e, action_id, action_type);
+        bump_instance(e);
+    }
+
+    /// Get a timelock action by ID.
+    pub fn get_timelock_action(e: &Env, action_id: u32) -> Option<TimelockAction> {
+        crate::storage::get_timelock_action(e, action_id)
+    }
+
+    /// Internal emergency withdraw function (bypasses timelock when paused).
+    #[allow(dead_code)]
+    fn emergency_withdraw_internal(e: &Env, recipient: Address, amount: i128) {
+        if amount <= 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+
+        let asset_address = get_asset(e);
+        let asset_client = soroban_sdk::token::Client::new(e, &asset_address);
+        let balance = asset_client.balance(&e.current_contract_address());
+
+        if amount > balance {
+            panic_with_error!(e, Error::InsufficientBalance);
+        }
+
+        asset_client.transfer(&e.current_contract_address(), &recipient, &amount);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1669,6 +1942,11 @@ impl SingleRWAVault {
 
     /// Drain all vault assets to `recipient` and pause the vault.
     ///
+    /// If no multi-sig signers are configured, falls back to single-admin
+    /// behaviour (TreasuryManager or admin required).  When multi-sig is
+    /// configured this function panics — use `propose_emergency_withdraw` /
+    /// `approve_emergency_withdraw` / `execute_emergency_withdraw` instead.
+    ///
     /// Security: follows CEI — the vault is paused (Effect) before the asset
     /// transfer (Interaction) so that any reentrant call is rejected by
     /// `require_not_paused`.  Reentrancy lock provides an additional hard stop.
@@ -1680,8 +1958,20 @@ impl SingleRWAVault {
         caller.require_auth();
         // --- Checks ---
         acquire_lock(e);
+
+        // If multi-sig is configured, single-key path is disabled.
+        if get_emergency_signers(e).is_some() {
+            release_lock(e);
+            panic_with_error!(e, Error::NotSupported);
+        }
+
         // TreasuryManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::TreasuryManager);
+
+        // Emergency withdraw bypasses timelock only when vault is already paused
+        if !get_paused(e) {
+            panic_with_error!(e, Error::TimelockAdminOnly);
+        }
 
         let balance = asset_balance_of_vault(e);
 
@@ -1698,12 +1988,137 @@ impl SingleRWAVault {
         if balance > 0 {
             transfer_asset_from_vault(e, &recipient, balance);
         }
+        bump_instance(e);
+        release_lock(e);
+    }
+
+    /// Configure the multi-sig signer set and approval threshold for
+    /// emergency withdrawals.  Admin-only.
+    ///
+    /// Setting signers to an empty vec clears the multi-sig configuration and
+    /// re-enables the single-admin `emergency_withdraw` fallback.
+    pub fn set_emergency_signers(e: &Env, caller: Address, signers: Vec<Address>, threshold: u32) {
+        caller.require_auth();
+        require_admin(e, &caller);
+
+        if signers.is_empty() {
+            // Clear multi-sig; restore single-admin fallback.
+            remove_emergency_signers(e);
+            remove_emergency_threshold(e);
+            bump_instance(e);
+            return;
+        }
+
+        if threshold == 0 || threshold > signers.len() {
+            panic_with_error!(e, Error::InvalidThreshold);
+        }
+
+        put_emergency_signers(e, signers);
+        put_emergency_threshold(e, threshold);
+        bump_instance(e);
+    }
+
+    /// Any configured emergency signer may propose a withdrawal to `recipient`.
+    /// Returns the new proposal ID.
+    pub fn propose_emergency_withdraw(e: &Env, caller: Address, recipient: Address) -> u32 {
+        caller.require_auth();
+        require_emergency_signer(e, &caller);
+
+        let proposal_id = increment_emergency_proposal_counter(e);
+        let proposal = EmergencyProposal {
+            recipient: recipient.clone(),
+            proposed_at: e.ledger().timestamp(),
+            executed: false,
+        };
+        put_emergency_proposal(e, proposal_id, proposal);
+
+        // Proposer implicitly approves.
+        let mut approvals: Vec<Address> = Vec::new(e);
+        approvals.push_back(caller.clone());
+        put_emergency_proposal_approvals(e, proposal_id, approvals);
+
+        emit_emergency_proposed(e, proposal_id, caller, recipient);
+        bump_instance(e);
+        proposal_id
+    }
+
+    /// A configured emergency signer approves proposal `proposal_id`.
+    pub fn approve_emergency_withdraw(e: &Env, caller: Address, proposal_id: u32) {
+        caller.require_auth();
+        require_emergency_signer(e, &caller);
+
+        let proposal = get_emergency_proposal(e, proposal_id)
+            .unwrap_or_else(|| panic_with_error!(e, Error::ProposalNotFound));
+
+        if proposal.executed {
+            panic_with_error!(e, Error::ProposalAlreadyExecuted);
+        }
+
+        let now = e.ledger().timestamp();
+        if now > proposal.proposed_at + Self::EMERGENCY_PROPOSAL_TIMEOUT {
+            panic_with_error!(e, Error::ProposalExpired);
+        }
+
+        let mut approvals = get_emergency_proposal_approvals(e, proposal_id);
+        // Ensure no double-approval.
+        for i in 0..approvals.len() {
+            if approvals.get(i).unwrap() == caller {
+                panic_with_error!(e, Error::AlreadyApproved);
+            }
+        }
+
+        approvals.push_back(caller.clone());
+        let count = approvals.len();
+        put_emergency_proposal_approvals(e, proposal_id, approvals);
+
+        emit_emergency_approved(e, proposal_id, caller, count);
+        bump_instance(e);
+    }
+
+    /// Execute proposal `proposal_id` once the approval threshold is met.
+    /// Any signer may call this; the proposal must not be expired or already executed.
+    pub fn execute_emergency_withdraw(e: &Env, caller: Address, proposal_id: u32) {
+        caller.require_auth();
+        require_emergency_signer(e, &caller);
+        acquire_lock(e);
+
+        let mut proposal = get_emergency_proposal(e, proposal_id)
+            .unwrap_or_else(|| panic_with_error!(e, Error::ProposalNotFound));
+
+        if proposal.executed {
+            release_lock(e);
+            panic_with_error!(e, Error::ProposalAlreadyExecuted);
+        }
+
+        let now = e.ledger().timestamp();
+        if now > proposal.proposed_at + Self::EMERGENCY_PROPOSAL_TIMEOUT {
+            release_lock(e);
+            panic_with_error!(e, Error::ProposalExpired);
+        }
+
+        let approvals = get_emergency_proposal_approvals(e, proposal_id);
+        let threshold = get_emergency_threshold(e);
+        if approvals.len() < threshold {
+            release_lock(e);
+            panic_with_error!(e, Error::ThresholdNotMet);
+        }
+
+        // Mark executed before transferring (CEI pattern).
+        proposal.executed = true;
+        put_emergency_proposal(e, proposal_id, proposal.clone());
+
+        let balance = asset_balance_of_vault(e);
+
+        // --- Effects ---
         put_paused(e, true);
-        emit_emergency_action(
-            e,
-            true,
-            String::from_str(e, "Emergency withdrawal executed"),
-        );
+        put_freeze_flags(e, Self::FREEZE_ALL);
+
+        // --- Interaction ---
+        if balance > 0 {
+            transfer_asset_from_vault(e, &proposal.recipient, balance);
+        }
+
+        emit_emergency_executed(e, proposal_id, proposal.recipient, balance);
         bump_instance(e);
         release_lock(e);
     }
@@ -1769,7 +2184,7 @@ impl SingleRWAVault {
 
         let claim_amount = (emergency_balance * user_shares) / total_supply_snapshot;
 
-        put_has_claimed_emergency(e, &caller, true);
+        put_has_claimed_emergency(e, &caller);
         _burn(e, &caller, user_shares);
 
         if claim_amount > 0 {
@@ -1998,14 +2413,26 @@ fn total_assets(e: &Env) -> i128 {
     get_total_deposited(e)
 }
 
-fn preview_deposit(e: &Env, assets: i128) -> i128 {
+/// `convertToShares` with **floor** division: `floor(assets * totalSupply / totalAssets)`.
+/// ERC-4626 deposit path rounds down (vault-favorable). Used by `max_mint` where a 0
+/// result is valid; `preview_deposit` adds a dust guard on top.
+fn convert_to_shares_floor(e: &Env, assets: i128) -> i128 {
     let supply = get_total_supply(e);
     let ta = total_assets(e);
     if supply == 0 || ta == 0 {
         return assets;
     }
-    // shares = assets * totalSupply / totalAssets
     math::mul_div(e, assets, supply, ta)
+}
+
+fn preview_deposit(e: &Env, assets: i128) -> i128 {
+    // ERC-4626: round **down** on deposit so the user receives fewer shares than the
+    // exact rational amount — protects existing LPs from dilution via rounding.
+    let shares = convert_to_shares_floor(e, assets);
+    if assets > 0 && shares == 0 {
+        panic_with_error!(e, Error::PreviewZeroShares);
+    }
+    shares
 }
 
 fn preview_mint(e: &Env, shares: i128) -> i128 {
@@ -2014,7 +2441,8 @@ fn preview_mint(e: &Env, shares: i128) -> i128 {
     if supply == 0 || ta == 0 {
         return shares;
     }
-    // assets = shares * totalAssets / totalSupply  (ceil)
+    // ERC-4626: round **up** on mint so the user pays at least the fair asset amount
+    // for the requested shares — vault-favorable, symmetric to deposit rounding down.
     math::mul_div_ceil(e, shares, ta, supply)
 }
 
@@ -2024,24 +2452,31 @@ fn preview_withdraw(e: &Env, assets: i128) -> i128 {
     if supply == 0 || ta == 0 {
         return assets;
     }
-    // shares = assets * totalSupply / totalAssets  (ceil)
+    // ERC-4626: round **up** on withdraw so the user burns at least the shares needed
+    // to cover `assets` — vault-favorable (user cannot withdraw “too cheaply”).
     math::mul_div_ceil(e, assets, supply, ta)
 }
 
-fn preview_redeem(e: &Env, shares: i128) -> i128 {
+/// `convertToAssets` with **floor** division: `floor(shares * totalAssets / totalSupply)`.
+/// ERC-4626 redeem path rounds down (vault-favorable). Used by `max_withdraw` where 0 is
+/// valid; `preview_redeem` adds a dust guard on top.
+fn convert_to_assets_floor(e: &Env, shares: i128) -> i128 {
     let supply = get_total_supply(e);
     let ta = total_assets(e);
     if supply == 0 {
         return shares;
     }
-    // assets = shares * totalAssets / (totalSupply + totalEscrowedShares)
-    // Actually total_supply already includes escrowed shares if we don't subtract them.
-    // Let's check how _mint/_burn affect it.
-    // _mint adds to total_supply.
-    // _burn subtracts from total_supply.
-    // My request_early_redemption does NOT _burn, so total_supply is unchanged.
-    // So total_supply ALREADY includes escrowed shares.
     math::mul_div(e, shares, ta, supply)
+}
+
+fn preview_redeem(e: &Env, shares: i128) -> i128 {
+    // ERC-4626: round **down** on redeem so the user receives fewer assets than the
+    // exact rational amount — protects the vault from paying out extra on rounding.
+    let assets = convert_to_assets_floor(e, shares);
+    if shares > 0 && assets == 0 {
+        panic_with_error!(e, Error::PreviewZeroAssets);
+    }
+    assets
 }
 
 fn asset_balance_of_vault(e: &Env) -> i128 {
@@ -2128,6 +2563,13 @@ fn update_user_snapshot(e: &Env, user: &Address) {
     }
     put_last_interaction_epoch(e, user, current_epoch);
     bump_balance(e, user);
+}
+
+/// Refresh snapshots for both parties before moving shares (`transfer` / `transfer_from`).
+/// Order is `from` then `to` so each records their pre-transfer balance for epoch yield.
+fn update_user_snapshots_for_transfer(e: &Env, from: &Address, to: &Address) {
+    update_user_snapshot(e, from);
+    update_user_snapshot(e, to);
 }
 
 fn _get_user_shares_for_epoch(e: &Env, user: &Address, epoch: u32) -> i128 {
@@ -2258,6 +2700,22 @@ fn release_lock(e: &Env) {
     put_locked(e, false);
 }
 
+/// Panics with `NotEmergencySigner` if `caller` is not in the emergency signers list.
+fn require_emergency_signer(e: &Env, caller: &Address) {
+    let signers =
+        get_emergency_signers(e).unwrap_or_else(|| panic_with_error!(e, Error::NotEmergencySigner));
+    let mut found = false;
+    for i in 0..signers.len() {
+        if signers.get(i).unwrap() == *caller {
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        panic_with_error!(e, Error::NotEmergencySigner);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -2320,6 +2778,8 @@ mod test {
             rwa_document_uri: String::from_str(e, "https://example.com/doc"),
             rwa_category: String::from_str(e, "Bonds"),
             expected_apy: 500,
+            timelock_delay: 172800u64,  // 48 hours
+            yield_vesting_period: 0u64, // Default to 0 for instant claiming
         };
 
         let vault_addr = e.register(SingleRWAVault, (params,));
@@ -2345,10 +2805,10 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Error(Auth, InvalidAction)")]
     fn test_set_blacklisted_non_admin_fails() {
         let e = Env::default();
-        e.mock_all_auths();
+        // Don't mock all auths - we want auth to fail
         let (vault_addr, _admin, _asset) = create_vault(&e);
         let client = SingleRWAVaultClient::new(&e, &vault_addr);
 

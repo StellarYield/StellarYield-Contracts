@@ -326,3 +326,114 @@ fn test_set_min_deposit_active_state_admin_succeeds() {
     ctx.vault().set_min_deposit(&ctx.admin, &500_000i128);
     assert_eq!(ctx.vault().min_deposit(), 500_000i128);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deposit Cap (Funding Target)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_deposit_exact_fill_succeeds() {
+    let ctx = setup_with_kyc_bypass();
+    // Default funding target is 100_000_000
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_000);
+    ctx.vault().deposit(&ctx.user, &100_000_000i128, &ctx.user);
+    assert_eq!(ctx.vault().total_assets(), 100_000_000i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #46)")] // FundingTargetExceeded
+fn test_deposit_exceeds_funding_target_panics() {
+    let ctx = setup_with_kyc_bypass();
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_001);
+    ctx.vault().deposit(&ctx.user, &100_000_001i128, &ctx.user);
+}
+
+#[test]
+fn test_deposit_cap_not_applied_in_active_state() {
+    let ctx = setup_with_kyc_bypass();
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 150_000_000);
+
+    // Fill to exactly the target (100_000_000)
+    ctx.vault().deposit(&ctx.user, &100_000_000i128, &ctx.user);
+
+    // Activate the vault
+    ctx.vault().activate_vault(&ctx.admin);
+
+    // Now we can deposit more even though target was 100M
+    ctx.vault().deposit(&ctx.user, &50_000_000i128, &ctx.user);
+    assert_eq!(ctx.vault().total_assets(), 150_000_000i128);
+}
+
+#[test]
+fn test_max_deposit_reflects_funding_target() {
+    let ctx = setup_with_kyc_bypass();
+    assert_eq!(ctx.vault().max_deposit(&ctx.user), 100_000_000i128);
+
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 40_000_000);
+    ctx.vault().deposit(&ctx.user, &40_000_000i128, &ctx.user);
+
+    assert_eq!(ctx.vault().max_deposit(&ctx.user), 60_000_000i128);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User deposited tracking (decrements)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_user_can_redeposit_after_withdrawal() {
+    let ctx = setup_with_kyc_bypass();
+
+    // Set a strict user cap of 50 USDC
+    ctx.vault()
+        .set_max_deposit_per_user(&ctx.operator, &50_000_000i128);
+
+    // Give user 100 USDC total to play with
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_000);
+
+    // Initial deposit hits the cap exactly
+    ctx.vault().deposit(&ctx.user, &50_000_000i128, &ctx.user);
+    assert_eq!(ctx.vault().user_deposited(&ctx.user), 50_000_000i128);
+    assert_eq!(ctx.vault().max_deposit(&ctx.user), 0i128); // Cap reached
+
+    // Activate the vault so withdrawals are permitted
+    // We fund the rest of the target so it activates easily
+    let user2 = Address::generate(&ctx.env);
+    mint_usdc(&ctx.env, &ctx.asset_id, &user2, 50_000_000);
+    ctx.vault().deposit(&user2, &50_000_000i128, &user2);
+    ctx.vault().activate_vault(&ctx.admin);
+
+    // User withdraws 30 USDC
+    ctx.vault()
+        .withdraw(&ctx.user, &30_000_000i128, &ctx.user, &ctx.user);
+
+    // user_deposited should fall by 30 USDC, freeing up 30 USDC of cap space
+    assert_eq!(ctx.vault().user_deposited(&ctx.user), 20_000_000i128);
+    assert_eq!(ctx.vault().max_deposit(&ctx.user), 30_000_000i128);
+
+    // User can successfully redeposit up to the new cap
+    ctx.vault().deposit(&ctx.user, &25_000_000i128, &ctx.user);
+    assert_eq!(ctx.vault().user_deposited(&ctx.user), 45_000_000i128);
+}
+
+#[test]
+fn test_user_deposited_never_goes_negative() {
+    let ctx = setup_with_kyc_bypass();
+
+    // Fill vault and activate
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, 100_000_000);
+    ctx.vault().deposit(&ctx.user, &100_000_000i128, &ctx.user);
+    ctx.vault().activate_vault(&ctx.admin);
+
+    // Operator artificially lowers the limit but it's fine
+    ctx.vault()
+        .set_deposit_limits(&ctx.admin, &1_000_000i128, &10_000_000i128);
+
+    assert_eq!(ctx.vault().user_deposited(&ctx.user), 100_000_000i128);
+
+    // Withdraw all
+    ctx.vault()
+        .withdraw(&ctx.user, &100_000_000i128, &ctx.user, &ctx.user);
+
+    // Should be zero and not panic due to underflow
+    assert_eq!(ctx.vault().user_deposited(&ctx.user), 0i128);
+}

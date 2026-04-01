@@ -1,8 +1,9 @@
+# Workspace root for Soroban contracts (run `cargo test -p vault_factory` from here).
 [workspace]
 resolver = "2"
 members = [
-    "contracts/single_rwa_vault",
-    "contracts/vault_factory",
+    "soroban-contracts/contracts/single_rwa_vault",
+    "soroban-contracts/contracts/vault_factory",
 ]
 
 [workspace.dependencies]

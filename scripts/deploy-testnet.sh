@@ -23,10 +23,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTRACT_DIR="$SCRIPT_DIR/../soroban-contracts"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONTRACT_DIR="$REPO_ROOT/soroban-contracts"
 ENV_FILE="$CONTRACT_DIR/.env.testnet"
 
-WASM_DIR="$CONTRACT_DIR/target/wasm32v1-none/release"
+# Cargo workspace root is the repository root; WASMs land under repo `target/`.
+WASM_DIR="$REPO_ROOT/target/wasm32v1-none/release"
 VAULT_WASM="$WASM_DIR/single_rwa_vault.wasm"
 FACTORY_WASM="$WASM_DIR/vault_factory.wasm"
 
