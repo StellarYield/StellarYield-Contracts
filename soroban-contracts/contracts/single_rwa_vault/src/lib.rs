@@ -157,7 +157,7 @@ impl SingleRWAVault {
         put_min_deposit(e, params.min_deposit);
         put_max_deposit_per_user(e, params.max_deposit_per_user);
         put_early_redemption_fee_bps(e, params.early_redemption_fee_bps);
-        put_yield_vesting_period(e, params.yield_vesting_period);
+        put_lock_up_period(e, params.lock_up_period);
 
         // Initial state
         put_vault_state(e, VaultState::Funding);
@@ -359,6 +359,8 @@ impl SingleRWAVault {
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
+        // Store deposit timestamp for lock-up enforcement
+        put_deposit_timestamp(e, &receiver, e.ledger().timestamp());
         _mint(e, &receiver, shares);
 
         // --- Interaction (external call last) ---
@@ -411,6 +413,8 @@ impl SingleRWAVault {
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
+        // Store deposit timestamp for lock-up enforcement
+        put_deposit_timestamp(e, &receiver, e.ledger().timestamp());
         _mint(e, &receiver, shares);
 
         // --- Interaction (external call last) ---
@@ -447,6 +451,7 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
+        require_shares_not_locked(e, &owner);
 
         if assets <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -500,6 +505,7 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
+        require_shares_not_locked(e, &owner);
 
         if shares <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -1341,6 +1347,7 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_closed(e);
         require_not_blacklisted(e, &caller);
+        require_shares_not_locked(e, &caller);
 
         if shares <= 0 {
             panic_with_error!(e, Error::ZeroAmount);
@@ -1735,6 +1742,42 @@ impl SingleRWAVault {
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
         put_transfer_requires_kyc(e, enabled);
+        bump_instance(e);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Lock-up period
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Returns the remaining lock-up time in seconds for a user.
+    /// Returns 0 if no lock-up is active or the user has no deposit timestamp.
+    pub fn lock_up_remaining(e: &Env, user: Address) -> u64 {
+        let lock_up_period = get_lock_up_period(e);
+        if lock_up_period == 0 {
+            return 0; // No lock-up period configured
+        }
+        
+        let deposit_timestamp = get_deposit_timestamp(e, &user);
+        if deposit_timestamp == 0 {
+            return 0; // No deposit timestamp, user hasn't deposited
+        }
+        
+        let current_timestamp = e.ledger().timestamp();
+        let lock_up_end = deposit_timestamp + lock_up_period;
+        
+        if current_timestamp >= lock_up_end {
+            0 // Lock-up period has ended
+        } else {
+            lock_up_end - current_timestamp // Remaining time
+        }
+    }
+
+    /// Update the lock-up period for future deposits. Only admin can change this.
+    /// Existing deposits keep their original lock-up period.
+    pub fn set_lock_up_period(e: &Env, caller: Address, lock_up_period: u64) {
+        caller.require_auth();
+        require_admin(e, &caller);
+        put_lock_up_period(e, lock_up_period);
         bump_instance(e);
     }
 
@@ -2170,7 +2213,9 @@ impl SingleRWAVault {
         if get_transfer_requires_kyc(e) {
             require_kyc_verified(e, &to);
         }
-        update_user_snapshots_for_transfer(e, &from, &to);
+        require_shares_not_locked(e, &from);
+        update_user_snapshot(e, &from);
+        update_user_snapshot(e, &to);
         spend_share_balance(e, &from, amount);
         receive_share_balance(e, &to, amount);
         emit_transfer(e, from, to, amount);
@@ -2185,7 +2230,9 @@ impl SingleRWAVault {
         if get_transfer_requires_kyc(e) {
             require_kyc_verified(e, &to);
         }
-        update_user_snapshots_for_transfer(e, &from, &to);
+        require_shares_not_locked(e, &from);
+        update_user_snapshot(e, &from);
+        update_user_snapshot(e, &to);
         let allowance = get_share_allowance(e, &from, &spender);
         if allowance < amount {
             panic_with_error!(e, Error::InsufficientAllowance);
@@ -2479,20 +2526,23 @@ fn require_not_blacklisted(e: &Env, addr: &Address) {
     }
 }
 
-fn require_not_blacklisted_deposit_parties(e: &Env, caller: &Address, receiver: &Address) {
-    require_not_blacklisted(e, caller);
-    require_not_blacklisted(e, receiver);
-}
-
-fn require_not_blacklisted_withdraw_parties(
-    e: &Env,
-    caller: &Address,
-    owner: &Address,
-    receiver: &Address,
-) {
-    require_not_blacklisted(e, caller);
-    require_not_blacklisted(e, owner);
-    require_not_blacklisted(e, receiver);
+fn require_shares_not_locked(e: &Env, addr: &Address) {
+    let lock_up_period = get_lock_up_period(e);
+    if lock_up_period == 0 {
+        return; // No lock-up period configured
+    }
+    
+    let deposit_timestamp = get_deposit_timestamp(e, addr);
+    if deposit_timestamp == 0 {
+        return; // No deposit timestamp, user hasn't deposited
+    }
+    
+    let current_timestamp = e.ledger().timestamp();
+    let lock_up_end = deposit_timestamp + lock_up_period;
+    
+    if current_timestamp < lock_up_end {
+        panic_with_error!(e, Error::SharesLocked);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2685,3 +2735,38 @@ mod test {
         client.deposit(&depositor, &10_0000000, &depositor);
     }
 }
+
+#[cfg(test)]
+mod test_access_control;
+#[cfg(test)]
+mod test_constructor;
+#[cfg(test)]
+mod test_escrow;
+#[cfg(test)]
+mod test_helpers;
+#[cfg(test)]
+mod test_lock_up_period;
+#[cfg(test)]
+mod test_rbac;
+#[cfg(test)]
+mod test_redemption;
+#[cfg(test)]
+mod test_withdraw;
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod test_freeze_flags;
+
+#[cfg(test)]
+mod test_close_vault;
+#[cfg(test)]
+mod test_constructor_validation;
+#[cfg(test)]
+mod test_deposit_limits;
+#[cfg(test)]
+mod test_overflow;
+#[cfg(test)]
+mod test_rwa_setters;
+#[cfg(test)]
+mod test_token;
