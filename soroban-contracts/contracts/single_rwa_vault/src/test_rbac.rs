@@ -31,6 +31,8 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         rwa_document_uri: String::from_str(env, "https://test.com"),
         rwa_category: String::from_str(env, "Real Estate"),
         expected_apy: 500_u32,
+        timelock_delay: 172800u64, // 48 hours
+        yield_vesting_period: 0u64,
     }
 }
 

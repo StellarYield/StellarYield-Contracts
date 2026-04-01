@@ -56,6 +56,51 @@ fn test_mature_vault_transitions_to_matured() {
     assert_eq!(v.vault_state(), VaultState::Matured);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Boundary: timestamp == maturity_date (#173)
+// Contract: mature_vault requires `now >= maturity_date` (`now < maturity` panics).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// When `ledger.timestamp == maturity_date`, `mature_vault` succeeds (maturity is reached).
+#[test]
+fn test_mature_vault_succeeds_at_exact_maturity_timestamp() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+
+    let amount = 100_000_000i128;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, amount);
+    v.deposit(&ctx.user, &amount, &ctx.user);
+    v.activate_vault(&ctx.operator);
+
+    let maturity = 5_000_000u64;
+    v.set_maturity_date(&ctx.operator, &maturity);
+
+    ctx.env.ledger().with_mut(|li| li.timestamp = maturity);
+    assert_eq!(ctx.env.ledger().timestamp(), maturity);
+
+    v.mature_vault(&ctx.operator);
+    assert_eq!(v.vault_state(), VaultState::Matured);
+}
+
+/// One second before `maturity_date`, `mature_vault` still fails with `Error::NotMatured`.
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #8)")]
+fn test_mature_vault_fails_just_before_maturity() {
+    let ctx = setup_with_kyc_bypass();
+    let v = ctx.vault();
+
+    let amount = 100_000_000i128;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, amount);
+    v.deposit(&ctx.user, &amount, &ctx.user);
+    v.activate_vault(&ctx.operator);
+
+    let maturity = 5_000_000u64;
+    v.set_maturity_date(&ctx.operator, &maturity);
+
+    ctx.env.ledger().with_mut(|li| li.timestamp = maturity - 1);
+    v.mature_vault(&ctx.operator);
+}
+
 #[test]
 fn test_set_maturity_date() {
     let ctx = setup_with_kyc_bypass();

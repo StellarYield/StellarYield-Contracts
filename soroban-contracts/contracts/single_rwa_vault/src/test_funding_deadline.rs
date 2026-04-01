@@ -64,6 +64,8 @@ fn deploy(funding_deadline: u64) -> Ctx {
         rwa_document_uri: String::from_str(&env, "https://example.com/ustb26"),
         rwa_category: String::from_str(&env, "Government Bond"),
         expected_apy: 500u32,
+        timelock_delay: 172800u64, // 48 hours
+        yield_vesting_period: 0u64,
     };
 
     let vault_id = env.register(SingleRWAVault, (params,));
@@ -119,6 +121,45 @@ fn test_activate_vault_succeeds_before_deadline() {
 
     vault.activate_vault(&ctx.admin);
     assert_eq!(vault.vault_state(), VaultState::Active);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Boundary: timestamp == funding_deadline (#173)
+// Contract: activate uses `now > deadline`; cancel uses `now <= deadline` → not passed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// When `ledger.timestamp == funding_deadline`, activation still succeeds (deadline has not
+/// strictly passed).
+#[test]
+fn test_activate_vault_succeeds_at_exact_funding_deadline() {
+    let deadline = 5_000u64;
+    let ctx = deploy(deadline);
+    let vault = ctx.vault();
+
+    ctx.asset().mint(&ctx.user, &100_000_000i128);
+    vault.deposit(&ctx.user, &100_000_000i128, &ctx.user);
+
+    ctx.env.ledger().with_mut(|li| li.timestamp = deadline);
+    assert_eq!(ctx.env.ledger().timestamp(), deadline);
+
+    vault.activate_vault(&ctx.admin);
+    assert_eq!(vault.vault_state(), VaultState::Active);
+}
+
+/// When `ledger.timestamp == funding_deadline`, cancel_funding still fails — the deadline is
+/// treated as inclusive on the "not yet passed" side (`now <= deadline` panics).
+#[test]
+#[should_panic]
+fn test_cancel_funding_fails_at_exact_funding_deadline() {
+    let deadline = 5_000u64;
+    let ctx = deploy(deadline);
+    let vault = ctx.vault();
+
+    ctx.asset().mint(&ctx.user, &10_000_000i128);
+    vault.deposit(&ctx.user, &10_000_000i128, &ctx.user);
+
+    ctx.env.ledger().with_mut(|li| li.timestamp = deadline);
+    vault.cancel_funding(&ctx.admin);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

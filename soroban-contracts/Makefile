@@ -13,6 +13,9 @@
 
 .DEFAULT_GOAL := build
 
+# Repository root (this Makefile lives in soroban-contracts/).
+WORKSPACE_ROOT := $(abspath $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/..)
+
 # ---------------------------------------------------------------------------
 # Configuration — override on the command line or via environment variables
 # ---------------------------------------------------------------------------
@@ -24,8 +27,8 @@ SOURCE_ACCOUNT   ?= default
 # Output directory for generated TypeScript bindings
 BINDINGS_DIR     ?= ../bindings
 
-# Paths
-WASM_DIR         := target/wasm32v1-none/release
+# Paths (artifacts land under the workspace root when using root Cargo.toml)
+WASM_DIR         := $(WORKSPACE_ROOT)/target/wasm32v1-none/release
 VAULT_WASM       := $(WASM_DIR)/single_rwa_vault.wasm
 FACTORY_WASM     := $(WASM_DIR)/vault_factory.wasm
 SCRIPTS_DIR      := ../scripts
@@ -44,42 +47,42 @@ FACTORY_ADDRESS    ?=
 ## build: compile all contracts (release WASM)
 .PHONY: build
 build:
-	stellar contract build
+	cd $(WORKSPACE_ROOT) && stellar contract build
 
 ## build-debug: compile all contracts in debug mode
 .PHONY: build-debug
 build-debug:
-	cargo build --target wasm32v1-none
+	cd $(WORKSPACE_ROOT) && cargo build --target wasm32v1-none
 
 ## test: run the full workspace test suite
 .PHONY: test
 test:
-	cargo test --workspace
+	cd $(WORKSPACE_ROOT) && cargo test --workspace
 
 ## test-verbose: run tests with output captured and printed
 .PHONY: test-verbose
 test-verbose:
-	cargo test --workspace -- --nocapture
+	cd $(WORKSPACE_ROOT) && cargo test --workspace -- --nocapture
 
 ## lint: run clippy with warnings treated as errors
 .PHONY: lint
 lint:
-	cargo clippy --workspace -- -D warnings
+	cd $(WORKSPACE_ROOT) && cargo clippy --workspace -- -D warnings
 
 ## fmt: check formatting (non-destructive)
 .PHONY: fmt
 fmt:
-	cargo fmt --check
+	cd $(WORKSPACE_ROOT) && cargo fmt --check
 
 ## fmt-fix: auto-format all source files
 .PHONY: fmt-fix
 fmt-fix:
-	cargo fmt
+	cd $(WORKSPACE_ROOT) && cargo fmt
 
 ## clean: remove build artifacts
 .PHONY: clean
 clean:
-	cargo clean
+	cd $(WORKSPACE_ROOT) && cargo clean
 
 # ---------------------------------------------------------------------------
 # WASM optimisation & inspection

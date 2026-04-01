@@ -224,6 +224,16 @@ pub fn mint_usdc(env: &Env, asset_id: &Address, recipient: &Address, amount: i12
     MockUsdcClient::new(env, asset_id).mint(recipient, &amount);
 }
 
+/// Convert a human-readable amount into on-chain integer units.
+///
+/// Examples:
+/// - `normalize_amount(1.0, 6) == 1_000_000`
+/// - `normalize_amount(2.5, 6) == 2_500_000`
+pub fn normalize_amount(amount: f64, decimals: u32) -> i128 {
+    let scale = 10f64.powi(decimals as i32);
+    (amount * scale).round() as i128
+}
+
 /// Advance the ledger timestamp by `seconds`.
 pub fn advance_time(env: &Env, seconds: u64) {
     let now = env.ledger().timestamp();
@@ -259,6 +269,8 @@ fn default_params(
         rwa_symbol: String::from_str(env, "USTB26"),
         rwa_document_uri: String::from_str(env, "https://example.com/ustb26"),
         rwa_category: String::from_str(env, "Government Bond"),
-        expected_apy: 500u32, // 5 %
+        expected_apy: 500u32,       // 5 %
+        timelock_delay: 172800u64,  // 48 hours
+        yield_vesting_period: 0u64, // Default to 0 for instant claiming (backward compatibility)
     }
 }

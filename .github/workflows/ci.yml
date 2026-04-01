@@ -20,7 +20,6 @@ jobs:
         with:
           components: rustfmt
       - name: Check formatting
-        working-directory: soroban-contracts
         run: cargo fmt --check
 
   clippy:
@@ -39,15 +38,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            soroban-contracts/target
-          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
+            target
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('Cargo.toml', 'soroban-contracts/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-clippy-
       - name: Build WASM (required by vault_factory contractimport)
-        working-directory: soroban-contracts
         run: cargo build --target wasm32-unknown-unknown --release -p single_rwa_vault
       - name: Run clippy
-        working-directory: soroban-contracts
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
@@ -65,15 +62,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            soroban-contracts/target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.toml', 'soroban-contracts/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-
       - name: Build WASM (required by vault_factory contractimport)
-        working-directory: soroban-contracts
         run: cargo build --target wasm32-unknown-unknown --release -p single_rwa_vault
       - name: Run tests
-        working-directory: soroban-contracts
         run: cargo test --workspace
 
   build:
@@ -95,8 +90,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            soroban-contracts/target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('soroban-contracts/**/Cargo.lock', 'soroban-contracts/**/Cargo.toml') }}
+            target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('Cargo.toml', 'soroban-contracts/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-build-
       - name: Build single_rwa_vault contract
@@ -111,7 +106,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Contract | Size | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
-          for wasm in $(find soroban-contracts/target/wasm32v1-none/release -name "*.wasm" -type f); do
+          for wasm in $(find target/wasm32v1-none/release -name "*.wasm" -type f 2>/dev/null); do
             size=$(wc -c < "$wasm" | tr -d ' ')
             name=$(basename "$wasm")
             size_kb=$((size / 1024))
@@ -126,7 +121,7 @@ jobs:
       - name: Check WASM size limits
         run: |
           failed=0
-          for wasm in $(find soroban-contracts/target/wasm32v1-none/release -name "*.wasm" -type f); do
+          for wasm in $(find target/wasm32v1-none/release -name "*.wasm" -type f 2>/dev/null); do
             size=$(wc -c < "$wasm" | tr -d ' ')
             name=$(basename "$wasm")
             limit=$((256 * 1024))

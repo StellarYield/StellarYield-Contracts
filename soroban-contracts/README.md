@@ -34,27 +34,35 @@ A registry and deployment factory for `single_rwa_vault` instances. It:
 
 ## Workspace layout
 
+The Cargo workspace root is the **repository root** (`Cargo.toml` next to `soroban-contracts/`). From the clone root you can run:
+
+```bash
+cargo test -p vault_factory
 ```
-soroban-contracts/
-├── Cargo.toml                          # workspace root
-└── contracts/
-    ├── single_rwa_vault/
-    │   ├── Cargo.toml
-    │   └── src/
-    │       ├── lib.rs              – contract entry points & internal logic
-    │       ├── types.rs            – InitParams, VaultState, RwaDetails, RedemptionRequest
-    │       ├── storage.rs          – DataKey enum, typed getters/setters, TTL helpers
-    │       ├── events.rs           – event emitters for every state change
-    │       ├── errors.rs           – typed error codes (contracterror)
-    │       └── token_interface.rs  – ZkmeVerifyClient cross-contract interface
-    └── vault_factory/
-        ├── Cargo.toml
-        └── src/
-            ├── lib.rs              – factory & registry logic
-            ├── types.rs            – VaultInfo, VaultType, BatchVaultParams
-            ├── storage.rs          – DataKey enum, typed getters/setters, TTL helpers
-            ├── events.rs           – event emitters
-            └── errors.rs           – typed error codes
+
+```
+StellarYield-Contracts/
+├── Cargo.toml                          # workspace root (Soroban contracts)
+└── soroban-contracts/
+    ├── Makefile
+    └── contracts/
+        ├── single_rwa_vault/
+        │   ├── Cargo.toml
+        │   └── src/
+        │       ├── lib.rs              – contract entry points & internal logic
+        │       ├── types.rs            – InitParams, VaultState, RwaDetails, RedemptionRequest
+        │       ├── storage.rs          – DataKey enum, typed getters/setters, TTL helpers
+        │       ├── events.rs           – event emitters for every state change
+        │       ├── errors.rs           – typed error codes (contracterror)
+        │       └── token_interface.rs  – ZkmeVerifyClient cross-contract interface
+        └── vault_factory/
+            ├── Cargo.toml
+            └── src/
+                ├── lib.rs              – factory & registry logic
+                ├── types.rs            – VaultInfo, VaultType, BatchVaultParams
+                ├── storage.rs          – DataKey enum, typed getters/setters, TTL helpers
+                ├── events.rs           – event emitters
+                └── errors.rs           – typed error codes
 ```
 
 ---
@@ -158,7 +166,7 @@ make all          # build + test + lint + fmt
 make ci
 ```
 
-Compiled `.wasm` files appear in `target/wasm32v1-none/release/`.
+Compiled `.wasm` files appear under the repository root in `target/wasm32v1-none/release/` (paths are the same when using `make` from `soroban-contracts/`, which runs Cargo from the workspace root).
 
 ---
 
@@ -328,7 +336,7 @@ stellar contract invoke \
 | `get_all_vaults()` | All registered vault addresses |
 | `get_single_rwa_vaults()` | Single-RWA vault addresses only |
 | `get_active_vaults()` | Active (non-deactivated) vaults |
-| `get_vault_info(vault)` | `VaultInfo` struct for a given address |
+| `get_vault_info(vault)` | `VaultInfo` for a vault (`vault`, **`asset`** (underlying), `vault_type`, `name`, `symbol`, `active`, `created_at`) |
 | `is_registered_vault(vault)` | Boolean registry check |
 | `get_vault_count()` | Total number of registered vaults |
 
