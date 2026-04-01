@@ -6,7 +6,9 @@
 //!  - Error paths: insufficient allowance, insufficient shares, vault paused
 //!  - Edge cases: drain entire balance, non-1:1 share price validation
 
-use crate::test_helpers::{mint_usdc, normalize_amount, setup_with_kyc_bypass, TestContext, create_user_with_balance};
+use crate::test_helpers::{
+    create_user_with_balance, mint_usdc, normalize_amount, setup_with_kyc_bypass, TestContext,
+};
 use soroban_sdk::{testutils::Address as _, Address, String};
 
 // ─────────────────────────────────────────────────────────────────────────────

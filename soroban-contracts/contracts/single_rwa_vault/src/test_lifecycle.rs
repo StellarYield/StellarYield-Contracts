@@ -3,7 +3,9 @@
 //! Verifies the state machine: Funding -> Active -> Matured.
 //! Transitions require preconditions (funding target, maturity date) and guards (operator-only).
 
-use crate::test_helpers::{advance_time, mint_usdc, setup_with_kyc_bypass, create_user_with_balance};
+use crate::test_helpers::{
+    advance_time, create_user_with_balance, mint_usdc, setup_with_kyc_bypass,
+};
 use crate::VaultState;
 use soroban_sdk::testutils::Ledger;
 
