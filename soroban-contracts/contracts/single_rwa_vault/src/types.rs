@@ -35,11 +35,8 @@ pub struct InitParams {
     pub rwa_document_uri: String,
     pub rwa_category: String,
     pub expected_apy: u32,
-    // Timelock configuration
-    /// Delay in seconds for critical admin operations (default: 48 hours)
-    pub timelock_delay: u64,
-    /// Yield vesting period in seconds (0 = instant claiming for backward compatibility)
-    pub yield_vesting_period: u64,
+    /// Lock-up period in seconds after deposit during which shares cannot be transferred
+    pub lock_up_period: u64,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
