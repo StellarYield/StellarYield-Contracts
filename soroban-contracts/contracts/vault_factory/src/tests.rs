@@ -659,12 +659,12 @@ fn test_view_functions_non_existent_vault() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         client.set_vault_status(&admin, &non_existent_vault, &false);
     }));
-    
+
     assert!(
         result.is_err(),
         "set_vault_status should panic for non-existent vault"
     );
-    
+
     // Verify the panic message contains the expected error code
     if let Err(panic_payload) = result {
         let panic_msg = if let Some(s) = panic_payload.downcast_ref::<std::string::String>() {
@@ -674,7 +674,7 @@ fn test_view_functions_non_existent_vault() {
         } else {
             std::string::String::from("")
         };
-        
+
         // The error code for VaultNotFound is #2 based on the existing tests
         assert!(
             panic_msg.contains("#2") || panic_msg.contains("VaultNotFound"),
