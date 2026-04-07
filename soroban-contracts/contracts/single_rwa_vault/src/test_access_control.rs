@@ -355,7 +355,10 @@ fn test_unblacklisted_user_can_resume_deposit_and_withdraw() {
     let blocked_deposit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         vault.deposit(&user, &resumed_deposit, &user);
     }));
-    assert!(blocked_deposit.is_err(), "blacklisted user deposit must fail");
+    assert!(
+        blocked_deposit.is_err(),
+        "blacklisted user deposit must fail"
+    );
 
     let blocked_withdraw = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         vault.withdraw(&user, &resumed_withdraw, &user, &user);

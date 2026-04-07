@@ -885,12 +885,7 @@ pub fn put_transfer_requires_kyc(e: &Env, val: bool) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn transfer_exempt_index(addresses: &Vec<Address>, addr: &Address) -> Option<u32> {
-    for i in 0..addresses.len() {
-        if addresses.get(i).unwrap() == *addr {
-            return Some(i);
-        }
-    }
-    None
+    (0..addresses.len()).find(|&i| addresses.get(i).unwrap() == *addr)
 }
 
 fn put_transfer_exempt_address_list(e: &Env, addresses: &Vec<Address>) {

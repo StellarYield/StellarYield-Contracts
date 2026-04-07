@@ -4,7 +4,9 @@
 //! at the requested gross amount, while the mock asset delivers a lower net
 //! token balance to the vault after charging a transfer fee.
 
-use crate::test_helpers::{normalize_amount, setup_with_fee_on_transfer_asset, FeeOnTransferMockClient};
+use crate::test_helpers::{
+    normalize_amount, setup_with_fee_on_transfer_asset, FeeOnTransferMockClient,
+};
 use crate::VaultState;
 
 #[test]
@@ -21,8 +23,15 @@ fn test_fee_on_transfer_asset_uses_gross_amounts_for_deposit_and_yield_accountin
     asset.mint(&ctx.user, &deposit_amount);
     let shares = vault.deposit(&ctx.user, &deposit_amount, &ctx.user);
 
-    assert_eq!(shares, deposit_amount, "shares are minted from the gross deposit");
-    assert_eq!(vault.total_assets(), deposit_amount, "gross deposit is added to accounting");
+    assert_eq!(
+        shares, deposit_amount,
+        "shares are minted from the gross deposit"
+    );
+    assert_eq!(
+        vault.total_assets(),
+        deposit_amount,
+        "gross deposit is added to accounting"
+    );
     assert_eq!(vault.total_supply(), deposit_amount);
     assert_eq!(vault.user_deposited(&ctx.user), deposit_amount);
     assert_eq!(
@@ -30,7 +39,10 @@ fn test_fee_on_transfer_asset_uses_gross_amounts_for_deposit_and_yield_accountin
         net_deposit_received,
         "vault receives the net asset amount after the transfer fee"
     );
-    assert!(vault.is_funding_target_met(), "gross accounting is used for funding target checks");
+    assert!(
+        vault.is_funding_target_met(),
+        "gross accounting is used for funding target checks"
+    );
 
     vault.activate_vault(&ctx.admin);
     assert_eq!(vault.vault_state(), VaultState::Active);
@@ -59,7 +71,10 @@ fn test_fee_on_transfer_asset_uses_gross_amounts_for_deposit_and_yield_accountin
 
     let claimed = vault.claim_yield(&ctx.user);
 
-    assert_eq!(claimed, yield_amount, "claim accounting uses the full gross epoch yield");
+    assert_eq!(
+        claimed, yield_amount,
+        "claim accounting uses the full gross epoch yield"
+    );
     assert_eq!(vault.total_yield_claimed(&ctx.user), yield_amount);
     assert_eq!(vault.pending_yield(&ctx.user), 0);
     assert_eq!(

@@ -268,7 +268,6 @@ fn setup_with_registered_contracts(
     user: Address,
     cooperator: Address,
 ) -> TestContext {
-
     let params = default_params(
         &env,
         asset_id.clone(),

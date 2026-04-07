@@ -229,8 +229,12 @@ fn test_withdraw_without_deposit_panics() {
     deposit(&ctx, &ctx.user.clone(), 5_000_000);
     activate(&ctx);
 
-    ctx.vault()
-        .withdraw(&non_depositor, &1_000_000i128, &non_depositor, &non_depositor);
+    ctx.vault().withdraw(
+        &non_depositor,
+        &1_000_000i128,
+        &non_depositor,
+        &non_depositor,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -370,8 +374,7 @@ fn test_withdraw_zero_assets_panics() {
     activate(&ctx);
 
     // Must panic — zero assets
-    ctx.vault()
-        .withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
+    v.withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -388,6 +391,4 @@ fn test_redeem_zero_shares_panics() {
 
     // Must panic — zero shares
     ctx.vault().redeem(&ctx.user, &0i128, &ctx.user, &ctx.user);
-    // Must panic with ZeroAmount — passing 0 assets.
-    v.withdraw(&ctx.user, &0i128, &ctx.user, &ctx.user);
 }
