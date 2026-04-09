@@ -68,6 +68,9 @@ pub struct BatchVaultParams {
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
+    pub vault_admin: Option<Address>,
+    pub zkme_verifier: Option<Address>,
+    pub cooperator: Option<Address>,
 }
 
 /// Parameters for `create_single_rwa_vault_full`.

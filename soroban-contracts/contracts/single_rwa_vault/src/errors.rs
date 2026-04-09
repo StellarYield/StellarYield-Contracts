@@ -56,6 +56,10 @@ pub enum Error {
     /// Burn requires pending yield to be claimed first (Option A).
     BurnRequiresYieldClaim = 32,
     InvalidDepositLimits = 33,
+    /// Shares are still within lock-up period and cannot be transferred
+    SharesLocked = 34,
+    /// Vault has insufficient balance to cover the requested transfer
+    InsufficientVaultBalance = 35,
     /// Timelock action not found or invalid.
     TimelockActionNotFound = 34,
     /// Timelock delay has not passed yet.

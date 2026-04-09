@@ -10,10 +10,11 @@ pub fn emit_vault_created(
     vault_type: VaultType,
     name: String,
     creator: Address,
+    vault_admin: Address,
 ) {
     e.events().publish(
         (symbol_short!("v_create"), vault),
-        (vault_type, name, creator),
+        (vault_type, name, creator, vault_admin),
     );
 }
 

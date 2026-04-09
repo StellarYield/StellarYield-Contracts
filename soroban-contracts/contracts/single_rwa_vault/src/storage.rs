@@ -60,6 +60,12 @@ pub enum Key {
     ExpApy,
 
     // --- Vault config ---
+    FundingTarget,
+    MaturityDate,
+    MinDeposit,
+    MaxDepositPerUser,
+    EarlyRedemptionFeeBps,
+    LockUpPeriod,
     FundTgt,
     MatDate,
     MinDep,
@@ -493,6 +499,16 @@ pub fn put_yield_vesting_period(e: &Env, val: u64) {
     e.storage().instance().set(&Key::YldVstPer, &val);
 }
 
+pub fn get_lock_up_period(e: &Env) -> u64 {
+    e.storage()
+        .instance()
+        .get(&DataKey::LockUpPeriod)
+        .unwrap_or(0)
+}
+pub fn put_lock_up_period(e: &Env, val: u64) {
+    e.storage().instance().set(&DataKey::LockUpPeriod, &val);
+}
+
 // State
 instance_get!(get_vault_state, VaultSt, VaultState);
 instance_put!(put_vault_state, VaultSt, VaultState);
@@ -731,6 +747,23 @@ pub fn put_user_deposited(e: &Env, addr: &Address, val: i128) {
         .set(&Key::UsrDep(addr.clone()), &val);
     e.storage().persistent().extend_ttl(
         &Key::UsrDep(addr.clone()),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
+}
+
+pub fn get_deposit_timestamp(e: &Env, addr: &Address) -> u64 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::DepositTimestamp(addr.clone()))
+        .unwrap_or(0)
+}
+pub fn put_deposit_timestamp(e: &Env, addr: &Address, val: u64) {
+    e.storage()
+        .persistent()
+        .set(&DataKey::DepositTimestamp(addr.clone()), &val);
+    e.storage().persistent().extend_ttl(
+        &DataKey::DepositTimestamp(addr.clone()),
         BALANCE_LIFETIME_THRESHOLD,
         BALANCE_BUMP_AMOUNT,
     );

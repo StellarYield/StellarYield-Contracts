@@ -35,6 +35,8 @@ pub struct InitParams {
     pub rwa_document_uri: String,
     pub rwa_category: String,
     pub expected_apy: u32,
+    /// Lock-up period in seconds after deposit during which shares cannot be transferred
+    pub lock_up_period: u64,
     // Timelock configuration
     /// Delay in seconds for critical admin operations (default: 48 hours)
     pub timelock_delay: u64,
