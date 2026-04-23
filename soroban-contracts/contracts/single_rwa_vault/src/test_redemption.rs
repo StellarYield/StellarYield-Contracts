@@ -544,3 +544,23 @@ fn test_redeem_blacklisted_address_panics() {
     // Try to redeem — should panic with AddressBlacklisted
     vault.redeem(&user, &shares, &user, &user);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests — Yield distribution: error paths
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Operator cannot distribute zero yield: distribute_yield must panic with Error::ZeroAmount (13)
+/// when called with amount == 0, as enforced by the guard at lib.rs:693-695.
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_operator_cannot_distribute_zero_yield() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, _zkme_id, admin) = make_vault(&env);
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    // Must panic — zero yield amount
+    vault.distribute_yield(&admin, &0i128);
+}
