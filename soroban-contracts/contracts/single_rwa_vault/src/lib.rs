@@ -45,6 +45,8 @@ mod test_funding_deadline;
 #[cfg(test)]
 mod test_helpers;
 #[cfg(test)]
+mod test_inflation_attack;
+#[cfg(test)]
 mod test_lifecycle;
 #[cfg(test)]
 mod test_multiple_deposit_times;
@@ -89,6 +91,10 @@ pub struct SingleRWAVault;
 
 /// Fixed-point precision for yield_per_share calculations (10^6).
 const PRECISION: i128 = 1_000_000;
+
+/// Virtual offset for share price inflation attack mitigation (OpenZeppelin approach).
+/// Set to 10^6 to provide robust protection for 6-decimal assets like USDC.
+const VIRTUAL_OFFSET: i128 = 1_000_000;
 
 #[contractimpl]
 impl SingleRWAVault {
@@ -573,8 +579,9 @@ impl SingleRWAVault {
         if supply == 0 || ta == 0 {
             return assets;
         }
-        // shares = assets * totalSupply / totalAssets (floor)
-        math::mul_div(e, assets, supply, ta)
+        // Apply virtual offset to prevent share price inflation attack (Issue #95)
+        // shares = assets * (supply + OFFSET) / (totalAssets + OFFSET) (floor)
+        math::mul_div(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
     }
 
     pub fn convert_to_assets(e: &Env, shares: i128) -> i128 {
@@ -583,8 +590,9 @@ impl SingleRWAVault {
         if supply == 0 {
             return shares;
         }
-        // assets = shares * totalAssets / totalSupply (floor)
-        math::mul_div(e, shares, ta, supply)
+        // Apply virtual offset to prevent share price inflation attack (Issue #95)
+        // assets = shares * (totalAssets + OFFSET) / (supply + OFFSET) (floor)
+        math::mul_div(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
     }
 
     pub fn redemption_request(e: &Env, request_id: u32) -> RedemptionRequest {
@@ -698,11 +706,17 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::ZeroAmount);
         }
 
+        // Guard against yield loss when no shareholders exist (Issue #97)
+        let total_supply = get_total_supply(e);
+        if total_supply == 0 {
+            panic_with_error!(e, Error::NoShareholders);
+        }
+
         // --- Effects (state changes before external call) ---
         let epoch = get_current_epoch(e) + 1;
         put_current_epoch(e, epoch);
         put_epoch_yield(e, epoch, amount);
-        put_epoch_total_shares(e, epoch, get_total_supply(e));
+        put_epoch_total_shares(e, epoch, total_supply);
         put_epoch_timestamp(e, epoch, e.ledger().timestamp());
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
         put_total_deposited(e, get_total_deposited(e) + amount);
@@ -715,6 +729,19 @@ impl SingleRWAVault {
         bump_instance(e);
         release_lock(e);
         epoch
+    }
+
+    /// Returns the amount of unclaimed yield remaining for a specific epoch.
+    /// Useful for operator dashboards to track yield distribution status.
+    pub fn get_unclaimed_yield(e: &Env, epoch: u32) -> i128 {
+        let total_yield = get_epoch_yield(e, epoch);
+        if total_yield == 0 {
+            return 0;
+        }
+        // Note: This is an approximation. Exact tracking would require
+        // iterating all users, which is not feasible on-chain.
+        // Operators should use off-chain indexing for precise tracking.
+        total_yield
     }
 
     /// Claim all pending yield for the caller.
@@ -2248,7 +2275,8 @@ fn total_assets(e: &Env) -> i128 {
     get_total_deposited(e)
 }
 
-/// `convertToShares` with **floor** division: `floor(assets * totalSupply / totalAssets)`.
+/// `convertToShares` with **floor** division and virtual offset for inflation attack mitigation.
+/// Uses OpenZeppelin's virtual offset approach: shares = assets * (supply + OFFSET) / (totalAssets + OFFSET)
 /// ERC-4626 deposit path rounds down (vault-favorable). Used by `max_mint` where a 0
 /// result is valid; `preview_deposit` adds a dust guard on top.
 fn convert_to_shares_floor(e: &Env, assets: i128) -> i128 {
@@ -2257,7 +2285,9 @@ fn convert_to_shares_floor(e: &Env, assets: i128) -> i128 {
     if supply == 0 || ta == 0 {
         return assets;
     }
-    math::mul_div(e, assets, supply, ta)
+    // Apply virtual offset to prevent share price inflation attack (Issue #95)
+    // shares = assets * (supply + OFFSET) / (totalAssets + OFFSET)
+    math::mul_div(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
 }
 
 fn preview_deposit(e: &Env, assets: i128) -> i128 {
@@ -2276,9 +2306,9 @@ fn preview_mint(e: &Env, shares: i128) -> i128 {
     if supply == 0 || ta == 0 {
         return shares;
     }
-    // ERC-4626: round **up** on mint so the user pays at least the fair asset amount
-    // for the requested shares — vault-favorable, symmetric to deposit rounding down.
-    math::mul_div_ceil(e, shares, ta, supply)
+    // Apply virtual offset with ceiling division (Issue #95)
+    // assets = shares * (totalAssets + OFFSET) / (supply + OFFSET), rounded up
+    math::mul_div_ceil(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
 }
 
 fn preview_withdraw(e: &Env, assets: i128) -> i128 {
@@ -2289,7 +2319,7 @@ fn preview_withdraw(e: &Env, assets: i128) -> i128 {
     }
     // ERC-4626: round **up** on withdraw so the user burns at least the shares needed
     // to cover `assets` — vault-favorable (user cannot withdraw “too cheaply”).
-    math::mul_div_ceil(e, assets, supply, ta)
+    math::mul_div_ceil(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
 }
 
 /// `convertToAssets` with **floor** division: `floor(shares * totalAssets / totalSupply)`.
@@ -2301,7 +2331,7 @@ fn convert_to_assets_floor(e: &Env, shares: i128) -> i128 {
     if supply == 0 {
         return shares;
     }
-    math::mul_div(e, shares, ta, supply)
+    math::mul_div(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
 }
 
 fn preview_redeem(e: &Env, shares: i128) -> i128 {

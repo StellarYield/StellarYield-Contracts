@@ -88,4 +88,6 @@ pub enum Error {
     PreviewZeroAssets = 48,
     /// Too many transfer-exempt addresses have been configured.
     TransferExemptionLimitExceeded = 49,
+    /// Cannot distribute yield when there are no shareholders.
+    NoShareholders = 50,
 }

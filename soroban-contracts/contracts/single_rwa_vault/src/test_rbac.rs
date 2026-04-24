@@ -148,12 +148,37 @@ fn test_yield_operator_can_distribute_yield() {
     // Activate vault so distribute_yield is reachable.
     let lm = Address::generate(&env);
     client.grant_role(&admin, &lm, &Role::LifecycleManager);
+
+    // Deposit first so there are shareholders (Issue #97 fix)
+    let depositor = Address::generate(&env);
+    mint_asset(&env, &asset_id, &depositor, 10_000_i128);
+    client.deposit(&depositor, &10_000_i128, &depositor);
+
     client.activate_vault(&lm);
 
     // Give the yield operator enough tokens to inject yield.
     mint_asset(&env, &asset_id, &yield_op, 1_000_000_i128);
     client.distribute_yield(&yield_op, &500_000_i128);
     assert_eq!(client.current_epoch(), 1);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #50)")] // NoShareholders error
+fn test_distribute_yield_with_no_shareholders_panics() {
+    let (env, vault_id, asset_id, admin) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let yield_op = Address::generate(&env);
+
+    client.grant_role(&admin, &yield_op, &Role::YieldOperator);
+
+    // Activate vault without any deposits (Issue #97 test)
+    let lm = Address::generate(&env);
+    client.grant_role(&admin, &lm, &Role::LifecycleManager);
+    client.activate_vault(&lm);
+
+    // Try to distribute yield with no shareholders - should panic
+    mint_asset(&env, &asset_id, &yield_op, 1_000_000_i128);
+    client.distribute_yield(&yield_op, &500_000_i128);
 }
 
 #[test]
