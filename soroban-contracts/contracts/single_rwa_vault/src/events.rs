@@ -24,6 +24,20 @@ pub fn emit_yield_claimed(e: &Env, user: Address, amount: i128, epoch: u32) {
         .publish((symbol_short!("yield_clm"), user), (amount, epoch));
 }
 
+/// Emitted when a partial yield claim occurs because the vault had insufficient
+/// asset balance to satisfy the full computed pending_yield. The shortfall is
+/// recorded and can be resolved later via resolve_yield_shortfall().
+pub fn emit_partial_yield_claim(e: &Env, user: Address, expected: i128, actual: i128) {
+    e.events()
+        .publish((symbol_short!("prt_yld"), user), (expected, actual));
+}
+
+/// Emitted when an operator manually resolves a user's accumulated yield shortfall.
+pub fn emit_yield_shortfall_resolved(e: &Env, user: Address, amount: i128, remaining_shortfall: i128) {
+    e.events()
+        .publish((symbol_short!("ys_res"), user), (amount, remaining_shortfall));
+}
+
 pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }

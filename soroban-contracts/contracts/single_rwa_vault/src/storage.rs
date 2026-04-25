@@ -95,6 +95,9 @@ pub enum Key {
     LstClmEp(Address),
     /// Track how much yield a user has claimed for a specific epoch (for vesting)
     UsrEpYldClm(Address, u32),
+    /// Accumulated yield shortfall due to partial claims when vault had insufficient balance.
+    /// Tracked per user; operator resolves via resolve_yield_shortfall().
+    YieldShortfall(Address),
 
     // --- User share snapshots ---
     UsrShrEp(Address, u32),
@@ -162,6 +165,7 @@ const K_TAG_BLACKLST: u32 = 216;
 const K_TAG_HAS_CLM_EMG: u32 = 217;
 const K_TAG_TLK_ACT: u32 = 218;
 const K_TAG_TRANSFER_EXEMPT: u32 = 219;
+const K_TAG_YIELD_SHORTFALL: u32 = 220;
 
 impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
     fn into_val(&self, env: &Env) -> soroban_sdk::Val {
@@ -186,6 +190,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::TransferExempt(a) => (K_TAG_TRANSFER_EXEMPT, a.clone()).into_val(env),
             Key::HasClmEmg(a) => (K_TAG_HAS_CLM_EMG, a.clone()).into_val(env),
             Key::TlkAct(n) => (K_TAG_TLK_ACT, *n).into_val(env),
+            Key::YieldShortfall(a) => (K_TAG_YIELD_SHORTFALL, a.clone()).into_val(env),
 
             Key::ShareName => 0u32.into_val(env),
             Key::ShrSymb => 1u32.into_val(env),
@@ -256,6 +261,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
                 K_TAG_BLACKLST => Key::Blacklst(a),
                 K_TAG_TRANSFER_EXEMPT => Key::TransferExempt(a),
                 K_TAG_HAS_CLM_EMG => Key::HasClmEmg(a),
+                K_TAG_YIELD_SHORTFALL => Key::YieldShortfall(a),
                 _ => return Err(soroban_sdk::Error::from_contract_error(1)),
             });
         }
@@ -748,6 +754,31 @@ pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+/// Retrieve the accumulated yield shortfall for a user due to partial claims
+/// when vault had insufficient balance.
+pub fn get_yield_shortfall(e: &Env, addr: &Address) -> i128 {
+    e.storage()
+        .persistent()
+        .get(&Key::YieldShortfall(addr.clone()))
+        .unwrap_or(0)
+}
+
+/// Record or accumulate yield shortfall for a user. Automatically manages TTL.
+pub fn put_yield_shortfall(e: &Env, addr: &Address, val: i128) {
+    let key = Key::YieldShortfall(addr.clone());
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+/// Remove the yield shortfall entry for a user after it has been fully resolved.
+pub fn delete_yield_shortfall(e: &Env, addr: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&Key::YieldShortfall(addr.clone()));
 }
 
 pub fn get_user_epoch_yield_claimed(e: &Env, addr: &Address, epoch: u32) -> i128 {

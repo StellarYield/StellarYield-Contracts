@@ -35,8 +35,8 @@ pub enum Error {
     AlreadyProcessed = 21,
     /// Requested fee exceeds the permitted maximum.
     FeeTooHigh = 22,
-    /// Price aggregator is not supported or not recognised.
-    AggregatorNotSupported = 23,
+    /// Resolution amount too high.
+    InsfShf = 51,
     /// The specified redemption request ID is invalid or not found.
     InvalidRedemptionRequest = 24,
     /// Operation or component is not supported.
@@ -88,4 +88,6 @@ pub enum Error {
     PreviewZeroAssets = 48,
     /// Too many transfer-exempt addresses have been configured.
     TransferExemptionLimitExceeded = 49,
+    /// Yield shortfall not found.
+    ShfNo = 50,
 }

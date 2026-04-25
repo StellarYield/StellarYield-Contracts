@@ -65,6 +65,8 @@ mod test_vault_state_guards;
 #[cfg(test)]
 mod test_withdraw;
 #[cfg(test)]
+mod test_yield_shortfall;
+#[cfg(test)]
 mod test_yield_vesting;
 #[cfg(test)]
 mod tests;
@@ -748,12 +750,27 @@ impl SingleRWAVault {
         put_last_claimed_epoch(e, &caller, epoch);
 
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
-        transfer_asset_from_vault(e, &caller, amount);
 
-        emit_yield_claimed(e, caller, amount, epoch);
+        // Cap transfer to available vault balance. If shortfall exists, record it.
+        let available = asset_balance_of_vault(e);
+        let transfer_amount = amount.min(available);
+
+        // Compute shortfall (safe: transfer_amount = min(amount, available) ≤ amount)
+        let shortfall = amount - transfer_amount;
+        if shortfall > 0 {
+            // Accumulate shortfall for operator resolution
+            let existing_shortfall = get_yield_shortfall(e, &caller);
+            let new_shortfall = existing_shortfall + shortfall;
+            put_yield_shortfall(e, &caller, new_shortfall);
+            emit_partial_yield_claim(e, caller.clone(), amount, transfer_amount);
+        }
+
+        transfer_asset_from_vault(e, &caller, transfer_amount);
+
+        emit_yield_claimed(e, caller, transfer_amount, epoch);
         bump_instance(e);
         release_lock(e);
-        amount
+        transfer_amount
     }
 
     /// Claim yield for a specific epoch only.
@@ -806,12 +823,91 @@ impl SingleRWAVault {
         }
 
         put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
-        transfer_asset_from_vault(e, &caller, amount);
 
-        emit_yield_claimed(e, caller, amount, epoch);
+        // Cap transfer to available vault balance. If shortfall exists, record it.
+        let available = asset_balance_of_vault(e);
+        let transfer_amount = amount.min(available);
+
+        // Compute shortfall (safe: transfer_amount = min(amount, available) ≤ amount)
+        let shortfall = amount - transfer_amount;
+        if shortfall > 0 {
+            // Accumulate shortfall for operator resolution
+            let existing_shortfall = get_yield_shortfall(e, &caller);
+            let new_shortfall = existing_shortfall + shortfall;
+            put_yield_shortfall(e, &caller, new_shortfall);
+            emit_partial_yield_claim(e, caller.clone(), amount, transfer_amount);
+        }
+
+        transfer_asset_from_vault(e, &caller, transfer_amount);
+
+        emit_yield_claimed(e, caller, transfer_amount, epoch);
         bump_instance(e);
         release_lock(e);
-        amount
+        transfer_amount
+    }
+
+    /// Resolve a recorded yield shortfall by transferring the claimed amount to the user.
+    ///
+    /// When claim_yield or claim_yield_for_epoch encounters insufficient vault balance,
+    /// it records the unpaid portion as a shortfall keyed to the user's address. This
+    /// function allows the operator to manually settle that debt after topping up the vault.
+    ///
+    /// Security: caller must be an authorized operator (YieldOperator or FullOperator role).
+    /// The vault must hold sufficient balance before calling this function; if transfer fails,
+    /// the entire transaction reverts and the shortfall record remains unchanged, allowing retry.
+    ///
+    /// # Arguments
+    /// * `e` - Soroban environment
+    /// * `caller` - operator address (must have YieldOperator role)
+    /// * `user` - the user whose shortfall is being resolved
+    /// * `amount` - the amount to transfer (must be > 0 and ≤ recorded shortfall)
+    ///
+    /// # Returns
+    /// The remaining shortfall after this resolution (or 0 if fully resolved)
+    ///
+    /// # Panics
+    /// * `NotOperator` if caller lacks YieldOperator role
+    /// * `YieldShortfallNotFound` if no shortfall is recorded for user
+    /// * `ZeroAmount` if amount <= 0
+    /// * `InsufficientShortfall` if amount > recorded shortfall
+    /// * Token transfer panic if vault has insufficient balance
+    pub fn resolve_yield_shortfall(e: &Env, caller: Address, user: Address, amount: i128) -> i128 {
+        caller.require_auth();
+        // --- Checks ---
+        require_current_schema(e);
+        acquire_lock(e);
+        require_role(e, &caller, Role::YieldOperator);
+
+        if amount <= 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+
+        let current_shortfall = get_yield_shortfall(e, &user);
+        if current_shortfall <= 0 {
+            panic_with_error!(e, Error::ShfNo);
+        }
+
+        if amount > current_shortfall {
+            panic_with_error!(e, Error::InsfShf);
+        }
+
+        // --- Interaction (transfer) ---
+        // CEI Pattern: transfer before storage update
+        transfer_asset_from_vault(e, &user, amount);
+
+        // Update shortfall
+        let remaining_shortfall = current_shortfall - amount;
+        if remaining_shortfall > 0 {
+            put_yield_shortfall(e, &user, remaining_shortfall);
+        } else {
+            delete_yield_shortfall(e, &user);
+        }
+
+        emit_yield_shortfall_resolved(e, user, amount, remaining_shortfall);
+
+        bump_instance(e);
+        release_lock(e);
+        remaining_shortfall
     }
 
     pub fn pending_yield(e: &Env, user: Address) -> i128 {
