@@ -274,6 +274,81 @@ stellar contract invoke \
 
 ---
 
+## Error catalog
+
+This section documents all error codes returned by the contracts. Integrators can use these codes to display actionable error messages to users.
+
+### `single_rwa_vault` errors
+
+| Code | Error Variant | Trigger Condition | Remediation |
+|---|---|---|---|
+| 1 | `NotKYCVerified` | User has not completed KYC verification | Complete KYC verification through zkMe before attempting deposits |
+| 2 | `ZKMEVerifierNotSet` | zkMe verifier contract address is not configured | Admin must set the zkMe verifier address via `set_zkme_verifier` |
+| 3 | `NotOperator` | Caller lacks operator privileges | Request operator role from admin or use an authorized operator account |
+| 4 | `NotAdmin` | Caller is not the contract admin | Use the admin account for this operation |
+| 5 | `InvalidVaultState` | Operation not allowed in current vault state | Check vault state and wait for appropriate lifecycle transition |
+| 6 | `BelowMinimumDeposit` | Deposit amount is below the minimum threshold | Increase deposit amount to meet or exceed `min_deposit` |
+| 7 | `ExceedsMaximumDeposit` | Deposit would exceed per-user deposit limit | Reduce deposit amount to stay within `max_deposit_per_user` limit |
+| 8 | `NotMatured` | Operation requires vault to be in Matured state | Wait until maturity date is reached |
+| 9 | `NoYieldToClaim` | No unclaimed yield available for user | Wait for yield distribution or verify you have shares during yield epochs |
+| 10 | `FundingTargetNotMet` | Vault cannot activate without meeting funding target | Wait for more deposits or admin may adjust funding target |
+| 11 | `VaultPaused` | Vault operations are paused | Wait for admin/operator to unpause the vault |
+| 12 | `ZeroAddress` | Address parameter is invalid (zero-equivalent) | Provide a valid non-zero address |
+| 13 | `ZeroAmount` | Amount parameter is zero or negative | Provide a positive non-zero amount |
+| 14 | `AddressBlacklisted` | Address is on the compliance blacklist | Contact compliance officer to resolve blacklist status |
+| 15 | `Reentrant` | Reentrancy detected during guarded operation | This is a security error; contact support if encountered |
+| 16 | `FundingDeadlinePassed` | Funding deadline has expired | Vault can no longer be activated; request refund if applicable |
+| 17 | `FundingDeadlineNotPassed` | Funding deadline has not yet expired | Wait until deadline passes before canceling funding |
+| 18 | `NoSharesToRefund` | User has no shares to refund | Only users with shares can request refunds during canceled funding |
+| 19 | `InsufficientAllowance` | Spender allowance is too low | Increase allowance via `approve` before attempting transfer |
+| 20 | `InsufficientBalance` | Account balance is too low | Ensure sufficient share balance before attempting operation |
+| 21 | `AlreadyProcessed` | Operation has already been completed | This request has already been processed and cannot be repeated |
+| 22 | `FeeTooHigh` | Requested fee exceeds maximum allowed | Reduce fee to 10% (1000 basis points) or below |
+| 23 | `AggregatorNotSupported` | Price aggregator feature is not available | Use direct pricing methods instead |
+| 24 | `InvalidRedemptionRequest` | Redemption request ID is invalid or not found | Verify the redemption request ID is correct |
+| 25 | `NotSupported` | Operation or feature is not supported | Use alternative supported operations |
+| 26 | `InvalidInitParams` | Constructor parameters are invalid | Review and correct initialization parameters |
+| 27 | `VaultNotEmpty` | Vault cannot be closed while it contains assets/shares | Ensure all shares are redeemed before closing vault |
+| 28 | `InvalidEpochRange` | Epoch range is invalid (zero start, start > end, or > 50) | Provide valid epoch range with start ≥ 1, start ≤ end, and range ≤ 50 |
+| 29 | `NotInEmergency` | Operation requires vault to be in Emergency state | This operation is only available during emergency mode |
+| 30 | `AlreadyClaimedEmergency` | User has already claimed emergency distribution | Emergency distribution can only be claimed once per user |
+| 31 | `MigrationRequired` | Storage schema is outdated | Admin must call `migrate()` to update storage schema |
+| 32 | `BurnRequiresYieldClaim` | Pending yield must be claimed before burning shares | Call `claim_yield()` before attempting to burn shares |
+| 33 | `InvalidDepositLimits` | Deposit limit configuration is invalid | Ensure min_deposit ≤ max_deposit_per_user |
+| 34 | `TimelockActionNotFound` | Timelock action ID does not exist | Verify the timelock action ID is correct |
+| 35 | `TimelockDelayNotPassed` | Timelock delay period has not elapsed | Wait until the timelock delay period expires |
+| 36 | `TimelockActionAlreadyExecuted` | Timelock action has already been executed | This action has already been completed |
+| 37 | `TimelockActionCancelled` | Timelock action has been cancelled | This action was cancelled and cannot be executed |
+| 38 | `TimelockAdminOnly` | Only admin can perform timelock operations | Use the admin account for timelock operations |
+| 39 | `NotEmergencySigner` | Caller is not in the emergency signers list | Only designated emergency signers can perform this operation |
+| 40 | `ProposalNotFound` | Emergency proposal does not exist | Verify the proposal ID is correct |
+| 41 | `ProposalExpired` | Emergency proposal has expired (>24h) | Create a new emergency proposal |
+| 42 | `ProposalAlreadyExecuted` | Emergency proposal has already been executed | This proposal has already been completed |
+| 43 | `ThresholdNotMet` | Approval threshold has not been reached | Wait for more signers to approve the proposal |
+| 44 | `AlreadyApproved` | Signer has already approved this proposal | Each signer can only approve once |
+| 45 | `InvalidThreshold` | Threshold must be ≥ 1 and ≤ number of signers | Provide a valid threshold value |
+| 46 | `FundingTargetExceeded` | Deposit would exceed funding target | Reduce deposit amount to stay within funding target |
+| 47 | `PreviewZeroShares` | Amount converts to zero shares | Increase amount to receive at least one share |
+| 48 | `PreviewZeroAssets` | Shares convert to zero assets | Increase shares to receive at least one asset unit |
+| 49 | `TransferExemptionLimitExceeded` | Too many transfer-exempt addresses configured | Maximum 50 transfer-exempt addresses allowed |
+| 50 | `NoShareholders` | Cannot distribute yield when there are no shareholders | Wait for deposits before distributing yield |
+
+### `vault_factory` errors
+
+| Code | Error Variant | Trigger Condition | Remediation |
+|---|---|---|---|
+| 1 | `VaultAlreadyExists` | Vault with this identifier already exists | Use a different vault name or identifier |
+| 2 | `VaultNotFound` | Vault address is not registered in factory | Verify the vault address is correct and registered |
+| 3 | `NotAuthorized` | Caller lacks required permissions | Use an authorized admin or operator account |
+| 4 | `VaultIsActive` | Cannot remove an active vault | Set vault to inactive via `set_vault_status` before removal |
+| 5 | `NotSupported` | Operation is not supported | Use alternative supported operations |
+| 6 | `InvalidInitParams` | Initialization parameters are invalid | Review and correct vault creation parameters |
+| 7 | `BatchTooLarge` | Batch size exceeds maximum of 10 vaults | Reduce batch size to 10 or fewer vaults |
+| 8 | `InvalidWasmHash` | WASM hash is invalid (all zeros) | Provide a valid WASM hash from contract upload |
+| 9 | `MigrationRequired` | Storage schema is outdated | Admin must call `migrate()` to update storage schema |
+
+---
+
 ## Contract function reference
 
 ### `single_rwa_vault`

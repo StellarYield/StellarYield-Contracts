@@ -170,6 +170,17 @@ pub struct UserEpochYield {
     pub claimed: bool,
 }
 
+/// Composite epoch metadata for efficient indexer queries.
+/// Returns yield, total shares, and timestamp in a single call.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EpochMetadata {
+    pub epoch: u32,
+    pub yield_amount: i128,
+    pub total_shares: i128,
+    pub timestamp: u64,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lightweight view helper structs (front-end UX helpers)
 // ─────────────────────────────────────────────────────────────────────────────
