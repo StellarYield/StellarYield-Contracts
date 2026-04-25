@@ -212,6 +212,53 @@ pub struct ClaimCostHint {
     pub unclaimed_epochs: u32,
 }
 
+/// Read-only preview for claiming yield over a bounded epoch range.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ClaimYieldRangePreview {
+    /// Total claimable yield over the requested range at call time.
+    pub claimable_yield: i128,
+    /// Number of epochs iterated (end - start + 1).
+    pub epochs_scanned: u32,
+}
+
+/// Reason codes for `can_request_early_redemption`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EarlyRedemptionPrecheckReason {
+    /// Vault is not in Active state.
+    NotActive,
+    /// Withdraw/redeem is currently frozen.
+    Frozen,
+    /// Address is blacklisted.
+    Blacklisted,
+    /// Requested shares is zero/negative.
+    ZeroAmount,
+    /// Caller does not have enough share balance.
+    InsufficientBalance,
+    /// Shares are too small to redeem into non-zero assets at current price.
+    TooSmall,
+}
+
+/// Structured result for `can_request_early_redemption`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EarlyRedemptionPrecheckResult {
+    Pass,
+    Fail(EarlyRedemptionPrecheckReason),
+}
+
+/// One-call summary view for a user's core position.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct UserOverview {
+    pub share_balance: i128,
+    pub pending_yield: i128,
+    pub total_deposited: i128,
+    pub is_blacklisted: bool,
+    pub is_kyc_verified: bool,
+}
+
 /// High-level vault metadata for one-call client initialization.
 #[contracttype]
 #[derive(Clone, Debug)]

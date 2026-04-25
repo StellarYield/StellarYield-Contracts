@@ -119,6 +119,7 @@ pub enum Key {
 
     // --- Blacklist ---
     Blacklst(Address),
+    BlacklistList,
 
     // --- Transfer exemptions ---
     TransferExempt(Address),
@@ -224,6 +225,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::TransferExemptList => 45u32.into_val(env),
             Key::XferKyc => 46u32.into_val(env),
             Key::OperatorList => 52u32.into_val(env),
+            Key::BlacklistList => 53u32.into_val(env),
             Key::EmgBal => 47u32.into_val(env),
             Key::EmgTotSup => 49u32.into_val(env),
             Key::TlkDelay => 50u32.into_val(env),
@@ -313,6 +315,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             45 => Ok(Key::TransferExemptList),
             46 => Ok(Key::XferKyc),
             52 => Ok(Key::OperatorList),
+            53 => Ok(Key::BlacklistList),
             47 => Ok(Key::EmgBal),
             49 => Ok(Key::EmgTotSup),
             50 => Ok(Key::TlkDelay),
@@ -1000,15 +1003,55 @@ pub fn get_blacklisted(e: &Env, addr: &Address) -> bool {
         .unwrap_or(false)
 }
 
-pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
+fn blacklist_index(addresses: &Vec<Address>, addr: &Address) -> Option<u32> {
+    (0..addresses.len()).find(|&i| addresses.get(i).unwrap() == *addr)
+}
+
+fn put_blacklisted_address_list(e: &Env, addresses: &Vec<Address>) {
+    if addresses.is_empty() {
+        e.storage().instance().remove(&Key::BlacklistList);
+    } else {
+        e.storage().instance().set(&Key::BlacklistList, addresses);
+    }
+}
+
+pub fn get_blacklisted_addresses(e: &Env) -> Vec<Address> {
     e.storage()
-        .persistent()
-        .set(&Key::Blacklst(addr.clone()), &status);
-    e.storage().persistent().extend_ttl(
-        &Key::Blacklst(addr.clone()),
-        BALANCE_LIFETIME_THRESHOLD,
-        BALANCE_BUMP_AMOUNT,
-    );
+        .instance()
+        .get(&Key::BlacklistList)
+        .unwrap_or_else(|| Vec::new(e))
+}
+
+pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
+    let key = Key::Blacklst(addr.clone());
+    let mut addresses = get_blacklisted_addresses(e);
+    let existing = blacklist_index(&addresses, addr);
+
+    if status {
+        if existing.is_none() {
+            addresses.push_back(addr.clone());
+            put_blacklisted_address_list(e, &addresses);
+        }
+
+        e.storage().persistent().set(&key, &true);
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+        return;
+    }
+
+    e.storage().persistent().remove(&key);
+
+    if existing.is_some() {
+        let mut updated = Vec::new(e);
+        for i in 0..addresses.len() {
+            let current = addresses.get(i).unwrap();
+            if current != *addr {
+                updated.push_back(current);
+            }
+        }
+        put_blacklisted_address_list(e, &updated);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

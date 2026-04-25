@@ -98,6 +98,7 @@ pub struct SingleRWAVault;
 /// Fixed-point precision for yield_per_share calculations (10^6).
 const PRECISION: i128 = 1_000_000;
 const MAX_OPERATOR_PAGE_SIZE: u32 = 50;
+const MAX_BLACKLIST_PAGE_SIZE: u32 = 50;
 
 /// Virtual offset for share price inflation attack mitigation (OpenZeppelin approach).
 /// Set to 10^6 to provide robust protection for 6-decimal assets like USDC.
@@ -992,6 +993,33 @@ impl SingleRWAVault {
         }
     }
 
+    /// Preview claimable yield for a bounded epoch range without mutating claim flags.
+    pub fn preview_claim_yield_range(
+        e: &Env,
+        user: Address,
+        start: u32,
+        end: u32,
+    ) -> ClaimYieldRangePreview {
+        require_current_schema(e);
+        let current = get_current_epoch(e);
+        if start == 0 || start > end || end > current {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        if end - start + 1 > 50 {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+
+        let mut total: i128 = 0;
+        for epoch in start..=end {
+            total += Self::pending_yield_for_epoch(e, user.clone(), epoch);
+        }
+
+        ClaimYieldRangePreview {
+            claimable_yield: total,
+            epochs_scanned: end - start + 1,
+        }
+    }
+
     pub fn pending_yield_for_epoch(e: &Env, user: Address, epoch: u32) -> i128 {
         let cur = get_current_epoch(e);
         if epoch == 0 || epoch > cur || get_has_claimed_epoch(e, &user, epoch) {
@@ -1355,6 +1383,17 @@ impl SingleRWAVault {
             maturity_date: get_maturity_date(e),
         }
     }
+
+    /// Return a compact per-user summary to reduce RPC fan-out for UIs.
+    pub fn get_user_overview(e: &Env, address: Address) -> UserOverview {
+        UserOverview {
+            share_balance: get_share_balance(e, &address),
+            pending_yield: Self::pending_yield(e, address.clone()),
+            total_deposited: get_user_deposited(e, &address),
+            is_blacklisted: get_blacklisted(e, &address),
+            is_kyc_verified: Self::is_kyc_verified(e, address),
+        }
+    }
     pub fn funding_target(e: &Env) -> i128 {
         get_funding_target(e)
     }
@@ -1590,6 +1629,7 @@ impl SingleRWAVault {
         caller.require_auth();
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_closed(e);
+        require_state(e, VaultState::Active);
         require_not_blacklisted(e, &caller);
 
         if shares <= 0 {
@@ -1783,6 +1823,42 @@ impl SingleRWAVault {
             net_assets: gross_assets - fee_amount,
             fee_bps,
         }
+    }
+
+    /// Read-only precheck for whether a user can request early redemption.
+    pub fn can_request_early_redemption(
+        e: &Env,
+        user: Address,
+        shares: i128,
+    ) -> EarlyRedemptionPrecheckResult {
+        require_current_schema(e);
+
+        if get_vault_state(e) != VaultState::Active {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::NotActive);
+        }
+        if (get_freeze_flags(e) & Self::FREEZE_WITHDRAW_REDEEM) != 0 {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::Frozen);
+        }
+        if get_blacklisted(e, &user) {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::Blacklisted);
+        }
+        if shares <= 0 {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::ZeroAmount);
+        }
+
+        let bal = get_share_balance(e, &user);
+        if bal < shares {
+            return EarlyRedemptionPrecheckResult::Fail(
+                EarlyRedemptionPrecheckReason::InsufficientBalance,
+            );
+        }
+
+        let assets = convert_to_assets_floor(e, shares);
+        if assets <= 0 {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::TooSmall);
+        }
+
+        EarlyRedemptionPrecheckResult::Pass
     }
 
     /// Set the early redemption fee (only by operator).
@@ -2016,6 +2092,28 @@ impl SingleRWAVault {
 
     pub fn is_blacklisted(e: &Env, address: Address) -> bool {
         get_blacklisted(e, &address)
+    }
+
+    /// Paginated view of blacklisted addresses.
+    ///
+    /// `start` is a 0-based offset into the blacklist list.
+    pub fn list_blacklisted(e: &Env, start: u32, limit: u32) -> Vec<Address> {
+        if limit == 0 || limit > MAX_BLACKLIST_PAGE_SIZE {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+
+        let all = get_blacklisted_addresses(e);
+        let len = all.len();
+        if start >= len {
+            return Vec::new(e);
+        }
+
+        let mut out = Vec::new(e);
+        let end = (start + limit).min(len);
+        for i in start..end {
+            out.push_back(all.get(i).unwrap());
+        }
+        out
     }
 
     // ─────────────────────────────────────────────────────────────────
