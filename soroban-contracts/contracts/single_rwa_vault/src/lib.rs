@@ -313,7 +313,13 @@ impl SingleRWAVault {
     pub fn zkme_verifier(e: &Env) -> Address {
         get_zkme_verifier(e)
     }
+    pub fn get_zkme_verifier(e: &Env) -> Address {
+        get_zkme_verifier(e)
+    }
     pub fn cooperator(e: &Env) -> Address {
+        get_cooperator(e)
+    }
+    pub fn get_cooperator(e: &Env) -> Address {
         get_cooperator(e)
     }
 
@@ -324,7 +330,7 @@ impl SingleRWAVault {
         require_valid_address(e, &verifier);
         let old = get_zkme_verifier(e);
         put_zkme_verifier(e, verifier.clone());
-        emit_zkme_verifier_updated(e, old, verifier);
+        emit_zkme_verifier_updated(e, caller, old, verifier);
         bump_instance(e);
     }
 
@@ -1890,6 +1896,9 @@ impl SingleRWAVault {
     /// - **Units**: Expressed in the vault's underlying asset units, consistent
     ///   with `decimals()`.
     pub fn min_deposit(e: &Env) -> i128 {
+        get_min_deposit(e)
+    }
+    pub fn get_min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
 

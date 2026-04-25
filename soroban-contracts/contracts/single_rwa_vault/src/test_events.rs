@@ -213,3 +213,32 @@ fn test_transfer_exemption_set_emits_event_with_correct_schema() {
     let exempt: bool = data.into_val(&ctx.env);
     assert!(exempt, "transfer exemption event: data must match status");
 }
+
+#[test]
+fn test_set_zkme_verifier_emits_event_with_caller_and_addresses() {
+    let ctx = setup_with_kyc_bypass();
+    let new_verifier = soroban_sdk::Address::generate(&ctx.env);
+    let old_verifier = ctx.vault().zkme_verifier();
+
+    ctx.vault().set_zkme_verifier(&ctx.admin, &new_verifier);
+
+    let events = ctx.env.events().all();
+    let verifier_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("zkme_upd")
+        }
+    });
+    let (_, topics, data) = verifier_event.expect("zkme verifier event must be emitted");
+
+    let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
+    assert_eq!(
+        topic_caller, ctx.admin,
+        "zkme verifier event: caller topic must match the authorized caller"
+    );
+
+    let (event_old, event_new): (soroban_sdk::Address, soroban_sdk::Address) =
+        data.into_val(&ctx.env);
+    assert_eq!(event_old, old_verifier, "zkme verifier event: old verifier must match");
+    assert_eq!(event_new, new_verifier, "zkme verifier event: new verifier must match");
+}

@@ -6,8 +6,9 @@ use soroban_sdk::{symbol_short, Address, Env, String};
 
 use crate::types::{Role, VaultState};
 
-pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
-    e.events().publish((symbol_short!("zkme_upd"),), (old, new));
+pub fn emit_zkme_verifier_updated(e: &Env, caller: Address, old: Address, new: Address) {
+    e.events()
+        .publish((symbol_short!("zkme_upd"), caller), (old, new));
 }
 
 pub fn emit_cooperator_updated(e: &Env, old: Address, new: Address) {
