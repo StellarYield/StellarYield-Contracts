@@ -251,6 +251,16 @@ pub enum EarlyRedemptionPrecheckReason {
     TooSmall,
 }
 
+/// Reason codes for non-success early redemption outcomes (cancel/reject).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum EarlyRedemptionCloseReason {
+    /// The user cancelled their own request.
+    UserCancelled,
+    /// An operator rejected the request.
+    OperatorRejected,
+}
+
 /// Structured result for `can_request_early_redemption`.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]

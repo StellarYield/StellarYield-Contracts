@@ -4,7 +4,7 @@
 
 use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
 
-use crate::types::{Role, VaultState};
+use crate::types::{EarlyRedemptionCloseReason, Role, VaultState};
 
 pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
     e.events().publish((symbol_short!("zkme_upd"),), (old, new));
@@ -143,6 +143,13 @@ enum EarlyRedemptionUserEventKind {
     Cancelled,
 }
 
+/// Which early-redemption non-success event to emit.
+#[derive(Copy, Clone)]
+enum EarlyRedemptionNonSuccessEventKind {
+    Cancelled,
+    Rejected,
+}
+
 /// Common early-redemption event layout: topics `(tag, user)`, data `(request_id, amount)`.
 ///
 /// Each `symbol_short!` lives in a `match` arm so topic symbols stay compile-time literals
@@ -166,6 +173,32 @@ fn publish_early_redemption_user_event(
         EarlyRedemptionUserEventKind::Cancelled => {
             e.events()
                 .publish((symbol_short!("erq_can"), user), (request_id, amount));
+        }
+    }
+}
+
+/// Enriched non-success early-redemption event layout: topics `(tag, user)`,
+/// data `(request_id, shares, reason_code)`.
+fn publish_early_redemption_non_success_event_v2(
+    e: &Env,
+    kind: EarlyRedemptionNonSuccessEventKind,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    reason: EarlyRedemptionCloseReason,
+) {
+    match kind {
+        EarlyRedemptionNonSuccessEventKind::Cancelled => {
+            e.events().publish(
+                (symbol_short!("erq_can2"), user),
+                (request_id, shares, reason),
+            );
+        }
+        EarlyRedemptionNonSuccessEventKind::Rejected => {
+            e.events().publish(
+                (symbol_short!("erq_rej2"), user),
+                (request_id, shares, reason),
+            );
         }
     }
 }
@@ -200,6 +233,44 @@ pub fn emit_early_redemption_cancelled(e: &Env, user: Address, request_id: u32, 
         user,
         request_id,
         shares,
+    );
+}
+
+/// Enriched event emitted by `cancel_early_redemption` (backward-compatible companion
+/// to `emit_early_redemption_cancelled`).
+pub fn emit_early_redemption_cancelled_v2(
+    e: &Env,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    reason: EarlyRedemptionCloseReason,
+) {
+    publish_early_redemption_non_success_event_v2(
+        e,
+        EarlyRedemptionNonSuccessEventKind::Cancelled,
+        user,
+        request_id,
+        shares,
+        reason,
+    );
+}
+
+/// Enriched event emitted by `reject_early_redemption` (backward-compatible companion
+/// to `emit_early_redemption_cancelled`).
+pub fn emit_early_redemption_rejected_v2(
+    e: &Env,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    reason: EarlyRedemptionCloseReason,
+) {
+    publish_early_redemption_non_success_event_v2(
+        e,
+        EarlyRedemptionNonSuccessEventKind::Rejected,
+        user,
+        request_id,
+        shares,
+        reason,
     );
 }
 

@@ -128,7 +128,6 @@ impl SingleRWAVault {
     /// enforces a maximum of 10 arguments per contract function.
     pub fn __constructor(e: &Env, params: InitParams) {
         // --- Validation ---
-        require_valid_address(e, &params.asset);
         require_valid_address(e, &params.admin);
         require_valid_address(e, &params.zkme_verifier);
         require_valid_address(e, &params.cooperator);
@@ -320,7 +319,6 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
-        require_valid_address(e, &verifier);
         let old = get_zkme_verifier(e);
         put_zkme_verifier(e, verifier.clone());
         emit_zkme_verifier_updated(e, old, verifier);
@@ -1799,6 +1797,14 @@ impl SingleRWAVault {
         put_share_balance(e, &caller, bal + req.shares);
         bump_balance(e, &caller);
 
+        // Emit v2 first so legacy listeners that read "last event" still see `erq_can`.
+        emit_early_redemption_cancelled_v2(
+            e,
+            caller.clone(),
+            request_id,
+            req.shares,
+            EarlyRedemptionCloseReason::UserCancelled,
+        );
         emit_early_redemption_cancelled(e, caller, request_id, req.shares);
         bump_instance(e);
     }
@@ -1831,6 +1837,15 @@ impl SingleRWAVault {
         put_share_balance(e, &user, bal + req.shares);
         bump_balance(e, &user);
 
+        // Emit v2 first so legacy listeners that read "last event" still see `erq_can`.
+        emit_early_redemption_rejected_v2(
+            e,
+            user.clone(),
+            request_id,
+            req.shares,
+            EarlyRedemptionCloseReason::OperatorRejected,
+        );
+        // Backward-compatible legacy event (historically emitted for both cancel and reject).
         emit_early_redemption_cancelled(e, user, request_id, req.shares);
         bump_instance(e);
     }
