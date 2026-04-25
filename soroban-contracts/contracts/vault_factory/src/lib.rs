@@ -60,7 +60,7 @@ impl VaultFactory {
         require_valid_address(e, &default_asset);
         require_valid_address(e, &zkme_verifier);
         require_valid_address(e, &cooperator);
-        
+
         put_admin(e, admin.clone());
         put_default_asset(e, default_asset);
         put_default_zkme_verifier(e, zkme_verifier);
@@ -385,11 +385,7 @@ impl VaultFactory {
     /// # Returns
     /// `Some(vault_address)` if a vault with matching name and symbol exists,
     /// `None` otherwise
-    pub fn vault_exists_by_name_symbol(
-        e: &Env,
-        name: String,
-        symbol: String,
-    ) -> Option<Address> {
+    pub fn vault_exists_by_name_symbol(e: &Env, name: String, symbol: String) -> Option<Address> {
         let count = get_vault_count(e);
         for i in 0..count {
             if let Some(vault) = get_vault_at_index(e, i) {
@@ -477,6 +473,57 @@ impl VaultFactory {
                             }
                         }
                         current_offset += 1;
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Return admin/operator addresses and mutable default configuration in one view struct.
+    ///
+    /// This simplifies governance and monitoring dashboards.
+    pub fn get_factory_admin_overview(e: &Env) -> FactoryAdminOverview {
+        FactoryAdminOverview {
+            admin: get_admin(e),
+            default_asset: get_default_asset(e),
+            default_zkme_verifier: get_default_zkme_verifier(e),
+            default_cooperator: get_default_cooperator(e),
+            vault_wasm_hash: get_vault_wasm_hash(e),
+            default_fee_bps: get_default_fee_bps(e),
+            vault_count: get_vault_count(e),
+        }
+    }
+
+    /// Paginated query of vaults filtered by type (e.g., SingleRwa vs Aggregator).
+    /// `vault_type` is the type to filter by.
+    /// `offset` is zero-based within the filtered set.
+    /// `limit` is capped at `MAX_STATUS_PAGE_SIZE` (50) to prevent expensive queries.
+    /// Returns an empty vec when the filtered set is empty or `offset` is out of range.
+    pub fn list_vaults_by_type(
+        e: &Env,
+        vault_type: VaultType,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<Address> {
+        let capped = limit.min(MAX_STATUS_PAGE_SIZE);
+        let total = get_vault_count(e);
+        let mut result: Vec<Address> = Vec::new(e);
+        if capped == 0 {
+            return result;
+        }
+        let mut cursor: u32 = 0;
+        for i in 0..total {
+            if let Some(vault) = get_vault_at_index(e, i) {
+                if let Some(info) = get_vault_info(e, &vault) {
+                    if info.vault_type == vault_type {
+                        if cursor >= offset {
+                            result.push_back(vault);
+                            if result.len() >= capped {
+                                break;
+                            }
+                        }
+                        cursor += 1;
                     }
                 }
             }
@@ -579,6 +626,7 @@ impl VaultFactory {
         result
     }
 
+<<<<<<< HEAD
     /// Return admin/operator addresses and mutable default configuration in one view struct.
     ///
     /// This simplifies governance and monitoring dashboards.
@@ -592,6 +640,42 @@ impl VaultFactory {
             default_fee_bps: get_default_fee_bps(e),
             vault_count: get_vault_count(e),
         }
+=======
+    /// Paginated query of vaults filtered by type (e.g., SingleRwa vs Aggregator).
+    /// `vault_type` is the type to filter by.
+    /// `offset` is zero-based within the filtered set.
+    /// `limit` is capped at `MAX_STATUS_PAGE_SIZE` (50) to prevent expensive queries.
+    /// Returns an empty vec when the filtered set is empty or `offset` is out of range.
+    pub fn list_vaults_by_type(
+        e: &Env,
+        vault_type: VaultType,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<Address> {
+        let capped = limit.min(MAX_STATUS_PAGE_SIZE);
+        let total = get_vault_count(e);
+        let mut result: Vec<Address> = Vec::new(e);
+        if capped == 0 {
+            return result;
+        }
+        let mut cursor: u32 = 0;
+        for i in 0..total {
+            if let Some(vault) = get_vault_at_index(e, i) {
+                if let Some(info) = get_vault_info(e, &vault) {
+                    if info.vault_type == vault_type {
+                        if cursor >= offset {
+                            result.push_back(vault);
+                            if result.len() >= capped {
+                                break;
+                            }
+                        }
+                        cursor += 1;
+                    }
+                }
+            }
+        }
+        result
+>>>>>>> 0b5cc81 (feat(vault): add safe_preview wrappers and deposit batch preflight)
     }
 
     // ─────────────────────────────────────────────────────────────────

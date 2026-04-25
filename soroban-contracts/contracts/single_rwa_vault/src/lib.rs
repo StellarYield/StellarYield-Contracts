@@ -132,7 +132,7 @@ impl SingleRWAVault {
         require_valid_address(e, &params.admin);
         require_valid_address(e, &params.zkme_verifier);
         require_valid_address(e, &params.cooperator);
-        
+
         if params.asset == e.current_contract_address() {
             panic_with_error!(e, Error::InvalidInitParams);
         }
@@ -602,6 +602,60 @@ impl SingleRWAVault {
         preview_redeem(e, shares)
     }
 
+    /// Safe preview of shares burned to withdraw exactly `assets` (rounding **up**).
+    /// Returns status code 0 on success; no panic on error conditions.
+    pub fn safe_preview_withdraw(e: &Env, assets: i128) -> SafePreviewResult {
+        if assets < 0 {
+            return SafePreviewResult {
+                amount: 0,
+                status_code: Error::ZeroAmount as u32,
+            };
+        }
+        let supply = get_total_supply(e);
+        let ta = total_assets(e);
+        if supply == 0 || ta == 0 {
+            return SafePreviewResult {
+                amount: assets,
+                status_code: 0,
+            };
+        }
+        let shares = math::mul_div_ceil(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET);
+        SafePreviewResult {
+            amount: shares,
+            status_code: 0,
+        }
+    }
+
+    /// Safe preview of assets received when redeeming `shares` (rounding **down**).
+    /// Returns status code 0 on success; no panic on error conditions.
+    pub fn safe_preview_redeem(e: &Env, shares: i128) -> SafePreviewResult {
+        if shares < 0 {
+            return SafePreviewResult {
+                amount: 0,
+                status_code: Error::ZeroAmount as u32,
+            };
+        }
+        let supply = get_total_supply(e);
+        let ta = total_assets(e);
+        if supply == 0 {
+            return SafePreviewResult {
+                amount: shares,
+                status_code: 0,
+            };
+        }
+        let assets = math::mul_div(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET);
+        if shares > 0 && assets == 0 {
+            return SafePreviewResult {
+                amount: 0,
+                status_code: Error::PreviewZeroAssets as u32,
+            };
+        }
+        SafePreviewResult {
+            amount: assets,
+            status_code: 0,
+        }
+    }
+
     // ERC-4626 pure conversion helpers (floor division)
     // ─────────────────────────────────────────────────────────────────
 
@@ -757,6 +811,98 @@ impl SingleRWAVault {
             return 0;
         }
         get_share_balance(e, &owner)
+    }
+
+    /// Batched deposit preflight check (bounded to avoid expensive calls).
+    /// Returns per-user deposit validation results with status codes and expected shares.
+    /// Max batch size: 50 entries per call.
+    pub fn can_deposit_many(
+        e: &Env,
+        users: Vec<Address>,
+        amounts: Vec<i128>,
+    ) -> Vec<DepositCheckResult> {
+        const MAX_BATCH: u32 = 50;
+        let mut results: Vec<DepositCheckResult> = Vec::new(e);
+
+        let actual_len = (users.len() as u32).min(amounts.len() as u32);
+        if actual_len == 0 {
+            return results;
+        }
+
+        let capped = actual_len.min(MAX_BATCH);
+        if get_paused(e) {
+            for i in 0..capped {
+                let user = users.get_unchecked(i);
+                results.push_back(DepositCheckResult {
+                    user,
+                    status_code: Error::VaultPaused as u32,
+                    expected_shares: 0,
+                });
+            }
+            return results;
+        }
+
+        let state = get_vault_state(e);
+        if state != VaultState::Funding && state != VaultState::Active {
+            for i in 0..capped {
+                let user = users.get_unchecked(i);
+                results.push_back(DepositCheckResult {
+                    user,
+                    status_code: Error::InvalidVaultState as u32,
+                    expected_shares: 0,
+                });
+            }
+            return results;
+        }
+
+        let min_dep = get_min_deposit(e);
+        let max_dep = get_max_deposit_per_user(e);
+        let target = get_funding_target(e);
+        let mut current_total = total_assets(e);
+
+        for i in 0..capped {
+            let user = users.get_unchecked(i);
+            let assets = amounts.get_unchecked(i);
+
+            let mut status_code = 0u32;
+
+            if assets < min_dep {
+                status_code = Error::BelowMinimumDeposit as u32;
+            } else if max_dep > 0 {
+                let already = get_user_deposited(e, &user);
+                if already + assets > max_dep {
+                    status_code = Error::ExceedsMaximumDeposit as u32;
+                }
+            }
+
+            if status_code == 0 && state == VaultState::Funding && target > 0 {
+                if current_total + assets > target {
+                    status_code = Error::FundingTargetExceeded as u32;
+                }
+            }
+
+            let expected_shares = if status_code == 0 {
+                let shares = preview_deposit(e, assets);
+                if shares == 0 {
+                    status_code = Error::PreviewZeroShares as u32;
+                }
+                shares
+            } else {
+                0
+            };
+
+            results.push_back(DepositCheckResult {
+                user,
+                status_code,
+                expected_shares,
+            });
+
+            if status_code == 0 && state == VaultState::Funding && target > 0 {
+                current_total += assets;
+            }
+        }
+
+        results
     }
 
     pub fn total_assets(e: &Env) -> i128 {
@@ -1208,7 +1354,7 @@ impl SingleRWAVault {
         if epoch > current {
             panic_with_error!(e, Error::InvalidEpochRange);
         }
-        
+
         EpochMetadata {
             epoch,
             yield_amount: get_epoch_yield(e, epoch),

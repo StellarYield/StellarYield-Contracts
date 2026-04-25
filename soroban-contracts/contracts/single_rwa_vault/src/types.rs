@@ -247,6 +247,29 @@ pub struct ClaimYieldRangePreview {
     pub epochs_scanned: u32,
 }
 
+/// Safe preview result for withdraw/redeem that avoids panics.
+/// Returns status code 0 on success, or a non-zero error code on failure.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SafePreviewResult {
+    /// The previewed asset/share amount (0 if status_code != 0).
+    pub amount: i128,
+    /// 0 = success, non-zero = error code (e.g., PreviewZeroAssets = 48).
+    pub status_code: u32,
+}
+
+/// Per-user deposit preflight result for batched deposit checks.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DepositCheckResult {
+    /// User address being checked.
+    pub user: Address,
+    /// 0 = deposit allowed, non-zero = error code (e.g., BelowMinimumDeposit = 6).
+    pub status_code: u32,
+    /// Expected share amount if deposit succeeds; 0 if status_code != 0.
+    pub expected_shares: i128,
+}
+
 /// Reason codes for `can_request_early_redemption`.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
