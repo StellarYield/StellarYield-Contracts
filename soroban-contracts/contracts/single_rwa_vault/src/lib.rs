@@ -9,6 +9,8 @@ mod token_interface;
 mod types;
 
 #[cfg(test)]
+mod bench;
+#[cfg(test)]
 mod fuzz_tests;
 #[cfg(test)]
 mod test_access_control;
