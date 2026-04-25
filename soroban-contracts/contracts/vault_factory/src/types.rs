@@ -93,6 +93,21 @@ pub struct FactoryDefaultsSnapshot {
     pub vault_wasm_hash: BytesN<32>,
 }
 
+/// Registry statistics snapshot containing aggregate vault metrics.
+///
+/// Useful for explorers and dashboards to efficiently retrieve key metrics
+/// without iterating through all vaults multiple times.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct RegistryStats {
+    /// Total number of vaults in the registry (all states)
+    pub total_vaults: u32,
+    /// Number of vaults with `active` flag set to true
+    pub active_vaults: u32,
+    /// Address of the most recently deployed vault (or None if no vaults exist)
+    pub latest_vault: Option<Address>,
+}
+
 /// Status filter used by `list_vaults_by_status`.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
