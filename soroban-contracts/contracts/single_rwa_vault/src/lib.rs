@@ -9,6 +9,8 @@ mod token_interface;
 mod types;
 
 #[cfg(test)]
+mod bench;
+#[cfg(test)]
 mod fuzz_tests;
 #[cfg(test)]
 mod test_access_control;
@@ -62,6 +64,8 @@ mod test_rbac;
 mod test_redemption;
 #[cfg(test)]
 mod test_rwa_setters;
+#[cfg(test)]
+mod test_share_price_oracle;
 #[cfg(test)]
 mod test_token;
 #[cfg(test)]
@@ -703,6 +707,59 @@ impl SingleRWAVault {
     }
 
     // ─────────────────────────────────────────────────────────────────
+    // Share-price oracle views (#119)
+    //
+    // External integrators (lending markets, DEXs, NAV reporters) can read
+    // the live share price without computing the ratio off-chain.  Historical
+    // price is available per epoch via `price_per_share_history`.
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Live share price scaled by `10^share_decimals`.
+    /// Returns `10^share_decimals` (par) when `total_supply == 0`.
+    pub fn share_price(e: &Env) -> i128 {
+        let decimals = get_share_decimals(e);
+        Self::share_price_with_precision(e, decimals)
+    }
+
+    /// Live share price scaled by `10^precision`. Returns `10^precision` (par)
+    /// when `total_supply == 0`. Caps `precision` at 18 to keep `pow` bounded
+    /// and the result within `i128`.
+    pub fn share_price_with_precision(e: &Env, precision: u32) -> i128 {
+        let p = if precision > 18 { 18 } else { precision };
+        let scale: i128 = 10i128.pow(p);
+        let supply = get_total_supply(e);
+        if supply == 0 {
+            return scale;
+        }
+        math::mul_div(e, total_assets(e), scale, supply)
+    }
+
+    /// Returns `(total_assets, total_supply)` for callers that prefer to
+    /// compute the ratio themselves (e.g. with their own scaling or rounding).
+    pub fn exchange_rate(e: &Env) -> (i128, i128) {
+        (total_assets(e), get_total_supply(e))
+    }
+
+    /// Net Asset Value per share. Alias for `share_price` named for traditional
+    /// finance integrators.
+    pub fn nav_per_share(e: &Env) -> i128 {
+        Self::share_price(e)
+    }
+
+    /// Share price at a specific epoch, scaled by `10^share_decimals`.
+    /// Reads the `(total_assets, total_supply)` pair snapshotted by
+    /// `distribute_yield`. Returns `0` for epochs with no recorded supply.
+    pub fn price_per_share_history(e: &Env, epoch: u32) -> i128 {
+        let supply = get_epoch_total_shares(e, epoch);
+        if supply == 0 {
+            return 0;
+        }
+        let assets = get_epoch_total_assets(e, epoch);
+        let scale: i128 = 10i128.pow(get_share_decimals(e));
+        math::mul_div(e, assets, scale, supply)
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Yield distribution
     // ─────────────────────────────────────────────────────────────────
 
@@ -739,7 +796,10 @@ impl SingleRWAVault {
         put_epoch_total_shares(e, epoch, total_supply);
         put_epoch_timestamp(e, epoch, e.ledger().timestamp());
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
-        put_total_deposited(e, get_total_deposited(e) + amount);
+        let new_total_deposited = get_total_deposited(e) + amount;
+        put_total_deposited(e, new_total_deposited);
+        // Snapshot total_assets at this epoch for the share-price oracle (#119).
+        put_epoch_total_assets(e, epoch, new_total_deposited);
 
         emit_yield_distributed(e, epoch, amount, e.ledger().timestamp());
 
@@ -1543,6 +1603,10 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InsufficientBalance);
         }
 
+        // Lock the asset value at request time so that yield distributed
+        // (or removed) between now and processing cannot move the payout.
+        let locked_asset_value = preview_redeem(e, shares);
+
         // --- Effects (Escrow shares) ---
         put_share_balance(e, &caller, bal - shares);
         let escrowed = get_escrowed_shares(e, &caller) + shares;
@@ -1560,6 +1624,7 @@ impl SingleRWAVault {
                 shares,
                 request_time: e.ledger().timestamp(),
                 processed: false,
+                locked_asset_value,
             },
         );
 
@@ -1593,12 +1658,20 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InsufficientBalance);
         }
 
-        // Payout math before irreversible updates — `preview_redeem` may panic on dust
-        // (ERC-4626 zero-asset guard) and must not run after escrow/supply are changed.
-        let assets = preview_redeem(e, req.shares);
+        // Use the asset value snapshotted at request time, not the current
+        // share price. This protects the user from share-price moves between
+        // request and processing.
+        let assets = req.locked_asset_value;
         let fee_bps = get_early_redemption_fee_bps(e) as i128;
         let fee = math::mul_div(e, assets, fee_bps, 10000);
         let net_assets = assets - fee;
+
+        // Vault liquidity guard: refuse to process if the locked payout exceeds
+        // the vault's current asset balance. The operator can wait for more
+        // assets, or the user can cancel the request.
+        if asset_balance_of_vault(e) < net_assets {
+            panic_with_error!(e, Error::InsufficientBalance);
+        }
 
         // --- Effects ---
         req.processed = true;

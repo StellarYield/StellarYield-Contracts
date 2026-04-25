@@ -1078,6 +1078,31 @@ pub fn has_timelock_action(e: &Env, action_id: u32) -> bool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Per-epoch share-price oracle snapshot (instance storage, keyed by epoch).
+// Captured at distribute_yield so historical share price is computable from
+// the recorded (total_assets, total_shares) pair without iterating users.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone)]
+pub enum OracleDataKey {
+    EpochTotalAssets(u32),
+}
+
+pub fn get_epoch_total_assets(e: &Env, epoch: u32) -> i128 {
+    e.storage()
+        .instance()
+        .get(&OracleDataKey::EpochTotalAssets(epoch))
+        .unwrap_or(0)
+}
+
+pub fn put_epoch_total_assets(e: &Env, epoch: u32, val: i128) {
+    e.storage()
+        .instance()
+        .set(&OracleDataKey::EpochTotalAssets(epoch), &val);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Per-epoch activity tracking (persistent, keyed by epoch or lifetime)
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -125,6 +125,10 @@ pub struct RedemptionRequest {
     pub shares: i128,
     pub request_time: u64,
     pub processed: bool,
+    /// Asset value of `shares` snapshotted at request time. Used at processing
+    /// time so that yield distributed (or removed) between request and process
+    /// cannot move the payout the user agreed to.
+    pub locked_asset_value: i128,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
