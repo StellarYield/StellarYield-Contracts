@@ -208,6 +208,19 @@ pub struct ClaimCostHint {
     pub unclaimed_epochs: u32,
 }
 
+/// High-level vault metadata for one-call client initialization.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VaultOverview {
+    pub state: VaultState,
+    pub paused: bool,
+    pub asset: Address,
+    pub total_assets: i128,
+    pub total_supply: i128,
+    pub current_epoch: u32,
+    pub maturity_date: u64,
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Timelock mechanism for critical admin operations
 // ─────────────────────────────────────────────────────────────────────────────

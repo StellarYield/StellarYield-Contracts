@@ -28,8 +28,9 @@ pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }
 
-pub fn emit_maturity_date_set(e: &Env, timestamp: u64) {
-    e.events().publish((symbol_short!("mat_set"),), timestamp);
+pub fn emit_maturity_date_set(e: &Env, old: u64, new: u64, state: VaultState) {
+    e.events()
+        .publish((symbol_short!("mat_set"),), (old, new, state));
 }
 
 pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
@@ -221,9 +222,12 @@ pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
         .publish((symbol_short!("vest_set"),), vesting_period);
 }
 
-/// Emitted by `set_funding_target`.
-pub fn emit_funding_target_set(e: &Env, target: i128) {
-    e.events().publish((symbol_short!("fund_set"),), target);
+/// Emitted by `set_funding_target` / `set_funding_target_with_reason`.
+///
+/// `reason` is a short operator-provided context string (may be empty).
+pub fn emit_funding_target_set(e: &Env, target: i128, reason: String) {
+    e.events()
+        .publish((symbol_short!("fund_set"),), (target, reason));
 }
 
 /// Emitted by `set_blacklisted`.

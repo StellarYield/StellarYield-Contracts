@@ -110,6 +110,8 @@ impl SingleRWAVault {
     /// Timeout for emergency proposals: 24 hours in seconds.
     pub const EMERGENCY_PROPOSAL_TIMEOUT: u64 = 86400;
     pub const MAX_TRANSFER_EXEMPTIONS: u32 = crate::storage::MAX_TRANSFER_EXEMPTIONS;
+    /// Max length (in characters) of the operator-provided funding target reason string.
+    pub const MAX_FUNDING_TARGET_REASON_LEN: u32 = 64;
 
     // ─────────────────────────────────────────────────────────────────
     // Constructor
@@ -1243,13 +1245,55 @@ impl SingleRWAVault {
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::LifecycleManager);
         require_not_closed(e);
+        let old = get_maturity_date(e);
+        let state = get_vault_state(e);
         put_maturity_date(e, timestamp);
-        emit_maturity_date_set(e, timestamp);
+        emit_maturity_date_set(e, old, timestamp, state);
         bump_instance(e);
     }
 
     pub fn maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
+    }
+
+    /// Return a compact, human-friendly share price in basis points relative to par.
+    ///
+    /// - `10_000` means 1.0 (par)
+    /// - `12_345` means 1.2345
+    ///
+    /// Rounding: rounds down (floor).
+    ///
+    /// Edge case: when `total_supply == 0`, returns `10_000` (par).
+    pub fn share_price_bps(e: &Env) -> u32 {
+        let total_supply = get_total_supply(e);
+        if total_supply <= 0 {
+            return 10_000;
+        }
+        let total_assets = total_assets(e);
+        if total_assets <= 0 {
+            return 0;
+        }
+        let bps = math::mul_div(e, total_assets, 10_000, total_supply);
+        if bps <= 0 {
+            0
+        } else if bps >= u32::MAX as i128 {
+            u32::MAX
+        } else {
+            bps as u32
+        }
+    }
+
+    /// Return high-level vault metadata in a single call.
+    pub fn get_vault_overview(e: &Env) -> VaultOverview {
+        VaultOverview {
+            state: get_vault_state(e),
+            paused: get_paused(e),
+            asset: get_asset(e),
+            total_assets: total_assets(e),
+            total_supply: get_total_supply(e),
+            current_epoch: get_current_epoch(e),
+            maturity_date: get_maturity_date(e),
+        }
     }
     pub fn funding_target(e: &Env) -> i128 {
         get_funding_target(e)
@@ -2323,11 +2367,21 @@ impl SingleRWAVault {
         get_expected_apy(e)
     }
     pub fn set_funding_target(e: &Env, caller: Address, target: i128) {
+        Self::set_funding_target_with_reason(e, caller, target, String::from_str(e, ""));
+    }
+
+    /// Set the funding target and emit an event with an optional reason string.
+    ///
+    /// `reason` must be <= `MAX_FUNDING_TARGET_REASON_LEN` characters.
+    pub fn set_funding_target_with_reason(e: &Env, caller: Address, target: i128, reason: String) {
         caller.require_auth();
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::LifecycleManager);
+        if reason.len() > Self::MAX_FUNDING_TARGET_REASON_LEN {
+            panic_with_error!(e, Error::InvalidInitParams);
+        }
         put_funding_target(e, target);
-        emit_funding_target_set(e, target);
+        emit_funding_target_set(e, target, reason);
         bump_instance(e);
     }
 
