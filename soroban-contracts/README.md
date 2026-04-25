@@ -468,7 +468,9 @@ let claimed = vault.claim_yield_for_epoch(&user, &1u32);
 
 ## VaultState transition diagram
 
-The vault progresses through a defined lifecycle with specific state transitions. Some transitions are operator-controlled, while others are automatic based on conditions.
+The vault progresses through a defined lifecycle with specific state transitions. Some transitions are operator-controlled, while others are automatic based on conditions. Understanding these states is critical for integrators building user interfaces and operators managing vault lifecycles.
+
+### Visual state machine
 
 ```
                                     ┌─────────────┐
@@ -512,40 +514,366 @@ The vault progresses through a defined lifecycle with specific state transitions
 
 ### State descriptions and allowed operations
 
-| State         | Description                                                        | Allowed Operations                                                                                                            | Exit Conditions                                                                                        |
-| ------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Funding**   | Initial state; accepting deposits to reach funding target          | `deposit`, `mint`, `transfer`, `approve`                                                                                      | Target met → `activate_vault()` → Active<br>Deadline passed → `cancel_funding()` → Cancelled           |
-| **Active**    | RWA investment is live; yield is distributed per epoch             | `deposit`, `mint`, `withdraw`, `redeem`, `transfer`, `approve`, `distribute_yield`, `claim_yield`, `request_early_redemption` | Maturity reached → `mature_vault()` → Matured<br>Emergency → `emergency_enable_pro_rata()` → Emergency |
-| **Matured**   | Investment matured; full redemptions enabled with auto-yield claim | `redeem_at_maturity`, `claim_yield`, `transfer`, `approve`                                                                    | All shares redeemed → `close_vault()` → Closed                                                         |
-| **Cancelled** | Funding failed; users can reclaim deposited assets                 | `refund` (burns shares, returns principal)                                                                                    | All shares refunded → Closed                                                                           |
-| **Closed**    | Terminal state; vault wound down                                   | Read-only queries                                                                                                             | None (terminal)                                                                                        |
-| **Emergency** | Emergency pro-rata distribution mode                               | `emergency_claim` (one-time pro-rata claim)                                                                                   | None (terminal)                                                                                        |
+| State         | Description                                                        | Allowed Operations                                                                                                            | Blocked Operations                                                         | Exit Conditions                                                                                        |
+| ------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Funding**   | Initial state; accepting deposits to reach funding target          | `deposit`, `mint`, `transfer`, `approve`, `balance`, `total_supply`                                                           | `withdraw`, `redeem`, `distribute_yield`, `claim_yield`, `mature_vault`    | Target met → `activate_vault()` → Active<br>Deadline passed → `cancel_funding()` → Cancelled           |
+| **Active**    | RWA investment is live; yield is distributed per epoch             | `deposit`, `mint`, `withdraw`, `redeem`, `transfer`, `approve`, `distribute_yield`, `claim_yield`, `request_early_redemption` | `redeem_at_maturity`, `refund`, `close_vault`                              | Maturity reached → `mature_vault()` → Matured<br>Emergency → `emergency_enable_pro_rata()` → Emergency |
+| **Matured**   | Investment matured; full redemptions enabled with auto-yield claim | `redeem_at_maturity`, `claim_yield`, `transfer`, `approve`, `withdraw`, `redeem`                                              | `deposit`, `mint`, `distribute_yield`, `activate_vault`                    | All shares redeemed → `close_vault()` → Closed                                                         |
+| **Cancelled** | Funding failed; users can reclaim deposited assets                 | `refund` (burns shares, returns principal), `balance`, `total_supply`                                                         | `deposit`, `mint`, `withdraw`, `redeem`, `distribute_yield`, `claim_yield` | All shares refunded → Closed                                                                           |
+| **Closed**    | Terminal state; vault wound down                                   | Read-only queries: `balance`, `total_supply`, `vault_state`, `get_vault_overview`                                             | All state-modifying operations                                             | None (terminal)                                                                                        |
+| **Emergency** | Emergency pro-rata distribution mode                               | `emergency_claim` (one-time pro-rata claim), read-only queries                                                                | All normal operations (deposit, withdraw, yield distribution)              | None (terminal)                                                                                        |
 
-### State transition rules
+### Detailed state transition rules
 
-1. **Funding → Active**: Requires `funding_target` to be met; triggered by operator via `activate_vault()`
-2. **Funding → Cancelled**: Requires `funding_deadline` to have passed without meeting target; triggered by operator/admin via `cancel_funding()`
-3. **Active → Matured**: Triggered by operator via `mature_vault()` after `maturity_date` is reached
-4. **Matured → Closed**: Triggered by operator/admin via `close_vault()` when `total_supply == 0` (all shares redeemed)
-5. **Cancelled → Closed**: Automatic when all users have called `refund()` and `total_supply == 0`
-6. **Any → Emergency**: Triggered by admin or multi-sig via `emergency_enable_pro_rata()` in crisis scenarios (terminal state)
+#### 1. Funding → Active
 
-### State guards
+**Trigger:** Operator calls `activate_vault()`
 
-Most contract functions include state guards that enforce valid lifecycle transitions:
+**Pre-conditions:**
+
+- `total_deposited >= funding_target` (funding target must be met)
+- Current state must be `Funding`
+- Caller must have `LifecycleManager` or `FullOperator` role
+
+**Effects:**
+
+- Vault state changes to `Active`
+- Yield distribution becomes enabled
+- Early redemption requests become possible
+- Emits `VaultStateChanged` event
+
+**Example:**
 
 ```rust
-// Example: deposit only allowed in Funding or Active
-require_active_or_funding(e);
-
-// Example: claim_yield only allowed in Active or Matured
-require_active_or_matured(e);
-
-// Example: redeem_at_maturity only allowed in Matured
-require_state(e, VaultState::Matured);
+// Check if funding target is met
+let is_met = vault.is_funding_target_met();
+if is_met {
+    vault.activate_vault(&operator);
+    // State is now Active
+}
 ```
 
-Attempting to call a function in an invalid state will panic with `Error::InvalidVaultState` (#5).
+#### 2. Funding → Cancelled
+
+**Trigger:** Operator/admin calls `cancel_funding()`
+
+**Pre-conditions:**
+
+- `current_timestamp > funding_deadline` (deadline must have passed)
+- `total_deposited < funding_target` (target not met)
+- Current state must be `Funding`
+- Caller must have `LifecycleManager` or `FullOperator` role or be admin
+
+**Effects:**
+
+- Vault state changes to `Cancelled`
+- Users can call `refund()` to reclaim their principal
+- All deposits are returned 1:1 (no yield, no fees)
+- Emits `FundingCancelled` event
+
+**Example:**
+
+```rust
+// After funding deadline passes without meeting target
+vault.cancel_funding(&operator);
+// Users can now call refund()
+vault.refund(&user); // Returns deposited assets
+```
+
+#### 3. Active → Matured
+
+**Trigger:** Operator calls `mature_vault()`
+
+**Pre-conditions:**
+
+- `current_timestamp >= maturity_date` (maturity date reached)
+- Current state must be `Active`
+- Caller must have `LifecycleManager` or `FullOperator` role
+
+**Effects:**
+
+- Vault state changes to `Matured`
+- `redeem_at_maturity()` becomes available (auto-claims yield)
+- New deposits are blocked
+- Yield distribution is blocked (no new epochs)
+- Existing yield can still be claimed
+- Emits `VaultStateChanged` event
+
+**Example:**
+
+```rust
+// After maturity date is reached
+vault.mature_vault(&operator);
+// Users can now redeem with auto-yield claim
+vault.redeem_at_maturity(&user, shares, &user);
+```
+
+#### 4. Matured → Closed
+
+**Trigger:** Operator/admin calls `close_vault()`
+
+**Pre-conditions:**
+
+- `total_supply == 0` (all shares must be redeemed)
+- Current state must be `Matured`
+- Caller must have `LifecycleManager` or `FullOperator` role or be admin
+
+**Effects:**
+
+- Vault state changes to `Closed` (terminal)
+- All operations blocked except read-only queries
+- Vault is permanently wound down
+- Emits `VaultStateChanged` event
+
+**Example:**
+
+```rust
+// After all users have redeemed
+if vault.total_supply() == 0 {
+    vault.close_vault(&operator);
+    // Vault is now permanently closed
+}
+```
+
+#### 5. Cancelled → Closed
+
+**Trigger:** Automatic when conditions are met
+
+**Pre-conditions:**
+
+- `total_supply == 0` (all shares refunded)
+- Current state is `Cancelled`
+
+**Effects:**
+
+- Vault automatically transitions to `Closed`
+- No explicit function call needed
+- Terminal state reached
+
+**Example:**
+
+```rust
+// After all users refund their shares
+vault.refund(&user1);
+vault.refund(&user2);
+// ... all users refund
+// Vault automatically becomes Closed when total_supply reaches 0
+```
+
+#### 6. Any → Emergency
+
+**Trigger:** Admin or multi-sig calls `emergency_enable_pro_rata()`
+
+**Pre-conditions:**
+
+- Caller must be admin OR multi-sig threshold met
+- Crisis scenario (e.g., RWA default, regulatory action, smart contract vulnerability)
+
+**Effects:**
+
+- Vault state changes to `Emergency` (terminal)
+- All normal operations cease
+- Users can call `emergency_claim()` once to receive pro-rata share of remaining assets
+- Formula: `user_claim = (user_shares / total_supply) × vault_balance`
+- Emits `EmergencyModeEnabled` event
+
+**Example:**
+
+```rust
+// In crisis scenario
+vault.emergency_enable_pro_rata(&admin);
+// Users claim their pro-rata share
+let amount = vault.emergency_claim(&user);
+// Each user can only claim once
+```
+
+### State guards and error handling
+
+The contract enforces state transitions through guard functions that panic with specific errors when called in invalid states:
+
+#### Guard functions
+
+```rust
+// Requires vault to be in Funding or Active state
+require_active_or_funding(e);
+// Used by: deposit, mint
+
+// Requires vault to be in Active or Matured state
+require_active_or_matured(e);
+// Used by: claim_yield, claim_yield_for_epoch, withdraw, redeem
+
+// Requires vault to be in a specific state
+require_state(e, VaultState::Matured);
+// Used by: redeem_at_maturity
+
+// Requires vault to NOT be in Closed state
+require_not_closed(e);
+// Used by: most state-modifying operations
+
+// Requires vault to be in Emergency state
+require_state(e, VaultState::Emergency);
+// Used by: emergency_claim
+```
+
+#### Error codes
+
+| Error Code | Error Name                 | Trigger Condition                              |
+| ---------- | -------------------------- | ---------------------------------------------- |
+| 5          | `InvalidVaultState`        | Operation not allowed in current vault state   |
+| 8          | `NotMatured`               | Operation requires Matured state               |
+| 10         | `FundingTargetNotMet`      | Cannot activate without meeting funding target |
+| 16         | `FundingDeadlinePassed`    | Funding deadline expired                       |
+| 17         | `FundingDeadlineNotPassed` | Deadline not yet reached for cancellation      |
+| 27         | `VaultNotEmpty`            | Cannot close vault with outstanding shares     |
+| 29         | `NotInEmergency`           | Operation requires Emergency state             |
+
+### State-specific behavior examples
+
+#### Funding state example
+
+```rust
+// Vault just deployed, in Funding state
+let vault = deploy_vault(&env, params);
+
+// Users can deposit
+vault.deposit(&user1, 100_000, &user1); // ✅ Allowed
+
+// Cannot distribute yield yet
+vault.distribute_yield(&operator, 5_000); // ❌ Panics: InvalidVaultState
+
+// Cannot claim yield
+vault.claim_yield(&user1); // ❌ Panics: InvalidVaultState
+
+// Can transfer shares
+vault.transfer(&user1, &user2, 1_000); // ✅ Allowed
+```
+
+#### Active state example
+
+```rust
+// Vault activated after meeting funding target
+vault.activate_vault(&operator);
+
+// All operations available
+vault.deposit(&user1, 50_000, &user1); // ✅ Allowed
+vault.distribute_yield(&operator, 5_000); // ✅ Allowed
+vault.claim_yield(&user1); // ✅ Allowed
+vault.withdraw(&user1, 10_000, &user1); // ✅ Allowed
+vault.request_early_redemption(&user1, 1_000); // ✅ Allowed
+
+// Cannot use maturity-specific functions
+vault.redeem_at_maturity(&user1, 1_000, &user1); // ❌ Panics: InvalidVaultState
+```
+
+#### Matured state example
+
+```rust
+// Vault matured after reaching maturity date
+vault.mature_vault(&operator);
+
+// Can redeem with auto-yield claim
+vault.redeem_at_maturity(&user1, shares, &user1); // ✅ Allowed
+
+// Can still claim unclaimed yield
+vault.claim_yield(&user1); // ✅ Allowed
+
+// Cannot deposit anymore
+vault.deposit(&user1, 10_000, &user1); // ❌ Panics: InvalidVaultState
+
+// Cannot distribute new yield
+vault.distribute_yield(&operator, 5_000); // ❌ Panics: InvalidVaultState
+```
+
+#### Cancelled state example
+
+```rust
+// Funding cancelled after deadline without meeting target
+vault.cancel_funding(&operator);
+
+// Users can only refund
+vault.refund(&user1); // ✅ Allowed - returns deposited principal
+
+// All other operations blocked
+vault.deposit(&user1, 10_000, &user1); // ❌ Panics: InvalidVaultState
+vault.claim_yield(&user1); // ❌ Panics: InvalidVaultState
+```
+
+#### Emergency state example
+
+```rust
+// Emergency mode activated
+vault.emergency_enable_pro_rata(&admin);
+
+// Users can claim pro-rata share once
+let amount = vault.emergency_claim(&user1); // ✅ Allowed (once)
+vault.emergency_claim(&user1); // ❌ Panics: AlreadyClaimedEmergency
+
+// All normal operations blocked
+vault.deposit(&user1, 10_000, &user1); // ❌ Panics: InvalidVaultState
+vault.claim_yield(&user1); // ❌ Panics: InvalidVaultState
+```
+
+### Integration guidelines
+
+#### For frontend developers
+
+1. **Always check current state** before rendering UI:
+
+   ```typescript
+   const state = await vault.vaultState();
+   if (state === VaultState.Funding) {
+     // Show deposit UI
+   } else if (state === VaultState.Active) {
+     // Show deposit, withdraw, claim yield UI
+   } else if (state === VaultState.Matured) {
+     // Show redeem at maturity UI
+   }
+   ```
+
+2. **Handle state transition events**:
+   - Subscribe to `VaultStateChanged` events
+   - Update UI when state changes
+   - Disable unavailable operations
+
+3. **Show appropriate messaging**:
+   - Funding: "Vault is raising capital"
+   - Active: "Investment is live, earning yield"
+   - Matured: "Investment matured, redeem your shares"
+   - Cancelled: "Funding cancelled, claim your refund"
+   - Closed: "Vault is closed"
+   - Emergency: "Emergency mode, claim your pro-rata share"
+
+#### For operators
+
+1. **Funding phase checklist**:
+   - Monitor `funding_progress_bps()` to track progress
+   - Check `is_funding_target_met()` before activating
+   - If deadline approaches without meeting target, prepare to call `cancel_funding()`
+
+2. **Active phase operations**:
+   - Call `distribute_yield()` at regular intervals (e.g., monthly)
+   - Process early redemption requests via `process_early_redemption()`
+   - Monitor vault health and yield performance
+
+3. **Maturity transition**:
+   - Call `mature_vault()` after `maturity_date` is reached
+   - Communicate to users that full redemptions are available
+   - Monitor `total_supply` to know when vault can be closed
+
+4. **Closing the vault**:
+   - Ensure `total_supply == 0` before calling `close_vault()`
+   - Verify all yield has been distributed and claimed
+   - Archive vault data for compliance
+
+#### For auditors
+
+Key invariants to verify:
+
+1. **State transition monotonicity**: States generally progress forward (except Emergency which can be triggered from any state)
+2. **Terminal states**: `Closed` and `Emergency` cannot transition to other states
+3. **Operation authorization**: State-modifying operations require appropriate roles
+4. **Asset conservation**: Total assets = deposits + yield - withdrawals - fees
+5. **Share accounting**: Total supply matches sum of all user balances
 
 ---
 
