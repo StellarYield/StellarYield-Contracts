@@ -194,6 +194,8 @@ pub struct RedemptionPreflight {
     pub assets_out: i128,
     pub can_redeem: bool,
     pub reason: String,
+}
+
 /// Composite epoch metadata for efficient indexer queries.
 /// Returns yield, total shares, and timestamp in a single call.
 #[contracttype]
@@ -407,6 +409,51 @@ pub struct EmergencyProposal {
     pub recipient: Address,
     pub proposed_at: u64,
     pub executed: bool,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Config snapshot (issue-265)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Immutable-ish consolidated view of frequently-read vault configuration
+/// parameters. Integrators can cache this struct and only refresh it on
+/// relevant admin events rather than issuing separate RPC calls per field.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ConfigSnapshot {
+    /// Early redemption fee in basis points (0–1_000; divide by 10_000 for %).
+    pub early_redemption_fee_bps: u32,
+    /// Minimum deposit amount in underlying asset units (0 = no minimum).
+    pub min_deposit: i128,
+    /// Maximum deposit per user in underlying asset units (0 = uncapped).
+    pub max_deposit_per_user: i128,
+    /// Address of the zkMe KYC verifier contract.
+    pub zkme_verifier: Address,
+    /// Cooperator address used when calling the zkMe verifier.
+    pub cooperator: Address,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pending redemption pagination (issue-282)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single entry in the paginated pending-redemption list returned by
+/// `list_pending_redemptions`. Contains only the fields useful for operator
+/// review dashboards; the full `RedemptionRequest` is available via
+/// `redemption_request(id)`.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PendingRedemptionEntry {
+    /// Monotonically increasing redemption ID (1-based).
+    pub id: u32,
+    /// Address that submitted the redemption request.
+    pub user: Address,
+    /// Number of shares locked in escrow for this request.
+    pub shares: i128,
+    /// Asset value snapshotted at request time (before fee).
+    pub locked_asset_value: i128,
+    /// Unix timestamp when the request was submitted.
+    pub request_time: u64,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

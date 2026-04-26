@@ -199,6 +199,162 @@ const tx = buildUnsignedTransaction({
 
 ---
 
+## Example 5 — Redeem shares at maturity
+
+Once the vault reaches the `Matured` state the operator calls `mature_vault`, after which investors can redeem their full principal plus any unclaimed yield in a single transaction.
+
+```typescript
+import { Networks, rpc } from "@stellar/stellar-sdk";
+import {
+  SingleRwaVaultClient,
+  buildUnsignedTransaction,
+} from "@stellaryield/sdk";
+
+const server = new rpc.Server("https://soroban-testnet.stellar.org");
+const user = "G...";
+const vaultId = "C...";
+
+const account = await server.getAccount(user);
+const vault = new SingleRwaVaultClient(vaultId);
+
+// Check current share balance
+const sharesOp = vault.balance(user);
+// simulate to read balance, then redeem the full amount
+const shares = 5_000_000n; // stroops of share tokens
+
+const op = vault.redeemAtMaturity(user, shares, user, user);
+const tx = buildUnsignedTransaction({
+  account,
+  networkPassphrase: Networks.TESTNET,
+  operation: op,
+});
+
+const sim = await server.simulateTransaction(tx);
+if (rpc.Api.isSimulationError(sim)) throw new Error(sim.error);
+// assemble with sorobanData from sim, sign, submit
+```
+
+**Early redemption (while vault is Active):**
+
+```typescript
+// Request an early exit — shares are escrowed until the operator processes it
+const requestOp = vault.requestEarlyRedemption(user, shares);
+const requestTx = buildUnsignedTransaction({
+  account,
+  networkPassphrase: Networks.TESTNET,
+  operation: requestOp,
+});
+const requestSim = await server.simulateTransaction(requestTx);
+// ... sign & submit; the response includes the queue position hint in events
+```
+
+---
+
+## Example 6 — List vaults from the factory
+
+Use the `VaultFactoryClient` to discover all deployed vaults or filter by asset.
+
+```typescript
+import { Networks, rpc } from "@stellar/stellar-sdk";
+import {
+  VaultFactoryClient,
+  simulateInvocation,
+} from "@stellaryield/sdk";
+
+const server = new rpc.Server("https://soroban-testnet.stellar.org");
+const factoryId = "C..."; // VaultFactory contract address
+const factory = new VaultFactoryClient(factoryId);
+
+const account = await server.getAccount("G...");
+
+// All registered vaults (returns Vec<Address>)
+const allVaults = await simulateInvocation<string[]>({
+  server,
+  account,
+  networkPassphrase: Networks.TESTNET,
+  contractId: factory.contractId,
+  method: "get_single_rwa_vaults",
+  args: [],
+});
+console.log("Vault addresses:", allVaults);
+
+// Paginated list — useful for large registries
+const page = factory.getVaultsPaginated(/* offset */ 0, /* limit */ 10);
+const pageTx = buildUnsignedTransaction({
+  account,
+  networkPassphrase: Networks.TESTNET,
+  operation: page,
+});
+const pageSim = await server.simulateTransaction(pageTx);
+// parse pageSim.result?.retval for the Vec<Address> value
+
+// Vaults backed by a specific asset (e.g. USDC)
+const usdcVaultsOp = factory.getVaultsByAsset("C...USDC...");
+```
+
+---
+
+## Example 7 — Status and config checks
+
+Read vault state, configuration, and a user's position without any on-chain writes.
+
+```typescript
+import { Networks, rpc } from "@stellar/stellar-sdk";
+import {
+  SingleRwaVaultClient,
+  simulateInvocation,
+} from "@stellaryield/sdk";
+
+const server = new rpc.Server("https://soroban-testnet.stellar.org");
+const user = "G...";
+const vaultId = "C...";
+const vault = new SingleRwaVaultClient(vaultId);
+const account = await server.getAccount(user);
+
+// One-call vault overview (state, total assets, epoch, maturity date …)
+const overview = await simulateInvocation({
+  server,
+  account,
+  networkPassphrase: Networks.TESTNET,
+  contractId: vault.contractId,
+  method: "get_vault_overview",
+  args: [],
+});
+console.log("Vault overview:", overview);
+
+// Consolidated config snapshot — cache and refresh only on relevant events
+// (dep_lim, fee_set, zkme_upd, coop_upd)
+const config = await simulateInvocation({
+  server,
+  account,
+  networkPassphrase: Networks.TESTNET,
+  contractId: vault.contractId,
+  method: "get_config_snapshot",
+  args: [],
+});
+console.log("Fee bps:", config.early_redemption_fee_bps);
+console.log("Min deposit:", config.min_deposit);
+
+// Per-user summary (balance, pending yield, KYC status …)
+const userOp = vault.invoke("get_user_overview", /* scAddress(user) */ );
+// or use simulateInvocation with method "get_user_overview"
+
+// KYC check before attempting a deposit
+const kyc = await simulateInvocation<boolean>({
+  server,
+  account,
+  networkPassphrase: Networks.TESTNET,
+  contractId: vault.contractId,
+  method: "is_kyc_verified",
+  args: [/* scAddress(user) */],
+});
+if (!kyc) {
+  console.warn("User has not passed KYC — deposit will be rejected.");
+}
+```
+
+---
+
 ## Read-only simulation (preview / views)
 
 ```typescript

@@ -724,6 +724,49 @@ impl SingleRWAVault {
         }
     }
 
+    /// Return a paginated page of pending (unprocessed) early redemption
+    /// requests ordered by ascending request ID.
+    ///
+    /// `offset` is the number of pending entries to skip; `limit` is the
+    /// maximum number to return, capped at `MAX_REDEMPTION_PAGE_SIZE` (20).
+    /// Processed requests are excluded from both offset counting and output.
+    ///
+    /// Operators can use this to build review dashboards without scanning the
+    /// entire request history or issuing per-ID RPC calls.
+    pub fn list_pending_redemptions(
+        e: &Env,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<PendingRedemptionEntry> {
+        const MAX_REDEMPTION_PAGE_SIZE: u32 = 20;
+        let cap = limit.min(MAX_REDEMPTION_PAGE_SIZE);
+        let total_requests = get_redemption_counter(e);
+        let mut out: Vec<PendingRedemptionEntry> = Vec::new(e);
+        let mut skipped: u32 = 0;
+
+        for id in 1..=total_requests {
+            if out.len() >= cap {
+                break;
+            }
+            let req = get_redemption_request(e, id);
+            if req.processed {
+                continue;
+            }
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+            out.push_back(PendingRedemptionEntry {
+                id,
+                user: req.user,
+                shares: req.shares,
+                locked_asset_value: req.locked_asset_value,
+                request_time: req.request_time,
+            });
+        }
+        out
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // ERC-4626 max helpers
     // ─────────────────────────────────────────────────────────────────
@@ -842,10 +885,10 @@ impl SingleRWAVault {
 
         // Validate inputs
         if users.len() != shares.len() {
-            panic_with_error!(e, Error::InvalidInput);
+            panic_with_error!(e, Error::InvalidInitParams);
         }
         if users.len() > MAX_BATCH_SIZE {
-            panic_with_error!(e, Error::InvalidInput);
+            panic_with_error!(e, Error::InvalidInitParams);
         }
 
         let mut results: Vec<RedemptionPreflight> = Vec::new(e);
@@ -898,6 +941,10 @@ impl SingleRWAVault {
                 can_redeem,
                 reason,
             });
+        }
+        results
+    }
+
     /// Batched deposit preflight check (bounded to avoid expensive calls).
     /// Returns per-user deposit validation results with status codes and expected shares.
     /// Max batch size: 50 entries per call.
@@ -1818,6 +1865,22 @@ impl SingleRWAVault {
             is_kyc_verified: Self::is_kyc_verified(e, address),
         }
     }
+    /// Return a consolidated snapshot of frequently-read vault configuration
+    /// parameters in a single RPC call.
+    ///
+    /// Integrators can cache this struct and refresh it only when they observe
+    /// events that mutate these fields (e.g. `dep_lim`, `fee_set`, `zkme_upd`,
+    /// `coop_upd`), avoiding redundant per-field fan-out calls.
+    pub fn get_config_snapshot(e: &Env) -> ConfigSnapshot {
+        ConfigSnapshot {
+            early_redemption_fee_bps: get_early_redemption_fee_bps(e),
+            min_deposit: get_min_deposit(e),
+            max_deposit_per_user: get_max_deposit_per_user(e),
+            zkme_verifier: get_zkme_verifier(e),
+            cooperator: get_cooperator(e),
+        }
+    }
+
     /// Returns the total asset amount targeted during the Funding state.
     ///
     /// ## Decimals & Formatting
@@ -2111,7 +2174,18 @@ impl SingleRWAVault {
         put_escrowed_shares(e, &caller, escrowed);
         bump_balance(e, &caller);
 
-        let id = get_redemption_counter(e) + 1;
+        // Compute approximate 1-based queue position before inserting the new
+        // request — count unprocessed entries that precede it.
+        let prev_total = get_redemption_counter(e);
+        let mut pending_before: u32 = 0;
+        for i in 1..=prev_total {
+            if !get_redemption_request(e, i).processed {
+                pending_before += 1;
+            }
+        }
+        let queue_position = pending_before + 1;
+
+        let id = prev_total + 1;
         put_redemption_counter(e, id);
         let user = caller.clone();
         put_redemption_request(
@@ -2126,7 +2200,7 @@ impl SingleRWAVault {
             },
         );
 
-        emit_early_redemption_requested(e, user, id, shares);
+        emit_early_redemption_requested(e, user, id, shares, queue_position);
         bump_instance(e);
         id
     }

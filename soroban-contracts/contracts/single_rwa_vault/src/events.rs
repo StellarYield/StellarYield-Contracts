@@ -159,13 +159,21 @@ fn publish_early_redemption_user_event(
 }
 
 /// Emitted by `request_early_redemption`.
-pub fn emit_early_redemption_requested(e: &Env, user: Address, request_id: u32, shares: i128) {
-    publish_early_redemption_user_event(
-        e,
-        EarlyRedemptionUserEventKind::Requested,
-        user,
-        request_id,
-        shares,
+///
+/// `queue_position` is an approximate 1-based position in the pending queue at
+/// the moment of submission (i.e. how many unprocessed requests preceded this
+/// one, plus one).  It is computed with a best-effort scan and may not reflect
+/// concurrent submissions; integrators should treat it as a UI hint only.
+pub fn emit_early_redemption_requested(
+    e: &Env,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    queue_position: u32,
+) {
+    e.events().publish(
+        (symbol_short!("erq_req"), user),
+        (request_id, shares, queue_position),
     );
 }
 
