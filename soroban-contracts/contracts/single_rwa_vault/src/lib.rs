@@ -896,7 +896,8 @@ impl SingleRWAVault {
         // Check vault state once
         let paused = get_paused(e);
         let state = get_vault_state(e);
-        let can_redeem_state = !paused && (state == VaultState::Active || state == VaultState::Matured);
+        let can_redeem_state =
+            !paused && (state == VaultState::Active || state == VaultState::Matured);
 
         for i in 0..users.len() {
             let user = users.get_unchecked(i);
@@ -2335,7 +2336,7 @@ impl SingleRWAVault {
     pub fn early_redemption_fee_bps(e: &Env) -> u32 {
         get_early_redemption_fee_bps(e)
     }
- 
+
     /// Returns the fee in basis points (0-10,000) that may be charged by the
     /// cooperator or platform for vault operations.
     ///

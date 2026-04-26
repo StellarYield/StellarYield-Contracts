@@ -126,7 +126,6 @@ pub fn emit_redeem_at_maturity(
 /// Which early-redemption user event to emit (same topics/data layout for all variants).
 #[derive(Copy, Clone)]
 enum EarlyRedemptionUserEventKind {
-    Requested,
     Processed,
     Cancelled,
 }
@@ -143,10 +142,6 @@ fn publish_early_redemption_user_event(
     amount: i128,
 ) {
     match kind {
-        EarlyRedemptionUserEventKind::Requested => {
-            e.events()
-                .publish((symbol_short!("erq_req"), user), (request_id, amount));
-        }
         EarlyRedemptionUserEventKind::Processed => {
             e.events()
                 .publish((symbol_short!("erq_done"), user), (request_id, amount));

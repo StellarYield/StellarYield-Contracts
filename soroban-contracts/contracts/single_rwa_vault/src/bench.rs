@@ -38,10 +38,10 @@ fn measure<F: FnOnce()>(ctx: &TestContext, label: &str, f: F) -> (u64, u64) {
     // Reset unlimited so the call always completes; we read what it actually
     // consumed afterward. The regression test compares against
     // REGRESSION_BUDGET independently.
-    ctx.env.budget().reset_unlimited();
+    ctx.env.cost_estimate().budget().reset_unlimited();
     f();
-    let cpu = ctx.env.budget().cpu_instruction_cost();
-    let mem = ctx.env.budget().memory_bytes_cost();
+    let cpu = ctx.env.cost_estimate().budget().cpu_instruction_cost();
+    let mem = ctx.env.cost_estimate().budget().memory_bytes_cost();
     println!("[bench] {label}: cpu={cpu} mem={mem}");
     (cpu, mem)
 }

@@ -239,6 +239,12 @@ fn test_set_zkme_verifier_emits_event_with_caller_and_addresses() {
 
     let (event_old, event_new): (soroban_sdk::Address, soroban_sdk::Address) =
         data.into_val(&ctx.env);
-    assert_eq!(event_old, old_verifier, "zkme verifier event: old verifier must match");
-    assert_eq!(event_new, new_verifier, "zkme verifier event: new verifier must match");
+    assert_eq!(
+        event_old, old_verifier,
+        "zkme verifier event: old verifier must match"
+    );
+    assert_eq!(
+        event_new, new_verifier,
+        "zkme verifier event: new verifier must match"
+    );
 }
