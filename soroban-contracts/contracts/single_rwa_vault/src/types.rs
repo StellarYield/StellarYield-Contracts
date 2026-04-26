@@ -194,6 +194,8 @@ pub struct RedemptionPreflight {
     pub assets_out: i128,
     pub can_redeem: bool,
     pub reason: String,
+}
+
 /// Composite epoch metadata for efficient indexer queries.
 /// Returns yield, total shares, and timestamp in a single call.
 #[contracttype]
@@ -315,6 +317,61 @@ pub struct UserOverview {
     pub total_deposited: i128,
     pub is_blacklisted: bool,
     pub is_kyc_verified: bool,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reconciliation / audit view structs
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Global yield accounting reconciliation snapshot.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct YieldReconciliation {
+    /// Sum of all epoch yields ever distributed.
+    pub total_yield_distributed: i128,
+    /// Sum of all yield ever claimed by users.
+    pub total_yield_claimed: i128,
+    /// Computed: distributed - claimed.
+    pub total_yield_unclaimed: i128,
+    /// Actual underlying token balance held by the vault contract.
+    pub vault_asset_balance: i128,
+    /// Net principal deposited (excludes yield distributions).
+    pub total_principal_deposited: i128,
+    /// Computed: vault_balance - (principal + unclaimed_yield).
+    pub balance_discrepancy: i128,
+}
+
+/// Public per-user position snapshot for reconciliation and support.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct UserPosition {
+    pub share_balance: i128,
+    /// User's ownership percentage in basis points (0–10_000).
+    pub share_percentage: i128,
+    pub total_deposited: i128,
+    pub total_yield_claimed: i128,
+    pub pending_yield: i128,
+    pub estimated_redemption_value: i128,
+    pub last_interaction_epoch: u32,
+    pub has_pending_redemption: bool,
+}
+
+/// High-level vault health snapshot for auditors and dashboards.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VaultHealth {
+    pub state: VaultState,
+    pub paused: bool,
+    pub total_supply: i128,
+    pub total_assets: i128,
+    /// total_assets * PRECISION / total_supply (0 when supply is 0).
+    pub share_price: i128,
+    pub current_epoch: u32,
+    pub time_to_maturity: u64,
+    /// Funding progress in basis points (0–10_000).
+    pub funding_progress: i128,
+    /// Current investor count estimate.
+    pub investor_count: u32,
 }
 
 /// High-level vault metadata for one-call client initialization.
