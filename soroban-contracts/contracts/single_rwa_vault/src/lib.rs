@@ -67,6 +67,8 @@ mod test_redemption;
 #[cfg(test)]
 mod test_rwa_setters;
 #[cfg(test)]
+mod test_safe_preview;
+#[cfg(test)]
 mod test_share_price_oracle;
 #[cfg(test)]
 mod test_token;
@@ -80,8 +82,6 @@ mod test_yield_shortfall;
 mod test_yield_vesting;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod test_safe_preview;
 
 pub use crate::storage::Key;
 pub use crate::types::*;
