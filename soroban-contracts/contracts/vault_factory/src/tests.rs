@@ -792,6 +792,222 @@ fn test_mixed_vault_types_registry_filtering() {
 
 // ─── Vault Ordering ───────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// #157 — Pagination over exact multiples of page size
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// When the total vault count is exactly 2× the page size (20 vaults, page 10),
+/// the first page must be full and the second page must be exactly the remainder
+/// — no duplicates, no omissions.
+#[test]
+fn test_get_vaults_paginated_exact_double_page_size() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let page_size: u32 = 10;
+    let total: u32 = page_size * 2; // exactly 20
+
+    let mut all_vaults = soroban_sdk::Vec::new(&e);
+    for _ in 0..total {
+        all_vaults.push_back(inject_vault(&e, &factory_id, true));
+    }
+
+    let page1 = client.get_vaults_paginated(&0, &page_size);
+    assert_eq!(
+        page1.len(),
+        page_size,
+        "first page must be exactly page_size items"
+    );
+
+    let page2 = client.get_vaults_paginated(&page_size, &page_size);
+    assert_eq!(
+        page2.len(),
+        page_size,
+        "second page must be exactly page_size items (no omissions)"
+    );
+
+    // No duplicates: union of both pages must equal the full vault list.
+    for i in 0..page_size {
+        assert_eq!(
+            page1.get(i).unwrap(),
+            all_vaults.get(i).unwrap(),
+            "page1[{i}] mismatch"
+        );
+        assert_eq!(
+            page2.get(i).unwrap(),
+            all_vaults.get(page_size + i).unwrap(),
+            "page2[{i}] mismatch"
+        );
+    }
+}
+
+/// When the total vault count is exactly 3× the page size (30 vaults, page 10),
+/// all three pages must each return exactly page_size items with no gaps.
+#[test]
+fn test_get_vaults_paginated_exact_triple_page_size() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let page_size: u32 = 10;
+    let total: u32 = page_size * 3; // exactly 30
+
+    let mut all_vaults = soroban_sdk::Vec::new(&e);
+    for _ in 0..total {
+        all_vaults.push_back(inject_vault(&e, &factory_id, true));
+    }
+
+    for page_idx in 0u32..3 {
+        let offset = page_idx * page_size;
+        let page = client.get_vaults_paginated(&offset, &page_size);
+        assert_eq!(
+            page.len(),
+            page_size,
+            "page {page_idx} must return exactly {page_size} items"
+        );
+        for i in 0..page_size {
+            assert_eq!(
+                page.get(i).unwrap(),
+                all_vaults.get(offset + i).unwrap(),
+                "page {page_idx} item {i} mismatch"
+            );
+        }
+    }
+
+    // Page after the last item returns empty.
+    let beyond = client.get_vaults_paginated(&total, &page_size);
+    assert_eq!(beyond.len(), 0, "page beyond the last item must be empty");
+}
+
+/// Exact-multiple test for active-only pagination: 20 active vaults, page 10.
+#[test]
+fn test_get_active_vaults_paginated_exact_double_page_size() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let page_size: u32 = 10;
+    let total: u32 = page_size * 2;
+
+    let mut active_vaults = soroban_sdk::Vec::new(&e);
+    for _ in 0..total {
+        active_vaults.push_back(inject_vault(&e, &factory_id, true));
+    }
+
+    let page1 = client.get_active_vaults_paginated(&0, &page_size);
+    assert_eq!(page1.len(), page_size, "first active page must be full");
+
+    let page2 = client.get_active_vaults_paginated(&page_size, &page_size);
+    assert_eq!(
+        page2.len(),
+        page_size,
+        "second active page must be full (no omissions)"
+    );
+
+    for i in 0..page_size {
+        assert_eq!(page1.get(i).unwrap(), active_vaults.get(i).unwrap());
+        assert_eq!(
+            page2.get(i).unwrap(),
+            active_vaults.get(page_size + i).unwrap()
+        );
+    }
+
+    // No additional items beyond page 2.
+    let empty = client.get_active_vaults_paginated(&total, &page_size);
+    assert_eq!(empty.len(), 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #156 — Default vault params sanity check
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Calling set_defaults stores asset, zkme_verifier, and cooperator, which are
+/// immediately readable via the corresponding view functions.  This is the
+/// canonical path for verifying that factory defaults are wired through
+/// correctly before creating vaults with them.
+#[test]
+fn test_default_vault_params_stored_and_readable() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, admin) = setup_factory(&e);
+
+    let new_asset = Address::generate(&e);
+    let new_zkme = Address::generate(&e);
+    let new_coop = Address::generate(&e);
+
+    client.set_defaults(&admin, &new_asset, &new_zkme, &new_coop);
+
+    assert_eq!(
+        client.default_asset(),
+        new_asset,
+        "default_asset must reflect the value passed to set_defaults"
+    );
+    assert_eq!(
+        client.default_zkme_verifier(),
+        new_zkme,
+        "default_zkme_verifier must reflect the value passed to set_defaults"
+    );
+    assert_eq!(
+        client.default_cooperator(),
+        new_coop,
+        "default_cooperator must reflect the value passed to set_defaults"
+    );
+}
+
+/// Overwriting defaults with a second set_defaults call replaces the previous
+/// values — there is no stale carry-over from the first call.
+#[test]
+fn test_default_vault_params_overwrite_previous() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, admin) = setup_factory(&e);
+
+    let asset_v1 = Address::generate(&e);
+    let zkme_v1 = Address::generate(&e);
+    let coop_v1 = Address::generate(&e);
+    client.set_defaults(&admin, &asset_v1, &zkme_v1, &coop_v1);
+
+    let asset_v2 = Address::generate(&e);
+    let zkme_v2 = Address::generate(&e);
+    let coop_v2 = Address::generate(&e);
+    client.set_defaults(&admin, &asset_v2, &zkme_v2, &coop_v2);
+
+    assert_eq!(client.default_asset(), asset_v2);
+    assert_eq!(client.default_zkme_verifier(), zkme_v2);
+    assert_eq!(client.default_cooperator(), coop_v2);
+}
+
+/// Non-admin callers must not be able to update defaults.
+#[test]
+#[should_panic]
+fn test_set_defaults_non_admin_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _admin) = setup_factory(&e);
+    let attacker = Address::generate(&e);
+
+    // Disable the blanket mock so auth is actually enforced.
+    // Re-register without mock_all_auths isn't straightforward in the test
+    // harness, so we rely on the contract's require_admin check panicking
+    // when called by a non-admin address.
+    client.set_defaults(
+        &attacker,
+        &Address::generate(&e),
+        &Address::generate(&e),
+        &Address::generate(&e),
+    );
+}
+
 /// get_all_vaults returns vaults in the order they were created.
 #[test]
 fn test_get_all_vaults_returns_vaults_in_creation_order() {

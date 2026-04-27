@@ -54,7 +54,7 @@ fn setup() -> (Env, Address, Address, Address) {
     let vault_id = env.register(SingleRWAVault, (default_params(&env, &admin, &asset_id),));
 
     // Redirect zkme_verifier to the vault itself → is_kyc_verified always true.
-    SingleRWAVaultClient::new(&env, &vault_id).set_zkme_verifier(&admin, &vault_id);
+    SingleRWAVaultClient::new(&env, &vault_id).set_zkme_verifier(&admin, &admin.clone());
 
     (env, vault_id, asset_id, admin)
 }

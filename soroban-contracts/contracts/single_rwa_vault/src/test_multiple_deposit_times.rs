@@ -33,23 +33,28 @@ fn test_multiple_deposit_times() {
     mint_usdc(env, &ctx.asset_id, &user_b, 1_000_000);
     ctx.vault().deposit(&user_b, &1_000_000i128, &user_b);
 
-    // B should get 500k shares (1M assets / 2.0 price)
-    assert_eq!(ctx.vault().balance(&user_b), 500_000);
+    // With virtual offset: shares = 1M * (1M + 1M) / (2M + 1M) = 666,666
+    // B should get 666,666 shares (virtual offset changes the ratio)
+    assert_eq!(ctx.vault().balance(&user_b), 666_666);
 
     // Distribute more yield (1.5M assets)
     mint_usdc(env, &ctx.asset_id, &ctx.operator, 1_500_000);
     ctx.vault().distribute_yield(&ctx.operator, &1_500_000i128);
 
-    // Total shares = 1.5M. Yield = 1.5M.
-    // Yield per share = 1.0.
+    // Total shares = 1M (A) + 666,666 (B) = 1,666,666
+    // Epoch 2 yield = 1.5M distributed among 1,666,666 shares
 
-    // Pending yield for A (1M shares) = 1M (epoch 1) + 1M (epoch 2) = 2M
-    // Pending yield for B (0.5M shares) = 0.5M (epoch 2)
+    // Pending yield for A:
+    // - Epoch 1: 1M * 1M / 1M = 1M
+    // - Epoch 2: 1M * 1.5M / 1,666,666 = 900,000 (floor)
+    // Total: 1,900,000
+    assert_eq!(ctx.vault().pending_yield(&user_a), 1_900_000);
 
-    assert_eq!(ctx.vault().pending_yield(&user_a), 2_000_000);
-    assert_eq!(ctx.vault().pending_yield(&user_b), 500_000);
+    // Pending yield for B:
+    // - Epoch 2: 666,666 * 1.5M / 1,666,666 = 599,999 (floor)
+    assert_eq!(ctx.vault().pending_yield(&user_b), 599_999);
 
     // Verify shares remain correct
     assert_eq!(ctx.vault().balance(&user_a), 1_000_000);
-    assert_eq!(ctx.vault().balance(&user_b), 500_000);
+    assert_eq!(ctx.vault().balance(&user_b), 666_666);
 }

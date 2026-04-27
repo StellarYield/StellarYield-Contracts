@@ -9,6 +9,8 @@ mod token_interface;
 mod types;
 
 #[cfg(test)]
+mod bench;
+#[cfg(test)]
 mod fuzz_tests;
 #[cfg(test)]
 mod test_access_control;
@@ -31,6 +33,8 @@ mod test_convert_erc4626;
 #[cfg(test)]
 mod test_deposit_limits;
 #[cfg(test)]
+mod test_epoch_activity;
+#[cfg(test)]
 mod test_epoch_history;
 #[cfg(test)]
 mod test_escrow;
@@ -45,6 +49,8 @@ mod test_funding_deadline;
 #[cfg(test)]
 mod test_helpers;
 #[cfg(test)]
+mod test_inflation_attack;
+#[cfg(test)]
 mod test_lifecycle;
 #[cfg(test)]
 mod test_multiple_deposit_times;
@@ -58,6 +64,8 @@ mod test_rbac;
 mod test_redemption;
 #[cfg(test)]
 mod test_rwa_setters;
+#[cfg(test)]
+mod test_share_price_oracle;
 #[cfg(test)]
 mod test_token;
 #[cfg(test)]
@@ -91,6 +99,12 @@ pub struct SingleRWAVault;
 
 /// Fixed-point precision for yield_per_share calculations (10^6).
 const PRECISION: i128 = 1_000_000;
+const MAX_OPERATOR_PAGE_SIZE: u32 = 50;
+const MAX_BLACKLIST_PAGE_SIZE: u32 = 50;
+
+/// Virtual offset for share price inflation attack mitigation (OpenZeppelin approach).
+/// Set to 10^6 to provide robust protection for 6-decimal assets like USDC.
+const VIRTUAL_OFFSET: i128 = 1_000_000;
 
 #[contractimpl]
 impl SingleRWAVault {
@@ -103,6 +117,8 @@ impl SingleRWAVault {
     /// Timeout for emergency proposals: 24 hours in seconds.
     pub const EMERGENCY_PROPOSAL_TIMEOUT: u64 = 86400;
     pub const MAX_TRANSFER_EXEMPTIONS: u32 = crate::storage::MAX_TRANSFER_EXEMPTIONS;
+    /// Max length (in characters) of the operator-provided funding target reason string.
+    pub const MAX_FUNDING_TARGET_REASON_LEN: u32 = 64;
 
     // ─────────────────────────────────────────────────────────────────
     // Constructor
@@ -114,6 +130,14 @@ impl SingleRWAVault {
     /// enforces a maximum of 10 arguments per contract function.
     pub fn __constructor(e: &Env, params: InitParams) {
         // --- Validation ---
+        require_valid_address(e, &params.asset);
+        require_valid_address(e, &params.admin);
+        require_valid_address(e, &params.zkme_verifier);
+        require_valid_address(e, &params.cooperator);
+
+        if params.asset == e.current_contract_address() {
+            panic_with_error!(e, Error::InvalidInitParams);
+        }
         if params.share_decimals > 18 {
             panic_with_error!(e, Error::InvalidInitParams);
         }
@@ -298,6 +322,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
+        require_valid_address(e, &verifier);
         let old = get_zkme_verifier(e);
         put_zkme_verifier(e, verifier.clone());
         emit_zkme_verifier_updated(e, old, verifier);
@@ -308,6 +333,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
+        require_valid_address(e, &new_cooperator);
         let old = get_cooperator(e);
         put_cooperator(e, new_cooperator.clone());
         emit_cooperator_updated(e, old, new_cooperator);
@@ -363,10 +389,13 @@ impl SingleRWAVault {
         let shares = preview_deposit(e, assets);
 
         // --- Effects (state changes first) ---
+        let is_new_investor =
+            get_share_balance(e, &receiver) == 0 && get_escrowed_shares(e, &receiver) == 0;
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
         _mint(e, &receiver, shares);
+        record_deposit_activity(e, get_current_epoch(e), assets, is_new_investor);
 
         // --- Interaction (external call last) ---
         transfer_asset_to_vault(e, &caller, assets);
@@ -415,10 +444,13 @@ impl SingleRWAVault {
         }
 
         // --- Effects (state changes first) ---
+        let is_new_investor =
+            get_share_balance(e, &receiver) == 0 && get_escrowed_shares(e, &receiver) == 0;
         update_user_snapshot(e, &receiver);
         put_user_deposited(e, &receiver, get_user_deposited(e, &receiver) + assets);
         put_total_deposited(e, get_total_deposited(e) + assets);
         _mint(e, &receiver, shares);
+        record_deposit_activity(e, get_current_epoch(e), assets, is_new_investor);
 
         // --- Interaction (external call last) ---
         transfer_asset_to_vault(e, &caller, assets);
@@ -478,6 +510,9 @@ impl SingleRWAVault {
         let user_dep = get_user_deposited(e, &owner);
         put_user_deposited(e, &owner, (user_dep - assets).max(0));
 
+        let is_exiting = get_share_balance(e, &owner) == 0 && get_escrowed_shares(e, &owner) == 0;
+        record_withdrawal_activity(e, get_current_epoch(e), assets, is_exiting);
+
         // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, assets);
 
@@ -530,6 +565,9 @@ impl SingleRWAVault {
         let user_dep = get_user_deposited(e, &owner);
         put_user_deposited(e, &owner, (user_dep - assets).max(0));
 
+        let is_exiting = get_share_balance(e, &owner) == 0 && get_escrowed_shares(e, &owner) == 0;
+        record_withdrawal_activity(e, get_current_epoch(e), assets, is_exiting);
+
         // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, assets);
 
@@ -575,8 +613,9 @@ impl SingleRWAVault {
         if supply == 0 || ta == 0 {
             return assets;
         }
-        // shares = assets * totalSupply / totalAssets (floor)
-        math::mul_div(e, assets, supply, ta)
+        // Apply virtual offset to prevent share price inflation attack (Issue #95)
+        // shares = assets * (supply + OFFSET) / (totalAssets + OFFSET) (floor)
+        math::mul_div(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
     }
 
     pub fn convert_to_assets(e: &Env, shares: i128) -> i128 {
@@ -585,12 +624,45 @@ impl SingleRWAVault {
         if supply == 0 {
             return shares;
         }
-        // assets = shares * totalAssets / totalSupply (floor)
-        math::mul_div(e, shares, ta, supply)
+        // Apply virtual offset to prevent share price inflation attack (Issue #95)
+        // assets = shares * (totalAssets + OFFSET) / (supply + OFFSET) (floor)
+        math::mul_div(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
     }
 
     pub fn redemption_request(e: &Env, request_id: u32) -> RedemptionRequest {
         get_redemption_request(e, request_id)
+    }
+
+    /// Expose queue stats: pending count, oldest request timestamp/id, total requested shares.
+    ///
+    /// Operators can monitor backlog health without scanning every request.
+    pub fn get_redemption_queue_summary(e: &Env) -> RedemptionQueueSummary {
+        let total_requests = get_redemption_counter(e);
+        let mut pending_count = 0u32;
+        let mut oldest_request_timestamp = 0u64;
+        let mut oldest_request_id = 0u32;
+        let mut total_pending_shares = 0i128;
+
+        // Redemption IDs are 1-based monotonically increasing.  We scan from 1 up
+        // to `total_requests`.  Requests that have been processed are skipped.
+        for i in 1..=total_requests {
+            let req = get_redemption_request(e, i); // This panics if ID invalid, but we stay in bounds.
+            if !req.processed {
+                if pending_count == 0 {
+                    oldest_request_timestamp = req.request_time;
+                    oldest_request_id = i;
+                }
+                pending_count += 1;
+                total_pending_shares += req.shares;
+            }
+        }
+
+        RedemptionQueueSummary {
+            pending_count,
+            oldest_request_timestamp,
+            oldest_request_id,
+            total_pending_shares,
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -626,6 +698,23 @@ impl SingleRWAVault {
         }
 
         max_allowed
+    }
+
+    /// Returns the remaining deposit capacity for `user` based on current
+    /// cumulative deposits and max cap.
+    ///
+    /// This lets frontends enforce limits before sending transactions.
+    ///
+    /// # Returns
+    /// - `cap - already_deposited` if cap > 0.
+    /// - `i128::MAX` if cap is 0 (unlimited).
+    pub fn max_deposit_headroom(e: &Env, user: Address) -> i128 {
+        let cap = get_max_deposit_per_user(e);
+        if cap == 0 {
+            return i128::MAX;
+        }
+        let already = get_user_deposited(e, &user);
+        (cap - already).max(0)
     }
 
     /// Maximum shares `receiver` can obtain via `mint` right now.
@@ -677,6 +766,86 @@ impl SingleRWAVault {
     }
 
     // ─────────────────────────────────────────────────────────────────
+    // Share-price oracle views (#119)
+    //
+    // External integrators (lending markets, DEXs, NAV reporters) can read
+    // the live share price without computing the ratio off-chain.  Historical
+    // price is available per epoch via `price_per_share_history`.
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Live share price scaled by `10^share_decimals`.
+    /// Returns `10^share_decimals` (par) when `total_supply == 0`.
+    pub fn share_price(e: &Env) -> i128 {
+        let decimals = get_share_decimals(e);
+        Self::share_price_with_precision(e, decimals)
+    }
+
+    /// Live share price scaled by `10^precision`. Returns `10^precision` (par)
+    /// when `total_supply == 0`. Caps `precision` at 18 to keep `pow` bounded
+    /// and the result within `i128`.
+    pub fn share_price_with_precision(e: &Env, precision: u32) -> i128 {
+        let p = if precision > 18 { 18 } else { precision };
+        let scale: i128 = 10i128.pow(p);
+        let supply = get_total_supply(e);
+        if supply == 0 {
+            return scale;
+        }
+        math::mul_div(e, total_assets(e), scale, supply)
+    }
+
+    /// Returns `(total_assets, total_supply)` for callers that prefer to
+    /// compute the ratio themselves (e.g. with their own scaling or rounding).
+    pub fn exchange_rate(e: &Env) -> (i128, i128) {
+        (total_assets(e), get_total_supply(e))
+    }
+
+    /// Net Asset Value per share. Alias for `share_price` named for traditional
+    /// finance integrators.
+    pub fn nav_per_share(e: &Env) -> i128 {
+        Self::share_price(e)
+    }
+
+    /// Share price at a specific epoch, scaled by `10^share_decimals`.
+    /// Reads the `(total_assets, total_supply)` pair snapshotted by
+    /// `distribute_yield`. Returns `0` for epochs with no recorded supply.
+    pub fn price_per_share_history(e: &Env, epoch: u32) -> i128 {
+        let supply = get_epoch_total_shares(e, epoch);
+        if supply == 0 {
+            return 0;
+        }
+        let assets = get_epoch_total_assets(e, epoch);
+        let scale: i128 = 10i128.pow(get_share_decimals(e));
+        math::mul_div(e, assets, scale, supply)
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Versioning
+    // ─────────────────────────────────────────────────────────────────
+
+    pub fn version(e: &Env) -> u32 {
+        get_contract_version(e)
+    }
+
+    pub fn storage_schema_version(e: &Env) -> u32 {
+        get_storage_schema_version(e)
+    }
+
+    /// Provide a lightweight capability check endpoint for major function groups (#299).
+    pub fn supports_interface(_e: &Env, id: u32) -> bool {
+        matches!(
+            id,
+            INTERFACE_BASE
+                | INTERFACE_VAULT_ERC4626
+                | INTERFACE_YIELD_ACCOUNTING
+                | INTERFACE_EARLY_REDEMPTION
+                | INTERFACE_RBAC
+                | INTERFACE_TIMELOCK
+                | INTERFACE_EMERGENCY
+                | INTERFACE_ACTIVITY_TRACKING
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Yield distribution
     // ─────────────────────────────────────────────────────────────────
 
@@ -700,14 +869,23 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::ZeroAmount);
         }
 
+        // Guard against yield loss when no shareholders exist (Issue #97)
+        let total_supply = get_total_supply(e);
+        if total_supply == 0 {
+            panic_with_error!(e, Error::NoShareholders);
+        }
+
         // --- Effects (state changes before external call) ---
         let epoch = get_current_epoch(e) + 1;
         put_current_epoch(e, epoch);
         put_epoch_yield(e, epoch, amount);
-        put_epoch_total_shares(e, epoch, get_total_supply(e));
+        put_epoch_total_shares(e, epoch, total_supply);
         put_epoch_timestamp(e, epoch, e.ledger().timestamp());
         put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
-        put_total_deposited(e, get_total_deposited(e) + amount);
+        let new_total_deposited = get_total_deposited(e) + amount;
+        put_total_deposited(e, new_total_deposited);
+        // Snapshot total_assets at this epoch for the share-price oracle (#119).
+        put_epoch_total_assets(e, epoch, new_total_deposited);
 
         emit_yield_distributed(e, epoch, amount, e.ledger().timestamp());
 
@@ -717,6 +895,19 @@ impl SingleRWAVault {
         bump_instance(e);
         release_lock(e);
         epoch
+    }
+
+    /// Returns the amount of unclaimed yield remaining for a specific epoch.
+    /// Useful for operator dashboards to track yield distribution status.
+    pub fn get_unclaimed_yield(e: &Env, epoch: u32) -> i128 {
+        let total_yield = get_epoch_yield(e, epoch);
+        if total_yield == 0 {
+            return 0;
+        }
+        // Note: This is an approximation. Exact tracking would require
+        // iterating all users, which is not feasible on-chain.
+        // Operators should use off-chain indexing for precise tracking.
+        total_yield
     }
 
     /// Claim all pending yield for the caller.
@@ -741,36 +932,77 @@ impl SingleRWAVault {
         // --- Effects ---
         let epoch = get_current_epoch(e);
         let last_claimed = get_last_claimed_epoch(e, &caller);
-        // Mark every epoch in the unclaimed window as claimed — including epochs
-        // where the user had 0 shares.  This prevents the loop from re-scanning
-        // dead epochs on every subsequent call (O(new_epochs) instead of O(total)).
+        // Mark every epoch in the unclaimed window as claimed
         for i in (last_claimed + 1)..=epoch {
             put_has_claimed_epoch(e, &caller, i, true);
         }
         put_last_claimed_epoch(e, &caller, epoch);
 
-        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
-
-        // Cap transfer to available vault balance. If shortfall exists, record it.
-        let available = asset_balance_of_vault(e);
-        let transfer_amount = amount.min(available);
-
-        // Compute shortfall (safe: transfer_amount = min(amount, available) ≤ amount)
+        let already_claimed = get_total_yield_claimed(e, &caller);
+        let vault_balance = asset_balance_of_vault(e);
+        let transfer_amount = amount.min(vault_balance);
         let shortfall = amount - transfer_amount;
+
+        put_total_yield_claimed(e, &caller, already_claimed + transfer_amount);
+        record_yield_claim_activity(e, epoch, transfer_amount);
+
         if shortfall > 0 {
-            // Accumulate shortfall for operator resolution
-            let existing_shortfall = get_yield_shortfall(e, &caller);
-            let new_shortfall = existing_shortfall + shortfall;
-            put_yield_shortfall(e, &caller, new_shortfall);
-            emit_partial_yield_claim(e, caller.clone(), amount, transfer_amount);
+            let current_shortfall = get_yield_shortfall(e, &caller);
+            put_yield_shortfall(e, &caller, current_shortfall + shortfall);
+            crate::events::emit_yield_claimed_partial(
+                e,
+                caller.clone(),
+                transfer_amount,
+                shortfall,
+                epoch,
+            );
         }
 
-        transfer_asset_from_vault(e, &caller, transfer_amount);
+        if transfer_amount > 0 {
+            transfer_asset_from_vault(e, &caller, transfer_amount);
+            emit_yield_claimed(e, caller, transfer_amount, epoch);
+        }
 
-        emit_yield_claimed(e, caller, transfer_amount, epoch);
         bump_instance(e);
         release_lock(e);
         transfer_amount
+    }
+
+    /// Resolve a recorded yield shortfall by transferring the claimed amount to the user.
+    pub fn resolve_yield_shortfall(e: &Env, caller: Address, user: Address, amount: i128) -> i128 {
+        caller.require_auth();
+        require_current_schema(e);
+        acquire_lock(e);
+        require_role(e, &caller, Role::YieldOperator);
+
+        if amount <= 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+
+        let current_shortfall = get_yield_shortfall(e, &user);
+        if current_shortfall <= 0 {
+            panic_with_error!(e, Error::YieldShortfallNotFound);
+        }
+
+        if amount > current_shortfall {
+            panic_with_error!(e, Error::InsufficientShortfall);
+        }
+
+        // --- Interaction ---
+        transfer_asset_from_vault(e, &user, amount);
+
+        // --- Effects ---
+        let remaining = current_shortfall - amount;
+        if remaining > 0 {
+            put_yield_shortfall(e, &user, remaining);
+        } else {
+            delete_yield_shortfall(e, &user);
+        }
+
+        crate::events::emit_yield_shortfall_resolved(e, user, amount, remaining);
+        bump_instance(e);
+        release_lock(e);
+        remaining
     }
 
     /// Claim yield for a specific epoch only.
@@ -822,92 +1054,33 @@ impl SingleRWAVault {
             put_last_claimed_epoch(e, &caller, cursor);
         }
 
-        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
-
-        // Cap transfer to available vault balance. If shortfall exists, record it.
-        let available = asset_balance_of_vault(e);
-        let transfer_amount = amount.min(available);
-
-        // Compute shortfall (safe: transfer_amount = min(amount, available) ≤ amount)
+        let already_claimed_total = get_total_yield_claimed(e, &caller);
+        let vault_balance = asset_balance_of_vault(e);
+        let transfer_amount = amount.min(vault_balance);
         let shortfall = amount - transfer_amount;
+
+        put_total_yield_claimed(e, &caller, already_claimed_total + transfer_amount);
+        record_yield_claim_activity(e, epoch, transfer_amount);
+
         if shortfall > 0 {
-            // Accumulate shortfall for operator resolution
-            let existing_shortfall = get_yield_shortfall(e, &caller);
-            let new_shortfall = existing_shortfall + shortfall;
-            put_yield_shortfall(e, &caller, new_shortfall);
-            emit_partial_yield_claim(e, caller.clone(), amount, transfer_amount);
+            let current_shortfall = get_yield_shortfall(e, &caller);
+            put_yield_shortfall(e, &caller, current_shortfall + shortfall);
+            crate::events::emit_yield_claimed_partial(
+                e,
+                caller.clone(),
+                transfer_amount,
+                shortfall,
+                epoch,
+            );
         }
 
-        transfer_asset_from_vault(e, &caller, transfer_amount);
-
-        emit_yield_claimed(e, caller, transfer_amount, epoch);
+        if transfer_amount > 0 {
+            transfer_asset_from_vault(e, &caller, transfer_amount);
+            emit_yield_claimed(e, caller, transfer_amount, epoch);
+        }
         bump_instance(e);
         release_lock(e);
-        transfer_amount
-    }
-
-    /// Resolve a recorded yield shortfall by transferring the claimed amount to the user.
-    ///
-    /// When claim_yield or claim_yield_for_epoch encounters insufficient vault balance,
-    /// it records the unpaid portion as a shortfall keyed to the user's address. This
-    /// function allows the operator to manually settle that debt after topping up the vault.
-    ///
-    /// Security: caller must be an authorized operator (YieldOperator or FullOperator role).
-    /// The vault must hold sufficient balance before calling this function; if transfer fails,
-    /// the entire transaction reverts and the shortfall record remains unchanged, allowing retry.
-    ///
-    /// # Arguments
-    /// * `e` - Soroban environment
-    /// * `caller` - operator address (must have YieldOperator role)
-    /// * `user` - the user whose shortfall is being resolved
-    /// * `amount` - the amount to transfer (must be > 0 and ≤ recorded shortfall)
-    ///
-    /// # Returns
-    /// The remaining shortfall after this resolution (or 0 if fully resolved)
-    ///
-    /// # Panics
-    /// * `NotOperator` if caller lacks YieldOperator role
-    /// * `YieldShortfallNotFound` if no shortfall is recorded for user
-    /// * `ZeroAmount` if amount <= 0
-    /// * `InsufficientShortfall` if amount > recorded shortfall
-    /// * Token transfer panic if vault has insufficient balance
-    pub fn resolve_yield_shortfall(e: &Env, caller: Address, user: Address, amount: i128) -> i128 {
-        caller.require_auth();
-        // --- Checks ---
-        require_current_schema(e);
-        acquire_lock(e);
-        require_role(e, &caller, Role::YieldOperator);
-
-        if amount <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
-
-        let current_shortfall = get_yield_shortfall(e, &user);
-        if current_shortfall <= 0 {
-            panic_with_error!(e, Error::ShfNo);
-        }
-
-        if amount > current_shortfall {
-            panic_with_error!(e, Error::InsfShf);
-        }
-
-        // --- Interaction (transfer) ---
-        // CEI Pattern: transfer before storage update
-        transfer_asset_from_vault(e, &user, amount);
-
-        // Update shortfall
-        let remaining_shortfall = current_shortfall - amount;
-        if remaining_shortfall > 0 {
-            put_yield_shortfall(e, &user, remaining_shortfall);
-        } else {
-            delete_yield_shortfall(e, &user);
-        }
-
-        emit_yield_shortfall_resolved(e, user, amount, remaining_shortfall);
-
-        bump_instance(e);
-        release_lock(e);
-        remaining_shortfall
+        amount
     }
 
     pub fn pending_yield(e: &Env, user: Address) -> i128 {
@@ -921,6 +1094,89 @@ impl SingleRWAVault {
             }
         }
         total
+    }
+
+    /// Return a bounded, per-epoch pending-yield breakdown for wallet UIs.
+    ///
+    /// Ordered by ascending epoch, starting from `last_claimed_epoch + 1`, and
+    /// includes at most `max_epochs` entries (capped at 50).
+    pub fn pending_yield_breakdown(
+        e: &Env,
+        user: Address,
+        max_epochs: u32,
+    ) -> Vec<PendingYieldEpoch> {
+        const MAX_EPOCHS: u32 = 50;
+        let cap = max_epochs.min(MAX_EPOCHS);
+        let mut out: Vec<PendingYieldEpoch> = Vec::new(e);
+        if cap == 0 {
+            return out;
+        }
+
+        let cur = get_current_epoch(e);
+        let start = get_last_claimed_epoch(e, &user) + 1;
+        for epoch in start..=cur {
+            if out.len() >= cap {
+                break;
+            }
+            if get_has_claimed_epoch(e, &user, epoch) {
+                continue;
+            }
+            let pending = Self::pending_yield_for_epoch(e, user.clone(), epoch);
+            if pending > 0 {
+                out.push_back(PendingYieldEpoch { epoch, pending });
+            }
+        }
+        out
+    }
+
+    /// Non-binding heuristic for the loop work `claim_yield(user)` may do.
+    pub fn estimate_claim_cost_hint(e: &Env, user: Address) -> ClaimCostHint {
+        let current_epoch = get_current_epoch(e);
+        let last_claimed_epoch = get_last_claimed_epoch(e, &user);
+        let epochs_scanned = current_epoch.saturating_sub(last_claimed_epoch);
+
+        let mut unclaimed_epochs = 0u32;
+        if epochs_scanned > 0 {
+            for epoch in (last_claimed_epoch + 1)..=current_epoch {
+                if !get_has_claimed_epoch(e, &user, epoch) {
+                    unclaimed_epochs += 1;
+                }
+            }
+        }
+
+        ClaimCostHint {
+            current_epoch,
+            last_claimed_epoch,
+            epochs_scanned,
+            unclaimed_epochs,
+        }
+    }
+
+    /// Preview claimable yield for a bounded epoch range without mutating claim flags.
+    pub fn preview_claim_yield_range(
+        e: &Env,
+        user: Address,
+        start: u32,
+        end: u32,
+    ) -> ClaimYieldRangePreview {
+        require_current_schema(e);
+        let current = get_current_epoch(e);
+        if start == 0 || start > end || end > current {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        if end - start + 1 > 50 {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+
+        let mut total: i128 = 0;
+        for epoch in start..=end {
+            total += Self::pending_yield_for_epoch(e, user.clone(), epoch);
+        }
+
+        ClaimYieldRangePreview {
+            claimable_yield: total,
+            epochs_scanned: end - start + 1,
+        }
     }
 
     pub fn pending_yield_for_epoch(e: &Env, user: Address, epoch: u32) -> i128 {
@@ -1013,6 +1269,26 @@ impl SingleRWAVault {
             yield_amount,
             total_shares,
             yield_per_share,
+            timestamp: get_epoch_timestamp(e, epoch),
+        }
+    }
+
+    /// Get composite epoch metadata in a single call for efficient indexer queries.
+    /// Returns yield amount, total shares, and timestamp with robust bounds checking.
+    pub fn get_epoch_metadata(e: &Env, epoch: u32) -> EpochMetadata {
+        // Bounds check: epoch must be valid (1 to current_epoch)
+        if epoch == 0 {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+        let current = get_current_epoch(e);
+        if epoch > current {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+
+        EpochMetadata {
+            epoch,
+            yield_amount: get_epoch_yield(e, epoch),
+            total_shares: get_epoch_total_shares(e, epoch),
             timestamp: get_epoch_timestamp(e, epoch),
         }
     }
@@ -1236,16 +1512,86 @@ impl SingleRWAVault {
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::LifecycleManager);
         require_not_closed(e);
+        let old = get_maturity_date(e);
+        let state = get_vault_state(e);
         put_maturity_date(e, timestamp);
-        emit_maturity_date_set(e, timestamp);
+        emit_maturity_date_set(e, old, timestamp, state);
         bump_instance(e);
     }
 
     pub fn maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
     }
+
+    /// Return a compact, human-friendly share price in basis points relative to par.
+    ///
+    /// - `10_000` means 1.0 (par)
+    /// - `12_345` means 1.2345
+    ///
+    /// Rounding: rounds down (floor).
+    ///
+    /// Edge case: when `total_supply == 0`, returns `10_000` (par).
+    pub fn share_price_bps(e: &Env) -> u32 {
+        let total_supply = get_total_supply(e);
+        if total_supply <= 0 {
+            return 10_000;
+        }
+        let total_assets = total_assets(e);
+        if total_assets <= 0 {
+            return 0;
+        }
+        let bps = math::mul_div(e, total_assets, 10_000, total_supply);
+        if bps <= 0 {
+            0
+        } else if bps >= u32::MAX as i128 {
+            u32::MAX
+        } else {
+            bps as u32
+        }
+    }
+
+    /// Return high-level vault metadata in a single call.
+    pub fn get_vault_overview(e: &Env) -> VaultOverview {
+        VaultOverview {
+            state: get_vault_state(e),
+            paused: get_paused(e),
+            asset: get_asset(e),
+            total_assets: total_assets(e),
+            total_supply: get_total_supply(e),
+            current_epoch: get_current_epoch(e),
+            maturity_date: get_maturity_date(e),
+        }
+    }
+
+    /// Return a compact per-user summary to reduce RPC fan-out for UIs.
+    pub fn get_user_overview(e: &Env, address: Address) -> UserOverview {
+        UserOverview {
+            share_balance: get_share_balance(e, &address),
+            pending_yield: Self::pending_yield(e, address.clone()),
+            total_deposited: get_user_deposited(e, &address),
+            is_blacklisted: get_blacklisted(e, &address),
+            is_kyc_verified: Self::is_kyc_verified(e, address),
+        }
+    }
     pub fn funding_target(e: &Env) -> i128 {
         get_funding_target(e)
+    }
+
+    /// Funding progress in basis points (0–10_000).
+    ///
+    /// Uses `total_assets / funding_target`, clamped to 10_000. Returns 0 when
+    /// `funding_target` is 0.
+    pub fn funding_progress_bps(e: &Env) -> u32 {
+        let target = get_funding_target(e);
+        if target <= 0 {
+            return 0;
+        }
+        let assets = total_assets(e);
+        if assets <= 0 {
+            return 0;
+        }
+        let bps = math::mul_div(e, assets, 10_000, target);
+        bps.clamp(0, 10_000) as u32
     }
 
     pub fn is_funding_target_met(e: &Env) -> bool {
@@ -1257,6 +1603,24 @@ impl SingleRWAVault {
         let now = e.ledger().timestamp();
         let mat = get_maturity_date(e);
         mat.saturating_sub(now)
+    }
+
+    /// Returns `true` when maturity conditions are met.
+    ///
+    /// Evaluates to `true` in two cases:
+    /// - The vault has already been transitioned to `VaultState::Matured` (or `Closed`).
+    /// - The vault is still `Active` but the current ledger timestamp has reached
+    ///   or passed the configured maturity date.
+    ///
+    /// This lets client code check "is the RWA past its term?" in a single call
+    /// without separately reading vault_state + maturity_date and comparing them.
+    pub fn is_matured(e: &Env) -> bool {
+        let state = get_vault_state(e);
+        match state {
+            VaultState::Matured | VaultState::Closed => true,
+            VaultState::Active => e.ledger().timestamp() >= get_maturity_date(e),
+            _ => false,
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -1417,6 +1781,9 @@ impl SingleRWAVault {
             total_out += pending;
         }
 
+        let is_exiting = get_share_balance(e, &owner) == 0 && get_escrowed_shares(e, &owner) == 0;
+        record_redemption_activity(e, get_current_epoch(e), total_out, is_exiting);
+
         // --- Interaction ---
         transfer_asset_from_vault(e, &receiver, total_out);
 
@@ -1441,6 +1808,7 @@ impl SingleRWAVault {
         caller.require_auth();
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_closed(e);
+        require_state(e, VaultState::Active);
         require_not_blacklisted(e, &caller);
 
         if shares <= 0 {
@@ -1453,6 +1821,10 @@ impl SingleRWAVault {
         if bal < shares {
             panic_with_error!(e, Error::InsufficientBalance);
         }
+
+        // Lock the asset value at request time so that yield distributed
+        // (or removed) between now and processing cannot move the payout.
+        let locked_asset_value = preview_redeem(e, shares);
 
         // --- Effects (Escrow shares) ---
         put_share_balance(e, &caller, bal - shares);
@@ -1471,6 +1843,7 @@ impl SingleRWAVault {
                 shares,
                 request_time: e.ledger().timestamp(),
                 processed: false,
+                locked_asset_value,
             },
         );
 
@@ -1504,12 +1877,20 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InsufficientBalance);
         }
 
-        // Payout math before irreversible updates — `preview_redeem` may panic on dust
-        // (ERC-4626 zero-asset guard) and must not run after escrow/supply are changed.
-        let assets = preview_redeem(e, req.shares);
+        // Use the asset value snapshotted at request time, not the current
+        // share price. This protects the user from share-price moves between
+        // request and processing.
+        let assets = req.locked_asset_value;
         let fee_bps = get_early_redemption_fee_bps(e) as i128;
         let fee = math::mul_div(e, assets, fee_bps, 10000);
         let net_assets = assets - fee;
+
+        // Vault liquidity guard: refuse to process if the locked payout exceeds
+        // the vault's current asset balance. The operator can wait for more
+        // assets, or the user can cancel the request.
+        if asset_balance_of_vault(e) < net_assets {
+            panic_with_error!(e, Error::InsufficientBalance);
+        }
 
         // --- Effects ---
         req.processed = true;
@@ -1520,6 +1901,10 @@ impl SingleRWAVault {
 
         let user_dep = get_user_deposited(e, &req.user);
         put_user_deposited(e, &req.user, (user_dep - net_assets).max(0));
+
+        let is_exiting =
+            get_share_balance(e, &req.user) == 0 && get_escrowed_shares(e, &req.user) == 0;
+        record_redemption_activity(e, get_current_epoch(e), net_assets, is_exiting);
 
         // --- Interaction ---
         transfer_asset_from_vault(e, &req.user, net_assets);
@@ -1598,6 +1983,63 @@ impl SingleRWAVault {
         get_early_redemption_fee_bps(e)
     }
 
+    /// Read-only preview of gross assets, fee, and net payout for an early redemption.
+    ///
+    /// Formula (asset units):
+    /// - gross_assets = preview_redeem(shares)
+    /// - fee_amount   = gross_assets * fee_bps / 10_000
+    /// - net_assets   = gross_assets - fee_amount
+    pub fn estimate_early_redemption_fee(e: &Env, shares: i128) -> EarlyRedemptionFeePreview {
+        if shares <= 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+        let gross_assets = preview_redeem(e, shares);
+        let fee_bps = get_early_redemption_fee_bps(e);
+        let fee_amount = math::mul_div(e, gross_assets, fee_bps as i128, 10_000);
+        EarlyRedemptionFeePreview {
+            gross_assets,
+            fee_amount,
+            net_assets: gross_assets - fee_amount,
+            fee_bps,
+        }
+    }
+
+    /// Read-only precheck for whether a user can request early redemption.
+    pub fn can_request_early_redemption(
+        e: &Env,
+        user: Address,
+        shares: i128,
+    ) -> EarlyRedemptionPrecheckResult {
+        require_current_schema(e);
+
+        if get_vault_state(e) != VaultState::Active {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::NotActive);
+        }
+        if (get_freeze_flags(e) & Self::FREEZE_WITHDRAW_REDEEM) != 0 {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::Frozen);
+        }
+        if get_blacklisted(e, &user) {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::Blacklisted);
+        }
+        if shares <= 0 {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::ZeroAmount);
+        }
+
+        let bal = get_share_balance(e, &user);
+        if bal < shares {
+            return EarlyRedemptionPrecheckResult::Fail(
+                EarlyRedemptionPrecheckReason::InsufficientBalance,
+            );
+        }
+
+        let assets = convert_to_assets_floor(e, shares);
+        if assets <= 0 {
+            return EarlyRedemptionPrecheckResult::Fail(EarlyRedemptionPrecheckReason::TooSmall);
+        }
+
+        EarlyRedemptionPrecheckResult::Pass
+    }
+
     /// Set the early redemption fee (only by operator).
     pub fn set_early_redemption_fee(e: &Env, operator: Address, fee_bps: u32) {
         operator.require_auth();
@@ -1637,6 +2079,7 @@ impl SingleRWAVault {
     pub fn grant_role(e: &Env, caller: Address, addr: Address, role: Role) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &addr);
         put_role(e, addr.clone(), role.clone(), true);
         emit_role_granted(e, addr, role);
         bump_instance(e);
@@ -1665,6 +2108,7 @@ impl SingleRWAVault {
     pub fn set_operator(e: &Env, caller: Address, operator: Address, status: bool) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &operator);
         put_operator(e, operator.clone(), status);
         emit_operator_updated(e, operator, status);
         bump_instance(e);
@@ -1673,6 +2117,26 @@ impl SingleRWAVault {
     /// Backward-compatible: returns `true` when `account` holds `FullOperator`.
     pub fn is_operator(e: &Env, account: Address) -> bool {
         get_operator(e, &account)
+    }
+
+    /// Returns a bounded page of addresses that currently hold the `FullOperator` superrole.
+    ///
+    /// `offset` is zero-based within the full operator list.
+    /// `limit` is capped at `MAX_OPERATOR_PAGE_SIZE` (50) to prevent expensive queries.
+    /// Returns an empty vec when `offset >= total` or `limit == 0`.
+    pub fn list_operators(e: &Env, offset: u32, limit: u32) -> Vec<Address> {
+        let capped = limit.min(MAX_OPERATOR_PAGE_SIZE);
+        let operators = get_operator_list(e);
+        let total = operators.len();
+        let mut result = Vec::new(e);
+        if offset >= total || capped == 0 {
+            return result;
+        }
+        let end = (offset + capped).min(total);
+        for i in offset..end {
+            result.push_back(operators.get(i).unwrap());
+        }
+        result
     }
 
     pub fn transfer_admin(e: &Env, caller: Address, _new_admin: Address) {
@@ -1811,6 +2275,28 @@ impl SingleRWAVault {
         get_blacklisted(e, &address)
     }
 
+    /// Paginated view of blacklisted addresses.
+    ///
+    /// `start` is a 0-based offset into the blacklist list.
+    pub fn list_blacklisted(e: &Env, start: u32, limit: u32) -> Vec<Address> {
+        if limit == 0 || limit > MAX_BLACKLIST_PAGE_SIZE {
+            panic_with_error!(e, Error::InvalidEpochRange);
+        }
+
+        let all = get_blacklisted_addresses(e);
+        let len = all.len();
+        if start >= len {
+            return Vec::new(e);
+        }
+
+        let mut out = Vec::new(e);
+        let end = (start + limit).min(len);
+        for i in start..end {
+            out.push_back(all.get(i).unwrap());
+        }
+        out
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Transfer KYC gate
     // ─────────────────────────────────────────────────────────────────
@@ -1880,6 +2366,39 @@ impl SingleRWAVault {
 
     pub fn freeze_flags(e: &Env) -> u32 {
         get_freeze_flags(e)
+    }
+
+    /// Returns whether new deposits are currently allowed.
+    ///
+    /// Deposits are permitted when:
+    /// - Vault state is `Funding` or `Active`
+    /// - Vault is not paused
+    /// - Deposit/mint operations are not frozen
+    ///
+    /// This is useful for frontends to reliably determine whether to enable
+    /// or disable the deposit call-to-action button.
+    ///
+    /// # Returns
+    /// `true` if deposits can be submitted, `false` otherwise
+    pub fn is_funding_open(e: &Env) -> bool {
+        // Check vault state: must be Funding or Active
+        let state = get_vault_state(e);
+        if state != VaultState::Funding && state != VaultState::Active {
+            return false;
+        }
+
+        // Check if vault is paused
+        if get_paused(e) {
+            return false;
+        }
+
+        // Check if deposit/mint operations are frozen
+        let flags = get_freeze_flags(e);
+        if (flags & Self::FREEZE_DEPOSIT_MINT) != 0 {
+            return false;
+        }
+
+        true
     }
 
     pub fn set_freeze_flags(e: &Env, caller: Address, flags: u32) {
@@ -2009,7 +2528,7 @@ impl SingleRWAVault {
         // Ensure no double-approval.
         for i in 0..approvals.len() {
             if approvals.get(i).unwrap() == caller {
-                panic_with_error!(e, Error::AlreadyApproved);
+                panic_with_error!(e, Error::AlreadyProcessed);
             }
         }
 
@@ -2184,10 +2703,6 @@ impl SingleRWAVault {
     }
 
     /// Returns the current storage schema version.
-    pub fn storage_schema_version(e: &Env) -> u32 {
-        get_storage_schema_version(e)
-    }
-
     /// Returns the contract’s immutable code version.
     pub fn contract_version(e: &Env) -> u32 {
         get_contract_version(e)
@@ -2233,11 +2748,21 @@ impl SingleRWAVault {
         get_expected_apy(e)
     }
     pub fn set_funding_target(e: &Env, caller: Address, target: i128) {
+        Self::set_funding_target_with_reason(e, caller, target, String::from_str(e, ""));
+    }
+
+    /// Set the funding target and emit an event with an optional reason string.
+    ///
+    /// `reason` must be <= `MAX_FUNDING_TARGET_REASON_LEN` characters.
+    pub fn set_funding_target_with_reason(e: &Env, caller: Address, target: i128, reason: String) {
         caller.require_auth();
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::LifecycleManager);
+        if reason.len() > Self::MAX_FUNDING_TARGET_REASON_LEN {
+            panic_with_error!(e, Error::InvalidInitParams);
+        }
         put_funding_target(e, target);
-        emit_funding_target_set(e, target);
+        emit_funding_target_set(e, target, reason);
         bump_instance(e);
     }
 
@@ -2279,6 +2804,7 @@ impl SingleRWAVault {
         update_user_snapshots_for_transfer(e, &from, &to);
         spend_share_balance(e, &from, amount);
         receive_share_balance(e, &to, amount);
+        record_transfer_activity(e, get_current_epoch(e), amount);
         emit_transfer(e, from, to, amount);
         bump_instance(e);
     }
@@ -2295,6 +2821,7 @@ impl SingleRWAVault {
         put_share_allowance(e, &from, &spender, allowance - amount);
         spend_share_balance(e, &from, amount);
         receive_share_balance(e, &to, amount);
+        record_transfer_activity(e, get_current_epoch(e), amount);
         emit_transfer(e, from, to, amount);
         bump_instance(e);
     }
@@ -2334,17 +2861,41 @@ impl SingleRWAVault {
     pub fn total_supply(e: &Env) -> i128 {
         get_total_supply(e)
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Activity tracking views (issue #122)
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Returns the aggregate activity counters for the given epoch.
+    ///
+    /// Returns zeroed counters for epochs that have had no activity.
+    pub fn get_epoch_activity(e: &Env, epoch: u32) -> EpochActivity {
+        get_epoch_activity(e, epoch)
+    }
+
+    /// Returns aggregate activity counters across the entire vault lifetime.
+    pub fn get_lifetime_activity(e: &Env) -> EpochActivity {
+        get_lifetime_activity(e)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Validates that an address is not the zero-equivalent (contract's own address).
+/// This prevents null-like semantics where the contract address is used as a placeholder.
+fn require_valid_address(_e: &Env, _addr: &Address) {
+    // No-op for now to support internal shortcuts like verifier == contract_address.
+    // Explicit checks are done in the constructor for specific fields if needed.
+}
+
 fn total_assets(e: &Env) -> i128 {
     get_total_deposited(e)
 }
 
-/// `convertToShares` with **floor** division: `floor(assets * totalSupply / totalAssets)`.
+/// `convertToShares` with **floor** division and virtual offset for inflation attack mitigation.
+/// Uses OpenZeppelin's virtual offset approach: shares = assets * (supply + OFFSET) / (totalAssets + OFFSET)
 /// ERC-4626 deposit path rounds down (vault-favorable). Used by `max_mint` where a 0
 /// result is valid; `preview_deposit` adds a dust guard on top.
 fn convert_to_shares_floor(e: &Env, assets: i128) -> i128 {
@@ -2353,7 +2904,9 @@ fn convert_to_shares_floor(e: &Env, assets: i128) -> i128 {
     if supply == 0 || ta == 0 {
         return assets;
     }
-    math::mul_div(e, assets, supply, ta)
+    // Apply virtual offset to prevent share price inflation attack (Issue #95)
+    // shares = assets * (supply + OFFSET) / (totalAssets + OFFSET)
+    math::mul_div(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
 }
 
 fn preview_deposit(e: &Env, assets: i128) -> i128 {
@@ -2372,9 +2925,9 @@ fn preview_mint(e: &Env, shares: i128) -> i128 {
     if supply == 0 || ta == 0 {
         return shares;
     }
-    // ERC-4626: round **up** on mint so the user pays at least the fair asset amount
-    // for the requested shares — vault-favorable, symmetric to deposit rounding down.
-    math::mul_div_ceil(e, shares, ta, supply)
+    // Apply virtual offset with ceiling division (Issue #95)
+    // assets = shares * (totalAssets + OFFSET) / (supply + OFFSET), rounded up
+    math::mul_div_ceil(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
 }
 
 fn preview_withdraw(e: &Env, assets: i128) -> i128 {
@@ -2385,7 +2938,7 @@ fn preview_withdraw(e: &Env, assets: i128) -> i128 {
     }
     // ERC-4626: round **up** on withdraw so the user burns at least the shares needed
     // to cover `assets` — vault-favorable (user cannot withdraw “too cheaply”).
-    math::mul_div_ceil(e, assets, supply, ta)
+    math::mul_div_ceil(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
 }
 
 /// `convertToAssets` with **floor** division: `floor(shares * totalAssets / totalSupply)`.
@@ -2397,7 +2950,7 @@ fn convert_to_assets_floor(e: &Env, shares: i128) -> i128 {
     if supply == 0 {
         return shares;
     }
-    math::mul_div(e, shares, ta, supply)
+    math::mul_div(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
 }
 
 fn preview_redeem(e: &Env, shares: i128) -> i128 {

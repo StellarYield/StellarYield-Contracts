@@ -41,6 +41,7 @@ pub enum DataKey {
     VaultCount,
     VaultDeployCounter,
     VaultsByAsset(Address),
+    DefaultFeeBps,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,6 +179,16 @@ pub fn get_aggregator_vault(e: &Env) -> Option<Address> {
 #[allow(dead_code)]
 pub fn put_aggregator_vault(e: &Env, val: Address) {
     e.storage().instance().set(&DataKey::AggregatorVault, &val);
+}
+
+pub fn get_default_fee_bps(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::DefaultFeeBps)
+        .unwrap_or(200)
+}
+pub fn put_default_fee_bps(e: &Env, val: u32) {
+    e.storage().instance().set(&DataKey::DefaultFeeBps, &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

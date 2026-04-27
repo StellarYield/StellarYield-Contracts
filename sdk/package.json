@@ -19,7 +19,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc",
-    "lint": "eslint src",
+    "lint": "ESLINT_USE_FLAT_CONFIG=true eslint src",
     "prepublishOnly": "npm run build"
   },
   "engines": {

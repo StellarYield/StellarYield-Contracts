@@ -15,7 +15,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Vec};
 
 use crate::errors::Error;
-use crate::types::{RedemptionRequest, Role, VaultState};
+use crate::types::{EpochActivity, RedemptionRequest, Role, VaultState};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TTL constants
@@ -95,8 +95,6 @@ pub enum Key {
     LstClmEp(Address),
     /// Track how much yield a user has claimed for a specific epoch (for vesting)
     UsrEpYldClm(Address, u32),
-    /// Accumulated yield shortfall due to partial claims when vault had insufficient balance.
-    /// Tracked per user; operator resolves via resolve_yield_shortfall().
     YieldShortfall(Address),
 
     // --- User share snapshots ---
@@ -122,6 +120,7 @@ pub enum Key {
 
     // --- Blacklist ---
     Blacklst(Address),
+    BlacklistList,
 
     // --- Transfer exemptions ---
     TransferExempt(Address),
@@ -129,6 +128,9 @@ pub enum Key {
 
     // --- Transfer KYC gate ---
     XferKyc,
+
+    // --- Operator list (FullOperator addresses) ---
+    OperatorList,
 
     // --- Emergency pro-rata distribution ---
     EmgBal,
@@ -225,6 +227,8 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::RedCnt => 42u32.into_val(env),
             Key::TransferExemptList => 45u32.into_val(env),
             Key::XferKyc => 46u32.into_val(env),
+            Key::OperatorList => 52u32.into_val(env),
+            Key::BlacklistList => 53u32.into_val(env),
             Key::EmgBal => 47u32.into_val(env),
             Key::EmgTotSup => 49u32.into_val(env),
             Key::TlkDelay => 50u32.into_val(env),
@@ -314,6 +318,8 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             42 => Ok(Key::RedCnt),
             45 => Ok(Key::TransferExemptList),
             46 => Ok(Key::XferKyc),
+            52 => Ok(Key::OperatorList),
+            53 => Ok(Key::BlacklistList),
             47 => Ok(Key::EmgBal),
             49 => Ok(Key::EmgTotSup),
             50 => Ok(Key::TlkDelay),
@@ -576,9 +582,43 @@ pub fn get_operator(e: &Env, addr: &Address) -> bool {
     get_role(e, addr, Role::FullOperator)
 }
 
+/// Returns the list of all addresses currently holding the FullOperator superrole.
+pub fn get_operator_list(e: &Env) -> Vec<Address> {
+    e.storage()
+        .instance()
+        .get(&Key::OperatorList)
+        .unwrap_or_else(|| Vec::new(e))
+}
+
+fn put_operator_list(e: &Env, list: &Vec<Address>) {
+    if list.is_empty() {
+        e.storage().instance().remove(&Key::OperatorList);
+    } else {
+        e.storage().instance().set(&Key::OperatorList, list);
+    }
+}
+
 /// Grant or revoke the `FullOperator` superrole for `addr`.
+/// Maintains the operator list so `list_operators` can paginate without scanning all keys.
 pub fn put_operator(e: &Env, addr: Address, val: bool) {
-    put_role(e, addr, Role::FullOperator, val);
+    put_role(e, addr.clone(), Role::FullOperator, val);
+
+    let mut list = get_operator_list(e);
+    let already_listed = (0..list.len()).any(|i| list.get(i).unwrap() == addr);
+
+    if val && !already_listed {
+        list.push_back(addr);
+        put_operator_list(e, &list);
+    } else if !val && already_listed {
+        let mut updated = Vec::new(e);
+        for i in 0..list.len() {
+            let entry = list.get(i).unwrap();
+            if entry != addr {
+                updated.push_back(entry);
+            }
+        }
+        put_operator_list(e, &updated);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -754,31 +794,6 @@ pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
-}
-
-/// Retrieve the accumulated yield shortfall for a user due to partial claims
-/// when vault had insufficient balance.
-pub fn get_yield_shortfall(e: &Env, addr: &Address) -> i128 {
-    e.storage()
-        .persistent()
-        .get(&Key::YieldShortfall(addr.clone()))
-        .unwrap_or(0)
-}
-
-/// Record or accumulate yield shortfall for a user. Automatically manages TTL.
-pub fn put_yield_shortfall(e: &Env, addr: &Address, val: i128) {
-    let key = Key::YieldShortfall(addr.clone());
-    e.storage().persistent().set(&key, &val);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
-}
-
-/// Remove the yield shortfall entry for a user after it has been fully resolved.
-pub fn delete_yield_shortfall(e: &Env, addr: &Address) {
-    e.storage()
-        .persistent()
-        .remove(&Key::YieldShortfall(addr.clone()));
 }
 
 pub fn get_user_epoch_yield_claimed(e: &Env, addr: &Address, epoch: u32) -> i128 {
@@ -992,15 +1007,55 @@ pub fn get_blacklisted(e: &Env, addr: &Address) -> bool {
         .unwrap_or(false)
 }
 
-pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
+fn blacklist_index(addresses: &Vec<Address>, addr: &Address) -> Option<u32> {
+    (0..addresses.len()).find(|&i| addresses.get(i).unwrap() == *addr)
+}
+
+fn put_blacklisted_address_list(e: &Env, addresses: &Vec<Address>) {
+    if addresses.is_empty() {
+        e.storage().instance().remove(&Key::BlacklistList);
+    } else {
+        e.storage().instance().set(&Key::BlacklistList, addresses);
+    }
+}
+
+pub fn get_blacklisted_addresses(e: &Env) -> Vec<Address> {
     e.storage()
-        .persistent()
-        .set(&Key::Blacklst(addr.clone()), &status);
-    e.storage().persistent().extend_ttl(
-        &Key::Blacklst(addr.clone()),
-        BALANCE_LIFETIME_THRESHOLD,
-        BALANCE_BUMP_AMOUNT,
-    );
+        .instance()
+        .get(&Key::BlacklistList)
+        .unwrap_or_else(|| Vec::new(e))
+}
+
+pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
+    let key = Key::Blacklst(addr.clone());
+    let mut addresses = get_blacklisted_addresses(e);
+    let existing = blacklist_index(&addresses, addr);
+
+    if status {
+        if existing.is_none() {
+            addresses.push_back(addr.clone());
+            put_blacklisted_address_list(e, &addresses);
+        }
+
+        e.storage().persistent().set(&key, &true);
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+        return;
+    }
+
+    e.storage().persistent().remove(&key);
+
+    if existing.is_some() {
+        let mut updated = Vec::new(e);
+        for i in 0..addresses.len() {
+            let current = addresses.get(i).unwrap();
+            if current != *addr {
+                updated.push_back(current);
+            }
+        }
+        put_blacklisted_address_list(e, &updated);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1067,6 +1122,150 @@ pub fn put_timelock_action(e: &Env, action_id: u32, action: crate::types::Timelo
 #[allow(dead_code)]
 pub fn has_timelock_action(e: &Env, action_id: u32) -> bool {
     e.storage().instance().has(&Key::TlkAct(action_id))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-epoch share-price oracle snapshot (instance storage, keyed by epoch).
+// Captured at distribute_yield so historical share price is computable from
+// the recorded (total_assets, total_shares) pair without iterating users.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone)]
+pub enum OracleDataKey {
+    EpochTotalAssets(u32),
+}
+
+pub fn get_epoch_total_assets(e: &Env, epoch: u32) -> i128 {
+    e.storage()
+        .instance()
+        .get(&OracleDataKey::EpochTotalAssets(epoch))
+        .unwrap_or(0)
+}
+
+pub fn put_epoch_total_assets(e: &Env, epoch: u32, val: i128) {
+    e.storage()
+        .instance()
+        .set(&OracleDataKey::EpochTotalAssets(epoch), &val);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-epoch activity tracking (persistent, keyed by epoch or lifetime)
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone)]
+pub enum ActivityDataKey {
+    EpochActivity(u32),
+    LifetimeActivity,
+}
+
+pub fn get_epoch_activity(e: &Env, epoch: u32) -> EpochActivity {
+    e.storage()
+        .persistent()
+        .get(&ActivityDataKey::EpochActivity(epoch))
+        .unwrap_or_else(EpochActivity::zero)
+}
+
+pub fn put_epoch_activity(e: &Env, epoch: u32, activity: EpochActivity) {
+    let key = ActivityDataKey::EpochActivity(epoch);
+    e.storage().persistent().set(&key, &activity);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn get_lifetime_activity(e: &Env) -> EpochActivity {
+    e.storage()
+        .persistent()
+        .get(&ActivityDataKey::LifetimeActivity)
+        .unwrap_or_else(EpochActivity::zero)
+}
+
+pub fn put_lifetime_activity(e: &Env, activity: EpochActivity) {
+    let key = ActivityDataKey::LifetimeActivity;
+    e.storage().persistent().set(&key, &activity);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn record_deposit_activity(e: &Env, epoch: u32, volume: i128, is_new_investor: bool) {
+    let mut ea = get_epoch_activity(e, epoch);
+    ea.deposits_count += 1;
+    ea.deposits_volume += volume;
+    if is_new_investor {
+        ea.new_investors += 1;
+    }
+    put_epoch_activity(e, epoch, ea);
+
+    let mut la = get_lifetime_activity(e);
+    la.deposits_count += 1;
+    la.deposits_volume += volume;
+    if is_new_investor {
+        la.new_investors += 1;
+    }
+    put_lifetime_activity(e, la);
+}
+
+pub fn record_withdrawal_activity(e: &Env, epoch: u32, volume: i128, is_exiting: bool) {
+    let mut ea = get_epoch_activity(e, epoch);
+    ea.withdrawals_count += 1;
+    ea.withdrawals_volume += volume;
+    if is_exiting {
+        ea.exiting_investors += 1;
+    }
+    put_epoch_activity(e, epoch, ea);
+
+    let mut la = get_lifetime_activity(e);
+    la.withdrawals_count += 1;
+    la.withdrawals_volume += volume;
+    if is_exiting {
+        la.exiting_investors += 1;
+    }
+    put_lifetime_activity(e, la);
+}
+
+pub fn record_transfer_activity(e: &Env, epoch: u32, volume: i128) {
+    let mut ea = get_epoch_activity(e, epoch);
+    ea.transfers_count += 1;
+    ea.transfers_volume += volume;
+    put_epoch_activity(e, epoch, ea);
+
+    let mut la = get_lifetime_activity(e);
+    la.transfers_count += 1;
+    la.transfers_volume += volume;
+    put_lifetime_activity(e, la);
+}
+
+pub fn record_redemption_activity(e: &Env, epoch: u32, volume: i128, is_exiting: bool) {
+    let mut ea = get_epoch_activity(e, epoch);
+    ea.redemptions_count += 1;
+    ea.redemptions_volume += volume;
+    if is_exiting {
+        ea.exiting_investors += 1;
+    }
+    put_epoch_activity(e, epoch, ea);
+
+    let mut la = get_lifetime_activity(e);
+    la.redemptions_count += 1;
+    la.redemptions_volume += volume;
+    if is_exiting {
+        la.exiting_investors += 1;
+    }
+    put_lifetime_activity(e, la);
+}
+
+pub fn record_yield_claim_activity(e: &Env, epoch: u32, volume: i128) {
+    let mut ea = get_epoch_activity(e, epoch);
+    ea.yield_claims_count += 1;
+    ea.yield_claims_volume += volume;
+    put_epoch_activity(e, epoch, ea);
+
+    let mut la = get_lifetime_activity(e);
+    la.yield_claims_count += 1;
+    la.yield_claims_volume += volume;
+    put_lifetime_activity(e, la);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1146,4 +1345,27 @@ pub fn put_emergency_proposal_approvals(e: &Env, id: u32, approvals: Vec<Address
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+pub fn get_yield_shortfall(e: &Env, user: &Address) -> i128 {
+    e.storage()
+        .persistent()
+        .get(&Key::YieldShortfall(user.clone()))
+        .unwrap_or(0)
+}
+
+pub fn put_yield_shortfall(e: &Env, user: &Address, shortfall: i128) {
+    if shortfall < 0 {
+        return;
+    }
+    let key = Key::YieldShortfall(user.clone());
+    e.storage().persistent().set(&key, &shortfall);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn delete_yield_shortfall(e: &Env, user: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&Key::YieldShortfall(user.clone()));
 }

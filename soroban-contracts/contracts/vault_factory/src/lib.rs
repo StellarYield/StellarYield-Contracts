@@ -28,6 +28,9 @@ use crate::storage::*;
 /// exceeding this limit risks exhausting the transaction's CPU budget.
 const MAX_BATCH_SIZE: u32 = 10;
 
+/// Maximum page size for status-filtered vault list queries.
+const MAX_STATUS_PAGE_SIZE: u32 = 50;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Contract
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,11 +56,17 @@ impl VaultFactory {
         cooperator: Address,
         vault_wasm_hash: BytesN<32>,
     ) {
+        require_valid_address(e, &admin);
+        require_valid_address(e, &default_asset);
+        require_valid_address(e, &zkme_verifier);
+        require_valid_address(e, &cooperator);
+
         put_admin(e, admin.clone());
         put_default_asset(e, default_asset);
         put_default_zkme_verifier(e, zkme_verifier);
         put_default_cooperator(e, cooperator);
         put_vault_wasm_hash(e, vault_wasm_hash);
+        put_default_fee_bps(e, 200u32);
         put_operator(e, admin, true);
         // Versioning
         put_contract_version(e, 1u32);
@@ -91,6 +100,18 @@ impl VaultFactory {
 
     pub fn contract_version(e: &Env) -> u32 {
         get_contract_version(e)
+    }
+
+    pub fn version(e: &Env) -> u32 {
+        get_contract_version(e)
+    }
+
+    /// Provide a lightweight capability check endpoint for major function groups (#299).
+    pub fn supports_interface(_e: &Env, id: u32) -> bool {
+        matches!(
+            id,
+            INTERFACE_BASE | INTERFACE_FACTORY_REGISTRY | INTERFACE_FACTORY_DEPLOYER | INTERFACE_RBAC
+        )
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -346,6 +367,35 @@ impl VaultFactory {
         get_vault_info(e, &vault).is_some()
     }
 
+    /// Checks if a vault with the given name and symbol already exists.
+    ///
+    /// Returns `Option<Address>` with the vault address if found, `None` otherwise.
+    ///
+    /// This helper supports safer vault creation by allowing pre-validation of
+    /// naming collisions before attempting deployment. Useful for UX to warn
+    /// integrators about potential duplicates.
+    ///
+    /// # Arguments
+    /// * `name` - The RWA name to search for
+    /// * `symbol` - The RWA symbol to search for
+    ///
+    /// # Returns
+    /// `Some(vault_address)` if a vault with matching name and symbol exists,
+    /// `None` otherwise
+    pub fn vault_exists_by_name_symbol(e: &Env, name: String, symbol: String) -> Option<Address> {
+        let count = get_vault_count(e);
+        for i in 0..count {
+            if let Some(vault) = get_vault_at_index(e, i) {
+                if let Some(info) = get_vault_info(e, &vault) {
+                    if info.name == name && info.symbol == symbol {
+                        return Some(vault);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Returns the current number of registered vaults.
     ///
     /// Reads a dedicated counter from instance storage — does not load the
@@ -431,6 +481,112 @@ impl VaultFactory {
         get_aggregator_vault(e)
     }
 
+    /// Returns all factory-level defaults in a single call.
+    ///
+    /// Useful for vault creation forms and deployment scripts that need the
+    /// current default asset, verifier, cooperator, fee bps, and wasm hash
+    /// without making five separate contract calls.
+    pub fn get_defaults_snapshot(e: &Env) -> FactoryDefaultsSnapshot {
+        bump_instance(e);
+        FactoryDefaultsSnapshot {
+            default_asset: get_default_asset(e),
+            zkme_verifier: get_default_zkme_verifier(e),
+            cooperator: get_default_cooperator(e),
+            fee_bps: get_default_fee_bps(e),
+            vault_wasm_hash: get_vault_wasm_hash(e),
+        }
+    }
+
+    /// Returns compact statistics about the vault registry.
+    ///
+    /// Aggregates key metrics in a single call to reduce query overhead from
+    /// explorers and monitoring dashboards:
+    ///
+    /// - `total_vaults`: Total count of all registered vaults (all states)
+    /// - `active_vaults`: Count of vaults with `active` flag set to true
+    /// - `latest_vault`: Most recently deployed vault address (if any exist)
+    ///
+    /// # Returns
+    /// A `RegistryStats` struct containing the three metrics
+    pub fn get_registry_stats(e: &Env) -> RegistryStats {
+        let count = get_vault_count(e);
+        let mut active_count = 0u32;
+        let mut latest_vault_addr: Option<Address> = None;
+
+        // Iterate through all vaults to count active and track the latest
+        for i in 0..count {
+            if let Some(vault) = get_vault_at_index(e, i) {
+                // Update latest_vault to the most recently deployed (highest index)
+                latest_vault_addr = Some(vault.clone());
+
+                if let Some(info) = get_vault_info(e, &vault) {
+                    if info.active {
+                        active_count += 1;
+                    }
+                }
+            }
+        }
+
+        RegistryStats {
+            total_vaults: count,
+            active_vaults: active_count,
+            latest_vault: latest_vault_addr,
+        }
+    }
+
+    /// Returns a status-filtered page of vault addresses.
+    ///
+    /// `status` must be `VaultStatus::Active` or `VaultStatus::Inactive`.
+    /// `offset` is zero-based within the filtered set.
+    /// `limit` is capped at `MAX_STATUS_PAGE_SIZE` (50) to prevent expensive queries.
+    /// Returns an empty vec when the filtered set is empty or `offset` is out of range.
+    pub fn list_vaults_by_status(
+        e: &Env,
+        status: VaultStatus,
+        offset: u32,
+        limit: u32,
+    ) -> Vec<Address> {
+        let capped = limit.min(MAX_STATUS_PAGE_SIZE);
+        let total = get_vault_count(e);
+        let mut result: Vec<Address> = Vec::new(e);
+        if capped == 0 {
+            return result;
+        }
+        let want_active = status == VaultStatus::Active;
+        let mut cursor: u32 = 0;
+        for i in 0..total {
+            if let Some(vault) = get_vault_at_index(e, i) {
+                if let Some(info) = get_vault_info(e, &vault) {
+                    if info.active == want_active {
+                        if cursor >= offset {
+                            result.push_back(vault);
+                            if result.len() >= capped {
+                                break;
+                            }
+                        }
+                        cursor += 1;
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// Return admin/operator addresses and mutable default configuration in one view struct.
+    ///
+    /// This simplifies governance and monitoring dashboards.
+    pub fn get_factory_admin_overview(e: &Env) -> FactoryAdminOverview {
+        FactoryAdminOverview {
+            admin: get_admin(e),
+            default_asset: get_default_asset(e),
+            default_zkme_verifier: get_default_zkme_verifier(e),
+            default_cooperator: get_default_cooperator(e),
+            vault_wasm_hash: get_vault_wasm_hash(e),
+            default_fee_bps: get_default_fee_bps(e),
+            vault_count: get_vault_count(e),
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // Admin functions
     // ─────────────────────────────────────────────────────────────────
@@ -439,6 +595,7 @@ impl VaultFactory {
         caller.require_auth();
         require_current_schema(e);
         require_admin(e, &caller);
+        require_valid_address(e, &new_admin);
         let old = get_admin(e);
         put_admin(e, new_admin.clone());
         emit_admin_transferred(e, old, new_admin);
@@ -453,6 +610,7 @@ impl VaultFactory {
         caller.require_auth();
         require_current_schema(e);
         require_admin(e, &caller);
+        require_valid_address(e, &addr);
         put_role(e, addr.clone(), role.clone(), true);
         emit_role_granted(e, addr, role);
         bump_instance(e);
@@ -482,6 +640,7 @@ impl VaultFactory {
     pub fn set_operator(e: &Env, caller: Address, operator: Address, status: bool) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &operator);
         put_operator(e, operator.clone(), status);
         emit_operator_updated(e, operator, status);
         bump_instance(e);
@@ -497,6 +656,9 @@ impl VaultFactory {
         caller.require_auth();
         require_current_schema(e);
         require_admin(e, &caller);
+        require_valid_address(e, &asset);
+        require_valid_address(e, &zkme_verifier);
+        require_valid_address(e, &cooperator);
         put_default_asset(e, asset.clone());
         put_default_zkme_verifier(e, zkme_verifier.clone());
         put_default_cooperator(e, cooperator.clone());
@@ -661,6 +823,14 @@ impl VaultFactory {
 // ─────────────────────────────────────────────────────────────────────────────
 // Guard helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Validates that an address is not the zero-equivalent (contract's own address).
+/// This prevents null-like semantics where the contract address is used as a placeholder.
+fn require_valid_address(e: &Env, addr: &Address) {
+    if *addr == e.current_contract_address() {
+        panic_with_error!(e, Error::InvalidInitParams);
+    }
+}
 
 fn require_admin(e: &Env, caller: &Address) {
     if *caller != get_admin(e) {

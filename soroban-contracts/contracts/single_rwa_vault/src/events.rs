@@ -2,7 +2,7 @@
 //!
 //! Each function mirrors an EVM event from ISingleRWA_Vault.sol.
 
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, String};
 
 use crate::types::{Role, VaultState};
 
@@ -24,26 +24,23 @@ pub fn emit_yield_claimed(e: &Env, user: Address, amount: i128, epoch: u32) {
         .publish((symbol_short!("yield_clm"), user), (amount, epoch));
 }
 
-/// Emitted when a partial yield claim occurs because the vault had insufficient
-/// asset balance to satisfy the full computed pending_yield. The shortfall is
-/// recorded and can be resolved later via resolve_yield_shortfall().
-pub fn emit_partial_yield_claim(e: &Env, user: Address, expected: i128, actual: i128) {
+pub fn emit_yield_claimed_partial(e: &Env, user: Address, clm: i128, shf: i128, ep: u32) {
     e.events()
-        .publish((symbol_short!("prt_yld"), user), (expected, actual));
+        .publish((symbol_short!("prt_yld"), user), (clm, shf, ep));
 }
 
-/// Emitted when an operator manually resolves a user's accumulated yield shortfall.
-pub fn emit_yield_shortfall_resolved(e: &Env, user: Address, amount: i128, remaining_shortfall: i128) {
+pub fn emit_yield_shortfall_resolved(e: &Env, user: Address, amt: i128, rem: i128) {
     e.events()
-        .publish((symbol_short!("ys_res"), user), (amount, remaining_shortfall));
+        .publish((symbol_short!("ys_res"), user), (amt, rem));
 }
 
 pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }
 
-pub fn emit_maturity_date_set(e: &Env, timestamp: u64) {
-    e.events().publish((symbol_short!("mat_set"),), timestamp);
+pub fn emit_maturity_date_set(e: &Env, old: u64, new: u64, state: VaultState) {
+    e.events()
+        .publish((symbol_short!("mat_set"),), (old, new, state));
 }
 
 pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
@@ -206,8 +203,8 @@ pub fn emit_early_redemption_cancelled(e: &Env, user: Address, request_id: u32, 
 /// Emitted by `transfer_admin`.
 #[allow(dead_code)]
 pub fn emit_admin_transferred(e: &Env, old_admin: Address, new_admin: Address) {
-    let topics = (Symbol::new(e, "admin_transferred"), old_admin);
-    e.events().publish(topics, new_admin);
+    e.events()
+        .publish((symbol_short!("adm_xfr"),), (old_admin, new_admin));
 }
 
 /// Emitted by `set_rwa_details`, `set_rwa_document_uri`, or `set_expected_apy`.
@@ -235,9 +232,12 @@ pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
         .publish((symbol_short!("vest_set"),), vesting_period);
 }
 
-/// Emitted by `set_funding_target`.
-pub fn emit_funding_target_set(e: &Env, target: i128) {
-    e.events().publish((symbol_short!("fund_set"),), target);
+/// Emitted by `set_funding_target` / `set_funding_target_with_reason`.
+///
+/// `reason` is a short operator-provided context string (may be empty).
+pub fn emit_funding_target_set(e: &Env, target: i128, reason: String) {
+    e.events()
+        .publish((symbol_short!("fund_set"),), (target, reason));
 }
 
 /// Emitted by `set_blacklisted`.

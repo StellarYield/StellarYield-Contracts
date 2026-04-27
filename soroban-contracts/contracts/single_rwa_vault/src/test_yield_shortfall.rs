@@ -70,7 +70,7 @@ fn test_partial_claim_shortfall_recorded() {
 
     let mut found = false;
     for evt in all_events.iter() {
-        if evt.0 == ctx.vault_id && evt.1.len() > 0 {
+        if evt.0 == ctx.vault_id && !evt.1.is_empty() {
             let sym: soroban_sdk::Symbol = evt.1.get_unchecked(0).into_val(&ctx.env);
             if sym == symbol_short!("prt_yld") {
                 found = true;
@@ -130,6 +130,7 @@ fn test_full_claim_no_shortfall() {
 
     // Check no partial event
     let events = ctx.env.events().all();
+    #[allow(clippy::needless_borrows_for_generic_args)]
     let partial_claim_event = events.iter().find(|evt| {
         evt.0 == ctx.vault_id && evt.1.contains(&symbol_short!("prt_yld").into_val(&ctx.env))
     });
@@ -262,7 +263,8 @@ fn test_resolve_full() {
 
     let pre_balance = ctx.asset().balance(&ctx.user);
 
-    let _ = ctx.vault()
+    let _ = ctx
+        .vault()
         .resolve_yield_shortfall(&ctx.operator, &ctx.user, &5_000);
     let all_events = ctx.env.events().all();
 
@@ -274,7 +276,7 @@ fn test_resolve_full() {
     assert_eq!(remaining, 0);
 
     let resolved_evt = all_events.iter().find(|evt| {
-        if evt.0 != ctx.vault_id || evt.1.len() == 0 {
+        if evt.0 != ctx.vault_id || evt.1.is_empty() {
             return false;
         }
         let sym: soroban_sdk::Symbol = evt.1.get_unchecked(0).into_val(&ctx.env);
@@ -316,7 +318,7 @@ fn test_resolve_unauthorised() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #50)")] // ShfNo
+#[should_panic(expected = "Error(Contract, #51)")] // YieldShortfallNotFound
 fn test_resolve_zero_shortfall() {
     let ctx = activated_ctx(20_000);
     ctx.vault()
@@ -324,7 +326,7 @@ fn test_resolve_zero_shortfall() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #51)")] // InsfShf
+#[should_panic(expected = "Error(Contract, #52)")] // InsufficientShortfall
 fn test_resolve_amount_exceeds_shortfall() {
     let ctx = activated_ctx(20_000);
     dist(&ctx, 20_000);
