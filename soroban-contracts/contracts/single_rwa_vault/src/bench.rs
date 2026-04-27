@@ -34,6 +34,7 @@ const SOROBAN_CPU_BUDGET: u64 = 100_000_000;
 // Regression alarm bound: 80% of the per-tx budget.
 const REGRESSION_BUDGET: u64 = SOROBAN_CPU_BUDGET * 80 / 100;
 
+#[allow(deprecated)]
 fn measure<F: FnOnce()>(ctx: &TestContext, label: &str, f: F) -> (u64, u64) {
     // Reset unlimited so the call always completes; we read what it actually
     // consumed afterward. The regression test compares against

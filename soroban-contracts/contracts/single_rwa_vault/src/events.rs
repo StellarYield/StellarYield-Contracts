@@ -6,8 +6,9 @@ use soroban_sdk::{symbol_short, Address, Env, String};
 
 use crate::types::{Role, VaultState};
 
-pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
-    e.events().publish((symbol_short!("zkme_upd"),), (old, new));
+pub fn emit_zkme_verifier_updated(e: &Env, caller: Address, old: Address, new: Address) {
+    e.events()
+        .publish((symbol_short!("zkme_upd"), caller), (old, new));
 }
 
 pub fn emit_cooperator_updated(e: &Env, old: Address, new: Address) {
@@ -262,6 +263,11 @@ pub fn emit_funding_cancelled(e: &Env) {
 pub fn emit_refunded(e: &Env, user: Address, amount: i128) {
     e.events()
         .publish((symbol_short!("refunded"), user), amount);
+}
+
+/// Emitted by `set_cooperator` — cooperator address has been updated. (Task #346)
+pub fn emit_cooperator_fee_updated(e: &Env, old: Address, new: Address) {
+    e.events().publish((symbol_short!("coop_fee"),), (old, new));
 }
 
 /// Emitted by `emergency_enable_pro_rata` — vault enters Emergency state.

@@ -23,6 +23,20 @@ pub struct VaultInfo {
     pub created_at: u64,
 }
 
+/// Lightweight vault metadata for list views.
+///
+/// Returns essential vault information without the full `VaultInfo` payload.
+/// Useful for list pages where full vault details are unnecessary.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct VaultBrief {
+    pub name: String,
+    pub symbol: String,
+    pub asset: Address,
+    pub active: bool,
+    pub created_at: u64,
+}
+
 /// Initialisation parameters for the SingleRWA vault constructor.
 ///
 /// This struct mirrors `single_rwa_vault::InitParams` field-for-field so that

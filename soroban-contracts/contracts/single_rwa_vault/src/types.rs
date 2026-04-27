@@ -27,6 +27,7 @@ pub struct InitParams {
     pub min_deposit: i128,
     pub max_deposit_per_user: i128,
     pub early_redemption_fee_bps: u32,
+    pub operator_fee_bps: u32,
     /// Unix timestamp after which funding can be cancelled if target not met.
     pub funding_deadline: u64,
     // RWA details
@@ -131,6 +132,19 @@ pub struct RedemptionRequest {
     pub locked_asset_value: i128,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CanRedeemResult struct (returned by can_redeem) - Task #360
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CanRedeemResult {
+    /// True if the user can redeem the specified shares.
+    pub ok: bool,
+    /// Optional reason string if redemption is not possible.
+    pub reason: Option<String>,
+}
+
 /// Statistics about the pending redemption queue.
 #[contracttype]
 #[derive(Clone, Debug)]
@@ -182,6 +196,17 @@ pub struct UserEpochYield {
     pub user_shares: i128,
     pub yield_earned: i128,
     pub claimed: bool,
+}
+
+/// Result of a single user's redemption preflight check.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct RedemptionPreflight {
+    pub user: Address,
+    pub shares: i128,
+    pub assets_out: i128,
+    pub can_redeem: bool,
+    pub reason: String,
 }
 
 /// Composite epoch metadata for efficient indexer queries.
@@ -245,6 +270,105 @@ pub struct ClaimYieldRangePreview {
     pub claimable_yield: i128,
     /// Number of epochs iterated (end - start + 1).
     pub epochs_scanned: u32,
+}
+
+/// Safe preview result for withdraw/redeem that avoids panics.
+/// Returns status code 0 on success, or a non-zero error code on failure.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SafePreviewResult {
+    /// The previewed asset/share amount (0 if status_code != 0).
+    pub amount: i128,
+    /// 0 = success, non-zero = error code (e.g., PreviewZeroAssets = 48).
+    pub status_code: u32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Typed safe-preview types for deposit / mint (#304)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Reason codes for `safe_preview_deposit` results.
+///
+/// `None` means success — no constraint was violated.  The other variants
+/// identify the specific check that failed.  UI estimators can branch on these
+/// to surface actionable error messages without catching contract traps.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SafePreviewDepositReason {
+    /// No error — preview succeeded.
+    None,
+    /// `assets` is zero or negative.
+    ZeroAmount,
+    /// Deposit is below the configured `min_deposit` threshold.
+    BelowMinimumDeposit,
+    /// Deposit would push the receiver past the per-user `max_deposit_per_user` cap.
+    ExceedsMaximumDeposit,
+    /// In Funding state: deposit would push total assets past the funding target.
+    FundingTargetExceeded,
+    /// Computed share amount rounds down to zero (dust guard — increase the amount).
+    ZeroShares,
+}
+
+/// Result returned by `safe_preview_deposit`.
+///
+/// - `ok == true`: preview succeeded; `shares` is the estimated mint amount;
+///   `reason` is `SafePreviewDepositReason::None`.
+/// - `ok == false`: `shares` is 0; `reason` identifies the violated constraint.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SafePreviewDepositResult {
+    /// `true` when the preview succeeded with no constraint violations.
+    pub ok: bool,
+    /// Estimated shares that will be minted; 0 when `ok == false`.
+    pub shares: i128,
+    /// Failure reason; `SafePreviewDepositReason::None` when `ok == true`.
+    pub reason: SafePreviewDepositReason,
+}
+
+/// Reason codes for `safe_preview_mint` results.
+///
+/// `None` means success. The other variants identify which constraint failed.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SafePreviewMintReason {
+    /// No error — preview succeeded.
+    None,
+    /// `shares` is zero or negative.
+    ZeroAmount,
+    /// Computed asset cost is below the configured `min_deposit` threshold.
+    BelowMinimumDeposit,
+    /// Computed asset cost would push the receiver past the per-user cap.
+    ExceedsMaximumDeposit,
+    /// In Funding state: computed asset cost would push total assets past the funding target.
+    FundingTargetExceeded,
+}
+
+/// Result returned by `safe_preview_mint`.
+///
+/// - `ok == true`: preview succeeded; `assets` is the estimated cost;
+///   `reason` is `SafePreviewMintReason::None`.
+/// - `ok == false`: `assets` is 0; `reason` identifies the violated constraint.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SafePreviewMintResult {
+    /// `true` when the preview succeeded with no constraint violations.
+    pub ok: bool,
+    /// Estimated asset cost the caller must pay; 0 when `ok == false`.
+    pub assets: i128,
+    /// Failure reason; `SafePreviewMintReason::None` when `ok == true`.
+    pub reason: SafePreviewMintReason,
+}
+
+/// Per-user deposit preflight result for batched deposit checks.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct DepositCheckResult {
+    /// User address being checked.
+    pub user: Address,
+    /// 0 = deposit allowed, non-zero = error code (e.g., BelowMinimumDeposit = 6).
+    pub status_code: u32,
+    /// Expected share amount if deposit succeeds; 0 if status_code != 0.
+    pub expected_shares: i128,
 }
 
 /// Reason codes for `can_request_early_redemption`.
