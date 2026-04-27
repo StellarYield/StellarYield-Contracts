@@ -31,6 +31,10 @@ const MAX_BATCH_SIZE: u32 = 10;
 /// Maximum page size for status-filtered vault list queries.
 const MAX_STATUS_PAGE_SIZE: u32 = 50;
 
+/// Maximum number of entries to scan when building the recent list.
+/// Bounds runtime even if many historic vaults have been removed.
+const MAX_RECENT_SCAN: u32 = 200;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Contract
 // ─────────────────────────────────────────────────────────────────────────────
@@ -468,6 +472,40 @@ impl VaultFactory {
         result
     }
 
+    /// Returns the most recently created vaults (newest-first).
+    ///
+    /// Deterministic ordering is based on the factory's monotonic deploy counter,
+    /// not the live registry index (which uses swap-remove on deletion).
+    ///
+    /// `limit` is capped to 50. Returns an empty vec when `limit == 0` or when
+    /// no vaults exist. Removed vaults are skipped.
+    pub fn list_recent_vaults(e: &Env, limit: u32) -> Vec<Address> {
+        let capped = limit.min(MAX_STATUS_PAGE_SIZE);
+        let mut result: Vec<Address> = Vec::new(e);
+        if capped == 0 {
+            return result;
+        }
+
+        let mut deploy_id = get_vault_deploy_counter(e);
+        if deploy_id == 0 {
+            return result;
+        }
+
+        let mut scanned: u32 = 0;
+        while deploy_id > 0 && result.len() < capped && scanned < MAX_RECENT_SCAN {
+            if let Some(vault) = get_vault_by_deploy_id(e, deploy_id) {
+                // Skip removed/unregistered vaults.
+                if get_vault_info(e, &vault).is_some() {
+                    result.push_back(vault);
+                }
+            }
+            deploy_id -= 1;
+            scanned += 1;
+        }
+
+        result
+    }
+
     /// Returns a page of *active* vault addresses.
     ///
     /// `offset` is zero-based within the active-vault list. Returns an empty
@@ -865,6 +903,8 @@ impl VaultFactory {
         };
         put_vault_info(e, &vault_addr, info);
         register_vault(e, vault_addr.clone());
+        // Persist deploy ordering for recent-vault queries.
+        put_vault_by_deploy_id(e, counter, &vault_addr);
         push_vaults_by_asset(e, &vault_asset, vault_addr.clone());
 
         emit_vault_created(

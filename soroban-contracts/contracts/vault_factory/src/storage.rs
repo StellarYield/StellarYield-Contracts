@@ -40,6 +40,11 @@ pub enum DataKey {
     VaultInfo(Address),
     VaultCount,
     VaultDeployCounter,
+    /// Monotonic deploy id → vault address mapping (persistent).
+    ///
+    /// This preserves deterministic "most recent vaults" ordering even when
+    /// vaults are removed from the indexed registry (which uses swap-remove).
+    VaultByDeployId(u32),
     VaultsByAsset(Address),
     DefaultFeeBps,
 }
@@ -266,6 +271,16 @@ pub fn increment_vault_deploy_counter(e: &Env) -> u32 {
         .instance()
         .set(&DataKey::VaultDeployCounter, &count);
     count
+}
+
+pub fn get_vault_by_deploy_id(e: &Env, id: u32) -> Option<Address> {
+    e.storage().persistent().get(&DataKey::VaultByDeployId(id))
+}
+
+pub fn put_vault_by_deploy_id(e: &Env, id: u32, vault: &Address) {
+    let key = DataKey::VaultByDeployId(id);
+    e.storage().persistent().set(&key, vault);
+    bump_persist(e, &key);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

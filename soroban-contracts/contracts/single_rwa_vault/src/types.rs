@@ -194,6 +194,8 @@ pub struct RedemptionPreflight {
     pub assets_out: i128,
     pub can_redeem: bool,
     pub reason: String,
+}
+
 /// Composite epoch metadata for efficient indexer queries.
 /// Returns yield, total shares, and timestamp in a single call.
 #[contracttype]
