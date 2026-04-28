@@ -497,10 +497,7 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
-
-        if assets <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, assets);
 
         let shares = preview_withdraw(e, assets);
 
@@ -553,10 +550,7 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_active_or_matured(e);
-
-        if shares <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, shares);
 
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
@@ -1269,10 +1263,7 @@ impl SingleRWAVault {
         // YieldOperator role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::YieldOperator);
         require_state(e, VaultState::Active);
-
-        if amount <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, amount);
 
         // Guard against yield loss when no shareholders exist (Issue #97)
         let total_supply = get_total_supply(e);
@@ -2185,10 +2176,7 @@ impl SingleRWAVault {
         require_not_frozen(e, Self::FREEZE_WITHDRAW_REDEEM);
         require_not_blacklisted_withdraw_parties(e, &caller, &owner, &receiver);
         require_state(e, VaultState::Matured);
-
-        if shares <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, shares);
 
         if caller != owner {
             let allowance = get_share_allowance(e, &owner, &caller);
@@ -2251,10 +2239,7 @@ impl SingleRWAVault {
         require_not_closed(e);
         require_state(e, VaultState::Active);
         require_not_blacklisted(e, &caller);
-
-        if shares <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, shares);
 
         update_user_snapshot(e, &caller);
 
@@ -2448,9 +2433,7 @@ impl SingleRWAVault {
     /// - fee_amount   = gross_assets * fee_bps / 10_000
     /// - net_assets   = gross_assets - fee_amount
     pub fn estimate_early_redemption_fee(e: &Env, shares: i128) -> EarlyRedemptionFeePreview {
-        if shares <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, shares);
         let gross_assets = preview_redeem(e, shares);
         let fee_bps = get_early_redemption_fee_bps(e);
         let fee_amount = math::mul_div(e, gross_assets, fee_bps as i128, 10_000);
@@ -2551,6 +2534,9 @@ impl SingleRWAVault {
         caller.require_auth();
         require_admin(e, &caller);
         put_role(e, addr.clone(), role.clone(), false);
+        if role == Role::FullOperator {
+            emit_operator_removed(e, caller.clone(), addr.clone());
+        }
         emit_role_revoked(e, addr, role);
         bump_instance(e);
     }
@@ -2574,6 +2560,8 @@ impl SingleRWAVault {
         emit_operator_updated(e, operator.clone(), status);
         if status {
             emit_operator_added(e, caller, operator, e.ledger().timestamp());
+        } else {
+            emit_operator_removed(e, caller, operator);
         }
         bump_instance(e);
     }
@@ -2707,9 +2695,7 @@ impl SingleRWAVault {
     /// Internal emergency withdraw function (bypasses timelock when paused).
     #[allow(dead_code)]
     fn emergency_withdraw_internal(e: &Env, recipient: Address, amount: i128) {
-        if amount <= 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, amount);
 
         let asset_address = get_asset(e);
         let asset_client = soroban_sdk::token::Client::new(e, &asset_address);
@@ -3141,10 +3127,7 @@ impl SingleRWAVault {
 
         let balance = asset_balance_of_vault(e);
         let supply = get_total_supply(e);
-
-        if supply == 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, supply);
 
         let old_state = get_vault_state(e);
         put_vault_state(e, VaultState::Emergency);
@@ -3174,9 +3157,7 @@ impl SingleRWAVault {
         }
 
         let user_shares = get_share_balance(e, &caller);
-        if user_shares == 0 {
-            panic_with_error!(e, Error::ZeroAmount);
-        }
+        require_positive(e, user_shares);
 
         let emergency_balance = get_emergency_balance(e);
         let total_supply_snapshot = get_emergency_total_supply_snapshot(e);
@@ -3466,6 +3447,13 @@ impl SingleRWAVault {
     pub fn get_lifetime_activity(e: &Env) -> EpochActivity {
         get_lifetime_activity(e)
     }
+
+    /// Returns the raw total shares distributed for a specific epoch.
+    ///
+    /// Values are once distributed and immutable. For analytics and historical reporting.
+    pub fn epoch_total_shares(e: &Env, epoch: u32) -> i128 {
+        crate::storage::get_epoch_total_shares(e, epoch)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3476,6 +3464,14 @@ impl SingleRWAVault {
 /// This prevents null-like semantics where the contract address is used as a placeholder.
 fn require_valid_address(_e: &Env, _addr: &Address) {
     // No-op for now to avoid blocking contract's own address which is used as a KYC bypass.
+}
+
+/// A tiny helper reduces duplicated panic/error messages and centralizes formatting.
+/// Use it in public mutating calls to keep behavior consistent.
+fn require_positive(e: &Env, amount: i128) {
+    if amount <= 0 {
+        panic_with_error!(e, Error::ZeroAmount);
+    }
 }
 
 fn total_assets(e: &Env) -> i128 {

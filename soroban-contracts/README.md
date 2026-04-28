@@ -109,6 +109,24 @@ $$\text{yield}_{\text{user}} = \frac{\text{shares}_{\text{user at epoch } n}}{\t
 
 ---
 
+## Units and precision
+
+The protocol distinguishes between two primary unit types to ensure clear accounting between the underlying RWA investment and the vault representation.
+
+| Unit Type | Token | Description | Sample Integration |
+| :--- | :--- | :--- | :--- |
+| **Assets** | Underlying (e.g. USDC) | The base investment currency. All "deposit" and "yield" inputs are in **Asset** units. | `deposit(10_000_000)` = 10 USDC |
+| **Shares** | Vault (e.g. syBOND) | The token representing ownership. All "mint" and "redeem" inputs are in **Share** units. | `redeem(5_000_000)` = 5 shares |
+
+### Integer Math and Decimals
+
+All values transferred or stored are **integers**. The protocol does not use floating-point math.
+- **Asset Units**: If USDC has 6 decimals, `1,000,000` on-chain units equals 1.00 USDC.
+- **Share Units**: The vault typically matches the asset decimals for a 1:1 initial parity.
+- **Basis Points (BPS)**: Fees (e.g. `early_redemption_fee_bps`) and APY use basis points where `10,000 BPS = 100%`.
+
+---
+
 ## Storage design
 
 The protocol follows Stellar best practices for storage tiering to balance cost and durability.
@@ -427,6 +445,12 @@ Topic: ("yield_clm", user_address)
 Data: (total_amount_claimed, current_epoch)
 ```
 
+**Sample Scenario (6 decimals):**
+- **Distribute**: Operator calls `distribute_yield(10_000_000)` (10 USDC, Epoch 1).
+  - Emits `yield_dis` event: Topic `("yield_dis", 1)`, Data `(10000000, 1714300000)`.
+- **Claim**: User calls `claim_yield`.
+  - Emits `yield_clm` event: Topic `("yield_clm", user_address)`, Data `(10000000, 1)`.
+
 #### Example: Claim yield for a specific epoch
 
 The `claim_yield_for_epoch` function allows granular claiming of yield from individual epochs. This enables partial claims and supports vesting schedules.
@@ -455,6 +479,12 @@ Topic: ("yield_clm", user_address)
 Data: (epoch_amount_claimed, epoch_number)
 ```
 
+**Sample Scenario (6 decimals):**
+- **Distribute**: Operator calls `distribute_yield(5_000_000)` (5 USDC, Epoch 5).
+  - Emits `yield_dis` event: Topic `("yield_dis", 5)`, Data `(5000000, 1714300500)`.
+- **Claim**: User calls `claim_yield_for_epoch(user, 5)`.
+  - Emits `yield_clm` event: Topic `("yield_clm", user_address)`, Data `(5000000, 5)`.
+
 **Vesting example:**
 
 If yield has a 30-day vesting period, users can claim the vested portion of each epoch as it becomes available:
@@ -471,6 +501,17 @@ let claimed = vault.claim_yield_for_epoch(&user, &1u32);
 let claimed = vault.claim_yield_for_epoch(&user, &1u32);
 // claimed = 5,000 (remaining 50%)
 ```
+
+### Gas and resource considerations
+
+> [!IMPORTANT]
+> `claim_yield` and `pending_yield` iterate linearly through epochs starting from the user's `last_claimed_epoch`. 
+> 
+> In vaults with frequent distributions (e.g., daily) and high user inactivity, a single claim transaction may encompass hundreds of epochs, potentially exceeding Soroban gas or transaction size limits.
+> 
+> **Recommendations for integrators:**
+> 1. **Batch Claiming**: If a full `claim_yield` fails, use `claim_yield_for_epoch` to claim chunks of epochs (e.g., 50 at a time).
+> 2. **Polling**: Use `pending_yield_breakdown(user, max_epochs)` to fetch a paginated view of unclaimed epochs (capped at 50 per call) to populate UI dashboards without hitting limits.
 
 ## VaultState transition diagram
 
@@ -906,6 +947,7 @@ Key invariants to verify:
 | `pending_yield`    | View       | None     | Assets | Unclaimed yield amount for a user.               |
 | `share_price`      | View       | None     | Assets | Current price of one share (scaled by decimals). |
 | `epoch_yield`      | View       | None     | Assets | Total yield distributed in a given epoch.        |
+| `epoch_total_shares` | View    | None     | Shares | Total share supply snapshotted at epoch distribution. |
 | `current_epoch`    | View       | None     | Epochs | Current epoch counter for deterministic request tracking. |
 | `get_current_epoch`| View       | None     | Epochs | Alias for `current_epoch` for `get_*` SDK conventions. |
 
