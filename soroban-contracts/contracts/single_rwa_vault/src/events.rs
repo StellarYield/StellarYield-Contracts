@@ -29,9 +29,16 @@ pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }
 
-pub fn emit_maturity_date_set(e: &Env, old: u64, new: u64, state: VaultState) {
+pub fn emit_maturity_date_set(
+    e: &Env,
+    caller: Address,
+    old: u64,
+    new: u64,
+    state: VaultState,
+    timestamp: u64,
+) {
     e.events()
-        .publish((symbol_short!("mat_set"),), (old, new, state));
+        .publish((symbol_short!("mat_set"), caller), (old, new, state, timestamp));
 }
 
 pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
@@ -41,6 +48,13 @@ pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
 pub fn emit_operator_updated(e: &Env, operator: Address, status: bool) {
     e.events()
         .publish((symbol_short!("op_upd"), operator), status);
+}
+
+/// Emitted when an operator is added (status=true).
+/// Includes caller and timestamp for off-chain monitoring.
+pub fn emit_operator_added(e: &Env, caller: Address, operator: Address, timestamp: u64) {
+    e.events()
+        .publish((symbol_short!("op_add"), caller, operator), timestamp);
 }
 
 /// Emitted when the admin grants a role to an address.
@@ -226,9 +240,15 @@ pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
 /// Emitted by `set_funding_target` / `set_funding_target_with_reason`.
 ///
 /// `reason` is a short operator-provided context string (may be empty).
-pub fn emit_funding_target_set(e: &Env, target: i128, reason: String) {
+pub fn emit_funding_target_set(
+    e: &Env,
+    caller: Address,
+    target: i128,
+    reason: String,
+    timestamp: u64,
+) {
     e.events()
-        .publish((symbol_short!("fund_set"),), (target, reason));
+        .publish((symbol_short!("fund_set"), caller), (target, reason, timestamp));
 }
 
 /// Emitted by `set_blacklisted`.

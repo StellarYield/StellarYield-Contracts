@@ -1910,7 +1910,7 @@ impl SingleRWAVault {
         let old = get_maturity_date(e);
         let state = get_vault_state(e);
         put_maturity_date(e, timestamp);
-        emit_maturity_date_set(e, old, timestamp, state);
+        emit_maturity_date_set(e, caller, old, timestamp, state, e.ledger().timestamp());
         bump_instance(e);
     }
 
@@ -2539,6 +2539,9 @@ impl SingleRWAVault {
         require_admin(e, &caller);
         require_valid_address(e, &addr);
         put_role(e, addr.clone(), role.clone(), true);
+        if role == Role::FullOperator {
+            emit_operator_added(e, caller.clone(), addr.clone(), e.ledger().timestamp());
+        }
         emit_role_granted(e, addr, role);
         bump_instance(e);
     }
@@ -2568,7 +2571,10 @@ impl SingleRWAVault {
         require_admin(e, &caller);
         require_valid_address(e, &operator);
         put_operator(e, operator.clone(), status);
-        emit_operator_updated(e, operator, status);
+        emit_operator_updated(e, operator.clone(), status);
+        if status {
+            emit_operator_added(e, caller, operator, e.ledger().timestamp());
+        }
         bump_instance(e);
     }
 
@@ -3308,8 +3314,15 @@ impl SingleRWAVault {
             panic_with_error!(e, Error::InvalidInitParams);
         }
         put_funding_target(e, target);
-        emit_funding_target_set(e, target, reason);
+        emit_funding_target_set(e, caller, target, reason, e.ledger().timestamp());
         bump_instance(e);
+    }
+
+    /// Returns the most recent epoch where `user` interacted (deposit, withdraw, transfer, etc).
+    ///
+    /// Epoch numbering starts at `0`.
+    pub fn last_interaction_epoch(e: &Env, user: Address) -> u32 {
+        get_last_interaction_epoch(e, &user)
     }
 
     // ─────────────────────────────────────────────────────────────────
