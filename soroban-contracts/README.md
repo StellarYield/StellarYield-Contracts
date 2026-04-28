@@ -396,6 +396,12 @@ Each contract operation emits specific events to enable off-chain monitoring and
 | `emg_appr`   | EmergencyApproved        | `approve_emergency_withdraw`                                                                   | Multi-sig emergency withdrawal approved           |
 | `emg_exec`   | EmergencyExecuted        | `execute_emergency_withdraw`                                                                   | Multi-sig emergency withdrawal executed           |
 
+### Event payload semantics
+
+- `set_cooperator` emits `coop_upd` with data tuple `(old_cooperator, new_cooperator)`.
+- `set_zkme_verifier` emits `zkme_upd` with topics `(symbol, caller)` and data `(old_verifier, new_verifier)`.
+- Both events are emitted after authorization and input validation, and are intended for compliance/audit indexers.
+
 ### Yield claiming examples
 
 #### Example: Claim all pending yield
@@ -900,6 +906,8 @@ Key invariants to verify:
 | `pending_yield`    | View       | None     | Assets | Unclaimed yield amount for a user.               |
 | `share_price`      | View       | None     | Assets | Current price of one share (scaled by decimals). |
 | `epoch_yield`      | View       | None     | Assets | Total yield distributed in a given epoch.        |
+| `current_epoch`    | View       | None     | Epochs | Current epoch counter for deterministic request tracking. |
+| `get_current_epoch`| View       | None     | Epochs | Alias for `current_epoch` for `get_*` SDK conventions. |
 
 #### Administration & Configuration
 
@@ -908,6 +916,9 @@ Key invariants to verify:
 | `activate_vault`    | Update     | Operator | —       | Transition `Funding → Active`.   |
 | `mature_vault`      | Update     | Operator | —       | Transition `Active → Matured`.   |
 | `set_maturity_date` | Update     | Operator | Seconds | Update the maturity timestamp.   |
+| `maturity_date`     | View       | None     | Seconds | Read vault maturity timestamp (Unix seconds). |
+| `get_maturity_date` | View       | None     | Seconds | Alias for `maturity_date` for `get_*` SDK conventions. |
+| `early_redemption_fee_bps` | View | None | BPS | Early redemption fee in basis points (10_000 = 100%), rounded down on fee calculations. |
 | `set_operator`      | Update     | Admin    | —       | Grant or revoke operator role.   |
 | `transfer_admin`    | Update     | Admin    | —       | Transfer primary admin role.     |
 | `pause / unpause`   | Update     | Operator | —       | Halt or resume vault operations. |
@@ -915,12 +926,138 @@ Key invariants to verify:
 
 ### `vault_factory`
 
+#### Vault creation (privileged)
+
+| Method | Auth | Returns | Side Effects |
+|---|---|---|---|
+| `create_single_rwa_vault(caller, asset, name, symbol, rwa_name, rwa_symbol, rwa_document_uri, maturity_date)` | Operator / Admin | `Address` — new vault address | Deploys vault contract, registers in registry, emits `v_create` |
+| `create_single_rwa_vault_full(caller, params: CreateVaultParams)` | Operator / Admin | `Address` | Same as above; accepts full `CreateVaultParams` struct with funding target, limits, fee, deadline |
+| `batch_create_vaults(caller, params: Vec<BatchVaultParams>)` | Operator / Admin | `Vec<Address>` | Deploys up to 10 vaults in one TX; emits `v_create` per vault |
+| `create_aggregator_vault(…)` | — | — | Always reverts (`NotSupported`) |
+
+#### Registry management (admin only)
+
+| Method | Auth | Returns | Side Effects |
+|---|---|---|---|
+| `set_vault_status(caller, vault, active)` | Admin | `()` | Sets `VaultInfo.active` flag; emits `v_status` |
+| `remove_vault(caller, vault)` | Admin | `()` | Purges vault from registry (vault must be inactive); emits `v_remove` |
+| `set_vault_wasm_hash(caller, hash)` | Admin | `()` | Updates WASM used for future deployments; emits `wasm_upd` |
+| `set_defaults(caller, asset, zkme_verifier, cooperator)` | Admin | `()` | Updates global factory defaults; emits `def_upd` |
+| `transfer_admin(caller, new_admin)` | Admin | `()` | Transfers admin role; emits `adm_xfr` |
+| `migrate(caller)` | Admin | `()` | Updates storage schema; emits `data_mig` |
+
+#### Role-based access control (admin only)
+
+| Method | Auth | Returns | Side Effects |
+|---|---|---|---|
+| `grant_role(caller, addr, role)` | Admin | `()` | Grants a role to `addr`; emits `role_grt` |
+| `revoke_role(caller, addr, role)` | Admin | `()` | Revokes a role from `addr`; emits `role_rvk` |
+| `set_operator(caller, operator, status)` | Admin | `()` | Backward-compat: grants/revokes `FullOperator`; emits `op_upd` |
+
+#### Read-only views (no auth)
+
+| Method | Auth | Returns | Description |
+|---|---|---|---|
+| `get_all_vaults(e)` | None | `Vec<Address>` | All registered vault addresses |
+| `get_single_rwa_vaults(e)` | None | `Vec<Address>` | Vaults of type `SingleRwa` only |
+| `get_vault_info(e, vault)` | None | `Option<VaultInfo>` | Metadata for a specific vault (name, symbol, asset, type, active, created_at) |
+| `is_registered_vault(e, vault)` | None | `bool` | Whether the vault is in the registry |
+| `vault_exists_by_name_symbol(e, name, symbol)` | None | `Option<Address>` | Lookup by name + symbol; `None` if not found |
+| `get_vault_count(e)` | None | `u32` | Total number of registered vaults |
+| `get_active_vaults(e)` | None | `Vec<Address>` | Vaults with `active == true` |
+| `get_vaults_by_asset(e, asset)` | None | `Vec<Address>` | All vaults for a specific underlying asset |
+| `get_vaults_paginated(e, offset, limit)` | None | `Vec<Address>` | Paginated view of all vaults; offset is zero-based |
+| `get_active_vaults_paginated(e, offset, limit)` | None | `Vec<Address>` | Paginated view of active vaults |
+| `list_vaults_by_status(e, status, offset, limit)` | None | `Vec<Address>` | Filter by `VaultStatus::Active` or `::Inactive`; limit capped at 50 |
+| `list_vaults_by_type(e, vault_type, offset, limit)` | None | `Vec<Address>` | Filter by `VaultType::SingleRwa` or `::Aggregator`; limit capped at 50 |
+| `get_factory_admin_overview(e)` | None | `FactoryAdminOverview` | Admin address, defaults, WASM hash, and vault count in one call |
+| `get_defaults_snapshot(e)` | None | `FactoryDefaultsSnapshot` | Default asset, verifier, cooperator, fee bps, WASM hash |
+| `get_registry_stats(e)` | None | `RegistryStats` | `total_vaults`, `active_vaults`, `latest_vault` |
+| `aggregator_vault(e)` | None | `Option<Address>` | Aggregator vault address if set |
+| `admin(e)` | None | `Address` | Current admin address |
+| `is_operator(e, account)` | None | `bool` | Whether `account` holds `FullOperator` role |
+| `default_asset(e)` | None | `Address` | Default underlying asset |
+| `default_zkme_verifier(e)` | None | `Address` | Default zkMe verifier |
+| `default_cooperator(e)` | None | `Address` | Default cooperator |
+| `vault_wasm_hash(e)` | None | `BytesN<32>` | WASM hash used for new vault deployments |
+| `version(e)` / `contract_version(e)` | None | `u32` | Contract version |
+| `storage_schema_version(e)` | None | `u32` | Current storage schema version |
+| `supports_interface(e, id)` | None | `bool` | Capability check: `1`=Base, `5`=RBAC, `100`=Registry, `101`=Deployer |
+| `has_role(e, addr, role)` | None | `bool` | Whether `addr` holds `role`, `FullOperator`, or is admin |
+
+---
+
+## Event Payload Schemas
+
+All events use Soroban's `e.events().publish(topics, data)` API.
+- **Topics** are a tuple used for subscription filtering.
+- **Data** is the event body.
+
+### `single_rwa_vault` events
+
+| Symbol | Topics tuple | Data tuple | Emitted by |
+|---|---|---|---|
+| `zkme_upd` | `(symbol,)` | `(old: Address, new: Address)` | `set_zkme_verifier` |
+| `coop_upd` | `(symbol,)` | `(old: Address, new: Address)` | `set_cooperator` |
+| `yield_dis` | `(symbol, epoch: u32)` | `(amount: i128, timestamp: u64)` | `distribute_yield`; `amount` in asset base units |
+| `yield_clm` | `(symbol, user: Address)` | `(amount: i128, epoch: u32)` | `claim_yield` / `claim_yield_for_epoch` |
+| `st_chg` | `(symbol,)` | `(old: VaultState, new: VaultState)` | `activate_vault`, `mature_vault`, `close_vault`, `cancel_funding` |
+| `mat_set` | `(symbol,)` | `(old: u64, new: u64, state: VaultState)` | `set_maturity_date`; timestamps are Unix seconds |
+| `dep_lim` | `(symbol,)` | `(min: i128, max: i128)` | `set_deposit_limits`; values in asset base units; `0` = unlimited |
+| `op_upd` | `(symbol, operator: Address)` | `status: bool` | `set_operator` (backward-compat) |
+| `role_grt` | `(symbol, addr: Address)` | `role: Role` | `grant_role` |
+| `role_rvk` | `(symbol, addr: Address)` | `role: Role` | `revoke_role` |
+| `emergency` | `(symbol,)` | `(paused: bool, reason: String)` | `pause` / `unpause` |
+| `approve` | `(symbol, from: Address, spender: Address)` | `(amount: i128, expiration_ledger: u32)` | `approve`; SEP-41 |
+| `transfer` | `(symbol, from: Address, to: Address)` | `amount: i128` | `transfer` / `transfer_from`; SEP-41 |
+| `burn` | `(symbol, from: Address)` | `amount: i128` | Share burn operations; SEP-41 |
+| `deposit` | `(symbol, caller: Address, receiver: Address)` | `(assets: i128, shares: i128)` | `deposit` and `mint`; ERC-4626 |
+| `withdraw` | `(symbol, caller: Address, receiver: Address, owner: Address)` | `(assets: i128, shares: i128)` | `withdraw` and `redeem`; ERC-4626 |
+| `mat_redm` | `(symbol, owner: Address, receiver: Address)` | `(shares: i128, assets: i128, yield_claimed: i128)` | `redeem_at_maturity`; includes auto-claimed yield |
+| `erq_req` | `(symbol, user: Address)` | `(request_id: u32, shares: i128)` | `request_early_redemption` |
+| `erq_done` | `(symbol, user: Address)` | `(request_id: u32, net_assets: i128)` | `process_early_redemption`; `net_assets` after fee |
+| `erq_can` | `(symbol, user: Address)` | `(request_id: u32, shares: i128)` | `cancel_early_redemption` |
+| `adm_xfr` | `(symbol,)` | `(old_admin: Address, new_admin: Address)` | `transfer_admin` |
+| `rwa_upd` | `(symbol,)` | `(name: String, symbol: String, document_uri: String, category: String, expected_apy: u32)` | `set_rwa_details` / `set_rwa_document_uri` / `set_expected_apy`; `expected_apy` in basis points |
+| `fee_set` | `(symbol,)` | `fee_bps: u32` | `set_early_redemption_fee`; value in basis points (max 1000 = 10%) |
+| `vest_set` | `(symbol,)` | `vesting_period: u64` | `set_yield_vesting_period`; period in seconds |
+| `fund_set` | `(symbol,)` | `(target: i128, reason: String)` | `set_funding_target`; `target` in asset base units |
+| `blacklist` | `(symbol, address: Address)` | `status: bool` | `set_blacklisted`; `true` = blacklisted |
+| `xfer_exm` | `(symbol, address: Address)` | `exempt: bool` | `set_transfer_exempt` |
+| `fund_cxl` | `(symbol,)` | `timestamp: u64` | `cancel_funding`; timestamp is ledger time |
+| `refunded` | `(symbol, user: Address)` | `amount: i128` | `refund`; amount in asset base units |
+| `emerg_on` | `(symbol,)` | `(balance: i128, total_supply: i128)` | `emergency_enable_pro_rata` |
+| `emerg_clm` | `(symbol, user: Address)` | `amount: i128` | `emergency_claim`; user's pro-rata share |
+| `data_mig` | `(symbol, old_version: u32, new_version: u32)` | `()` | `migrate` |
+| `act_prp` | `(symbol, action_id: u32)` | `(action_type: ActionType, executable_at: u64)` | `propose_action`; timelock |
+| `act_exec` | `(symbol, action_id: u32)` | `action_type: ActionType` | `execute_action`; timelock |
+| `act_canc` | `(symbol, action_id: u32)` | `action_type: ActionType` | `cancel_action`; timelock |
+| `emg_prop` | `(symbol, proposal_id: u32)` | `(proposer: Address, recipient: Address)` | `propose_emergency_withdraw` |
+| `emg_appr` | `(symbol, proposal_id: u32)` | `(approver: Address, approval_count: u32)` | `approve_emergency_withdraw` |
+| `emg_exec` | `(symbol, proposal_id: u32)` | `(recipient: Address, amount: i128)` | `execute_emergency_withdraw` |
+
+### `vault_factory` events
+
+| Symbol | Topics tuple | Data tuple | Emitted by |
+|---|---|---|---|
+| `v_create` | `(symbol, vault: Address)` | `(vault_type: VaultType, name: String, creator: Address)` | `create_single_rwa_vault` / `_full` / `batch_create_vaults` |
+| `v_status` | `(symbol, vault: Address)` | `active: bool` | `set_vault_status` |
+| `v_remove` | `(symbol, vault: Address)` | `removed_by: Address` | `remove_vault` |
+| `adm_xfr` | `(symbol,)` | `(old: Address, new: Address)` | `transfer_admin` |
+| `op_upd` | `(symbol, operator: Address)` | `status: bool` | `set_operator` |
+| `def_upd` | `(symbol,)` | `(asset: Address, zkme_verifier: Address, cooperator: Address)` | `set_defaults` |
+| `wasm_upd` | `(symbol,)` | `(new_hash: BytesN<32>, updated_by: Address)` | `set_vault_wasm_hash` |
+| `role_grt` | `(symbol, addr: Address)` | `role: Role` | `grant_role` |
+| `role_rvk` | `(symbol, addr: Address)` | `role: Role` | `revoke_role` |
+| `data_mig` | `(symbol, old_version: u32, new_version: u32)` | `()` | `migrate` |
+
 | Method                    | Mutability | Auth     | Units | Description                                  |
 | ------------------------- | ---------- | -------- | ----- | -------------------------------------------- |
 | `create_single_rwa_vault` | Update     | Operator | —     | Deploy a new vault contract.                 |
 | `batch_create_vaults`     | Update     | Operator | —     | Deploy multiple vaults in one TX (max 10).   |
 | `get_all_vaults`          | View       | None     | —     | List all registered vault addresses.         |
 | `get_vault_info`          | View       | None     | —     | Read metadata for a specific vault.          |
+| `is_registered_vault`     | View       | None     | Bool  | Returns true if a vault address exists in factory registry. |
 | `set_vault_status`        | Update     | Admin    | —     | Activate/deactivate a vault in the registry. |
 | `set_vault_wasm_hash`     | Update     | Admin    | —     | Update the WASM used for new deployments.    |
 | `version`                 | View       | None     | —     | Factory contract version.                    |

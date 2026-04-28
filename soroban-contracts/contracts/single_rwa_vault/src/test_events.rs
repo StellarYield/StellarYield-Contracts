@@ -239,6 +239,41 @@ fn test_set_zkme_verifier_emits_event_with_caller_and_addresses() {
 
     let (event_old, event_new): (soroban_sdk::Address, soroban_sdk::Address) =
         data.into_val(&ctx.env);
-    assert_eq!(event_old, old_verifier, "zkme verifier event: old verifier must match");
-    assert_eq!(event_new, new_verifier, "zkme verifier event: new verifier must match");
+    assert_eq!(
+        event_old, old_verifier,
+        "zkme verifier event: old verifier must match"
+    );
+    assert_eq!(
+        event_new, new_verifier,
+        "zkme verifier event: new verifier must match"
+    );
+}
+
+#[test]
+fn test_set_cooperator_emits_event_with_old_and_new_addresses() {
+    let ctx = setup_with_kyc_bypass();
+    let old_cooperator = ctx.vault().cooperator();
+    let new_cooperator = soroban_sdk::Address::generate(&ctx.env);
+
+    ctx.vault().set_cooperator(&ctx.admin, &new_cooperator);
+
+    let events = ctx.env.events().all();
+    let cooperator_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("coop_upd")
+        }
+    });
+    let (_, _, data) = cooperator_event.expect("cooperator event must be emitted");
+
+    let (event_old, event_new): (soroban_sdk::Address, soroban_sdk::Address) =
+        data.into_val(&ctx.env);
+    assert_eq!(
+        event_old, old_cooperator,
+        "cooperator event: old cooperator must match"
+    );
+    assert_eq!(
+        event_new, new_cooperator,
+        "cooperator event: new cooperator must match"
+    );
 }

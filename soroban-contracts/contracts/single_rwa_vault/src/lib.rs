@@ -21,6 +21,8 @@ mod test_burn_snapshot;
 #[cfg(test)]
 mod test_burn_yield_accounting;
 #[cfg(test)]
+mod test_can_redeem;
+#[cfg(test)]
 mod test_claim_cursor;
 #[cfg(test)]
 mod test_close_vault;
@@ -76,6 +78,8 @@ mod test_withdraw;
 mod test_yield_vesting;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod test_safe_preview;
 
 pub use crate::storage::Key;
 pub use crate::types::*;
@@ -341,7 +345,9 @@ impl SingleRWAVault {
         require_valid_address(e, &new_cooperator);
         let old = get_cooperator(e);
         put_cooperator(e, new_cooperator.clone());
-        emit_cooperator_updated(e, old, new_cooperator);
+        emit_cooperator_updated(e, old.clone(), new_cooperator.clone());
+        // Emit additional event for cooperator fee tracking
+        emit_cooperator_fee_updated(e, old, new_cooperator);
         bump_instance(e);
     }
 
@@ -663,6 +669,150 @@ impl SingleRWAVault {
         }
     }
 
+    /// Safe, non-panicking preview of shares minted for `assets` deposited.
+    ///
+    /// Validates all deposit constraints (minimum, per-user cap, funding target)
+    /// before computing the share amount. Returns a typed reason on failure so
+    /// that UI estimators can surface actionable messages without catching traps.
+    ///
+    /// # Returns
+    /// - `ok == true`, `shares == estimated`, `reason == SafePreviewDepositReason::None`.
+    /// - `ok == false`, `shares == 0`, `reason` identifies the violated constraint.
+    pub fn safe_preview_deposit(e: &Env, assets: i128) -> SafePreviewDepositResult {
+        macro_rules! fail_deposit {
+            ($r:expr) => {
+                return SafePreviewDepositResult {
+                    ok: false,
+                    shares: 0,
+                    reason: $r,
+                }
+            };
+        }
+
+        if assets <= 0 {
+            fail_deposit!(SafePreviewDepositReason::ZeroAmount);
+        }
+
+        let min_dep = get_min_deposit(e);
+        if min_dep > 0 && assets < min_dep {
+            fail_deposit!(SafePreviewDepositReason::BelowMinimumDeposit);
+        }
+
+        let max_dep = get_max_deposit_per_user(e);
+        if max_dep > 0 && assets > max_dep {
+            // Conservative: compare assets against the cap ceiling directly.
+            // For per-user deposit accumulation checks, use `can_deposit_many`.
+            fail_deposit!(SafePreviewDepositReason::ExceedsMaximumDeposit);
+        }
+
+        if get_vault_state(e) == VaultState::Funding {
+            let target = get_funding_target(e);
+            if target > 0 {
+                let current = total_assets(e);
+                if current + assets > target {
+                    fail_deposit!(SafePreviewDepositReason::FundingTargetExceeded);
+                }
+            }
+        }
+
+        // Compute shares using the same formula as preview_deposit / deposit.
+        let supply = get_total_supply(e);
+        let ta = total_assets(e);
+        let shares = if supply == 0 || ta == 0 {
+            assets
+        } else {
+            math::mul_div(e, assets, supply + VIRTUAL_OFFSET, ta + VIRTUAL_OFFSET)
+        };
+
+        if shares == 0 {
+            fail_deposit!(SafePreviewDepositReason::ZeroShares);
+        }
+
+        SafePreviewDepositResult {
+            ok: true,
+            shares,
+            reason: SafePreviewDepositReason::None,
+        }
+    }
+
+    /// Safe, non-panicking preview of the asset cost to mint exactly `shares`.
+    ///
+    /// Validates all deposit constraints after computing the asset cost so that
+    /// UI estimators receive a typed reason rather than a contract trap.
+    ///
+    /// # Returns
+    /// - `ok == true`, `assets == estimated`, `reason == SafePreviewMintReason::None`.
+    /// - `ok == false`, `assets == 0`, `reason` identifies the violated constraint.
+    pub fn safe_preview_mint(e: &Env, shares: i128) -> SafePreviewMintResult {
+        macro_rules! fail_mint {
+            ($r:expr) => {
+                return SafePreviewMintResult {
+                    ok: false,
+                    assets: 0,
+                    reason: $r,
+                }
+            };
+        }
+
+        if shares <= 0 {
+            fail_mint!(SafePreviewMintReason::ZeroAmount);
+        }
+
+        // Compute asset cost using the same formula as preview_mint / mint (ceiling division).
+        let supply = get_total_supply(e);
+        let ta = total_assets(e);
+        let assets = if supply == 0 || ta == 0 {
+            shares
+        } else {
+            math::mul_div_ceil(e, shares, ta + VIRTUAL_OFFSET, supply + VIRTUAL_OFFSET)
+        };
+
+        let min_dep = get_min_deposit(e);
+        if min_dep > 0 && assets < min_dep {
+            fail_mint!(SafePreviewMintReason::BelowMinimumDeposit);
+        }
+
+        let max_dep = get_max_deposit_per_user(e);
+        if max_dep > 0 && assets > max_dep {
+            fail_mint!(SafePreviewMintReason::ExceedsMaximumDeposit);
+        }
+
+        if get_vault_state(e) == VaultState::Funding {
+            let target = get_funding_target(e);
+            if target > 0 {
+                let current = total_assets(e);
+                if current + assets > target {
+                    fail_mint!(SafePreviewMintReason::FundingTargetExceeded);
+                }
+            }
+        }
+
+        SafePreviewMintResult {
+            ok: true,
+            assets,
+            reason: SafePreviewMintReason::None,
+        }
+    }
+
+    /// Raw underlying-token balance held by this vault contract, in base units.
+    ///
+    /// Unlike `total_assets()` — which returns the accounting value tracked in
+    /// `TotDep` — this method queries the token contract directly. Both values
+    /// should match during normal operation; any divergence indicates an
+    /// out-of-band transfer or fee-on-transfer token behaviour.
+    ///
+    /// Wallet scripts and operator monitoring tools can use this to perform a
+    /// quick solvency sanity check without computing it off-chain.
+    ///
+    /// # Returns
+    /// The actual token balance of the vault contract address, in the asset's
+    /// base units (e.g. micro-USDC for a 6-decimal USDC vault).
+    pub fn vault_asset_balance(e: &Env) -> i128 {
+        let asset = get_asset(e);
+        let client = token::Client::new(e, &asset);
+        client.balance(&e.current_contract_address())
+    }
+
     // ERC-4626 pure conversion helpers (floor division)
     // ─────────────────────────────────────────────────────────────────
 
@@ -842,10 +992,10 @@ impl SingleRWAVault {
 
         // Validate inputs
         if users.len() != shares.len() {
-            panic_with_error!(e, Error::InvalidInput);
+            panic_with_error!(e, Error::InvalidInitParams);
         }
         if users.len() > MAX_BATCH_SIZE {
-            panic_with_error!(e, Error::InvalidInput);
+            panic_with_error!(e, Error::InvalidInitParams);
         }
 
         let mut results: Vec<RedemptionPreflight> = Vec::new(e);
@@ -853,7 +1003,8 @@ impl SingleRWAVault {
         // Check vault state once
         let paused = get_paused(e);
         let state = get_vault_state(e);
-        let can_redeem_state = !paused && (state == VaultState::Active || state == VaultState::Matured);
+        let can_redeem_state =
+            !paused && (state == VaultState::Active || state == VaultState::Matured);
 
         for i in 0..users.len() {
             let user = users.get_unchecked(i);
@@ -1419,6 +1570,10 @@ impl SingleRWAVault {
     pub fn current_epoch(e: &Env) -> u32 {
         get_current_epoch(e)
     }
+    /// Alias getter for integrations expecting `get_*` naming.
+    pub fn get_current_epoch(e: &Env) -> u32 {
+        get_current_epoch(e)
+    }
     pub fn epoch_yield(e: &Env, epoch: u32) -> i128 {
         get_epoch_yield(e, epoch)
     }
@@ -1768,6 +1923,10 @@ impl SingleRWAVault {
     /// - **Maturity Check**: Clients should compare this value with the current
     ///   ledger timestamp to determine if the term has ended.
     pub fn maturity_date(e: &Env) -> u64 {
+        get_maturity_date(e)
+    }
+    /// Alias getter for integrations expecting `get_*` naming.
+    pub fn get_maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
     }
 
@@ -2264,7 +2423,7 @@ impl SingleRWAVault {
     pub fn early_redemption_fee_bps(e: &Env) -> u32 {
         get_early_redemption_fee_bps(e)
     }
- 
+
     /// Returns the fee in basis points (0-10,000) that may be charged by the
     /// cooperator or platform for vault operations.
     ///
@@ -2594,6 +2753,67 @@ impl SingleRWAVault {
             out.push_back(all.get(i).unwrap());
         }
         out
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // View helpers for frontend and scripts
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Check if a user can redeem a specific amount of shares.
+    ///
+    /// Returns a `CanRedeemResult` struct with:
+    /// - `ok`: true if redemption is possible
+    /// - `reason`: optional error message if redemption is not possible
+    ///
+    /// This is a view function useful for frontend previews and preventing
+    /// failed transactions. It validates:
+    /// - Vault state constraints (Active or Matured)
+    /// - Pause status
+    /// - Blacklist status
+    /// - Share sufficiency (user has enough non-escrowed shares)
+    ///
+    /// Note: Escrowed shares (from early redemption requests) are not available
+    /// for redemption until the request is cancelled or rejected.
+    pub fn can_redeem(e: &Env, user: Address, shares: i128) -> CanRedeemResult {
+        // Check if vault is paused
+        if get_paused(e) {
+            return CanRedeemResult {
+                ok: false,
+                reason: Some(String::from_str(e, "Vault is paused")),
+            };
+        }
+
+        // Check vault state
+        let state = get_vault_state(e);
+        if state != VaultState::Active && state != VaultState::Matured {
+            return CanRedeemResult {
+                ok: false,
+                reason: Some(String::from_str(e, "Vault not active or matured")),
+            };
+        }
+
+        // Check if user is blacklisted
+        if get_blacklisted(e, &user) {
+            return CanRedeemResult {
+                ok: false,
+                reason: Some(String::from_str(e, "User is blacklisted")),
+            };
+        }
+
+        // Check share sufficiency (balance already excludes escrowed shares)
+        let balance = get_share_balance(e, &user);
+        if balance < shares {
+            return CanRedeemResult {
+                ok: false,
+                reason: Some(String::from_str(e, "Insufficient shares")),
+            };
+        }
+
+        // All checks passed
+        CanRedeemResult {
+            ok: true,
+            reason: None,
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
