@@ -517,7 +517,7 @@ fn test_operator_cannot_transfer_admin() {
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
 
-    let operator  = Address::generate(&e);
+    let operator = Address::generate(&e);
     let new_admin = Address::generate(&e);
 
     // Grant full operator privileges to `operator`
@@ -540,7 +540,7 @@ fn test_operator_escalation_attempt_leaves_state_intact() {
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
 
-    let operator  = Address::generate(&e);
+    let operator = Address::generate(&e);
     let new_admin = Address::generate(&e);
 
     vault.set_operator(&admin, &operator, &true);
@@ -585,8 +585,8 @@ fn test_operator_cannot_grant_operator_to_others() {
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
 
-    let operator  = Address::generate(&e);
-    let new_oper  = Address::generate(&e);
+    let operator = Address::generate(&e);
+    let new_oper = Address::generate(&e);
 
     vault.set_operator(&admin, &operator, &true);
 
