@@ -1,9 +1,9 @@
 ---
 name: Bug Report
 about: Create a report to help us improve
-title: '[BUG] '
+title: "[BUG] "
 labels: bug
-assignees: ''
+assignees: ""
 ---
 
 ## Bug Description
@@ -20,7 +20,7 @@ assignees: ''
 
 ## Steps to Reproduce
 
-<!-- 
+<!--
 Provide steps to reproduce the behavior:
 1. Go to '...'
 2. Click on '....'
@@ -31,23 +31,26 @@ Provide steps to reproduce the behavior:
 ## Environment
 
 ### Contract Details
+
 - Contract: `single_rwa_vault` / `vault_factory` / `SDK`
 - Function/Method: <!-- If applicable -->
 - Network: Testnet / Mainnet / Local
 
 ### Technical Details
+
 - Rust version: <!-- Run `rustc --version` -->
 - Stellar CLI version: <!-- Run `stellar --version` -->
 - Node.js version: <!-- If SDK related, run `node --version` -->
 - Operating System: <!-- e.g., macOS 14.0, Ubuntu 22.04 -->
 
 ### Configuration
+
 - Branch/Commit: <!-- Git hash or branch name -->
 - Build flags: <!-- Any special build configuration -->
 
 ## Error Messages / Logs
 
-<!-- 
+<!--
 Paste any error messages, stack traces, or relevant logs here.
 Use code blocks for formatting:
 ```
@@ -65,12 +68,14 @@ Error: contract error(5): InvalidVaultState
 ## Impact Assessment
 
 ### Severity
+
 - [ ] Critical - Security vulnerability, fund loss, or contract unusable
 - [ ] High - Major functionality broken, affecting many users
 - [ ] Medium - Some functionality broken, affecting limited users
 - [ ] Low - Minor issue, workaround available
 
 ### Affected Users
+
 - [ ] All users
 - [ ] Vault operators only
 - [ ] Specific vault instances
@@ -78,11 +83,12 @@ Error: contract error(5): InvalidVaultState
 - [ ] Local development only
 
 ### Workarounds
+
 <!-- Describe any available workarounds -->
 
 ## Additional Context
 
-<!-- 
+<!--
 Add any other context about the problem here:
 - When did this start happening?
 - Has it worked before?
@@ -92,7 +98,7 @@ Add any other context about the problem here:
 
 ## Security Concerns
 
-<!-- 
+<!--
 If this bug has security implications, DO NOT file a public issue.
 Instead, email: security@stellaryield.io
 -->
