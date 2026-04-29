@@ -302,7 +302,20 @@ impl SingleRWAVault {
     // zkMe KYC
     // ─────────────────────────────────────────────────────────────────
 
-    /// Returns true when the user has passed KYC (or when no verifier is set).
+    /// Returns true when the user has passed KYC verification (or when no verifier is set).
+    ///
+    /// ## Frontend Usage
+    /// This helper allows frontends to visually flag addresses and prevent actions
+    /// before attempting transactions. Call this view before deposit/transfer to
+    /// provide immediate feedback to users.
+    ///
+    /// ## Behavior
+    /// - Returns `true` if `zkme_verifier` is set to the contract itself (bypass mode)
+    /// - Returns `true` if the ZkMe verifier contract returns `has_approved = true`
+    /// - Returns `false` otherwise
+    ///
+    /// # Arguments
+    /// * `user` - The address to check for KYC verification status
     pub fn is_kyc_verified(e: &Env, user: Address) -> bool {
         let verifier = get_zkme_verifier(e);
         // If verifier is the zero-equivalent (contract itself) → allow all
@@ -2790,6 +2803,24 @@ impl SingleRWAVault {
     // Blacklist
     // ─────────────────────────────────────────────────────────────────
 
+    /// Set or clear the blacklist status for an address.
+    ///
+    /// ## Vault-Specific
+    /// The blacklist is **vault-specific** (stored in this vault's instance storage).
+    /// It is NOT shared across vaults or managed by a factory/global registry.
+    /// Each vault maintains its own independent blacklist.
+    ///
+    /// ## Enforcement
+    /// Blacklist checks are enforced on:
+    /// - **Deposit**: `deposit()`, `mint()` - caller and receiver are checked
+    /// - **Withdraw**: `withdraw()`, `redeem()` - caller, owner, and receiver are checked
+    /// - **Transfer**: `transfer()`, `transfer_from()` - both sender and receiver are checked
+    /// - **Early Redemption**: `request_early_redemption()` - caller is checked
+    /// - **Yield Claims**: `claim_yield()` - caller is checked
+    ///
+    /// ## Frontend Usage
+    /// Frontends should call `is_blacklisted(address)` to visually flag addresses
+    /// and prevent user actions before transaction submission.
     pub fn set_blacklisted(e: &Env, caller: Address, address: Address, status: bool) {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
@@ -2799,6 +2830,15 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
+    /// Returns `true` if the address is blacklisted in this vault.
+    ///
+    /// ## Vault-Specific
+    /// The blacklist is **vault-specific**. Each vault maintains its own
+    /// independent blacklist in its instance storage.
+    ///
+    /// ## Frontend Usage
+    /// Call this view to visually flag addresses and prevent actions.
+    /// Combine with `is_kyc_verified()` for complete address screening.
     pub fn is_blacklisted(e: &Env, address: Address) -> bool {
         get_blacklisted(e, &address)
     }
