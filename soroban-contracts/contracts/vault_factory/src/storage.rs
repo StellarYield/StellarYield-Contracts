@@ -36,13 +36,12 @@ pub enum DataKey {
     DefaultCooperator,
     VaultWasmHash,
     AggregatorVault,
-    AllVaults,
-    SingleRwaVaults,
-    ActiveVaults,
+    VaultAtIndex(u32),
     VaultInfo(Address),
     VaultCount,
     VaultDeployCounter,
     VaultsByAsset(Address),
+    DefaultFeeBps,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,19 +181,76 @@ pub fn put_aggregator_vault(e: &Env, val: Address) {
     e.storage().instance().set(&DataKey::AggregatorVault, &val);
 }
 
+pub fn get_default_fee_bps(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::DefaultFeeBps)
+        .unwrap_or(200)
+}
+pub fn put_default_fee_bps(e: &Env, val: u32) {
+    e.storage().instance().set(&DataKey::DefaultFeeBps, &val);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Vault count counter (Instance — same lifetime as other global config)
+// Vault indexing (Persistent)
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn get_vault_count(e: &Env) -> u32 {
     e.storage()
-        .instance()
+        .persistent()
         .get(&DataKey::VaultCount)
         .unwrap_or(0)
 }
 
-fn put_vault_count(e: &Env, val: u32) {
-    e.storage().instance().set(&DataKey::VaultCount, &val);
+pub fn put_vault_count(e: &Env, val: u32) {
+    e.storage().persistent().set(&DataKey::VaultCount, &val);
+    bump_persist(e, &DataKey::VaultCount);
+}
+
+pub fn register_vault(e: &Env, vault: Address) {
+    let count = get_vault_count(e);
+    let key = DataKey::VaultAtIndex(count);
+    e.storage().persistent().set(&key, &vault);
+    bump_persist(e, &key);
+    put_vault_count(e, count + 1);
+}
+
+pub fn unregister_vault(e: &Env, vault: Address) {
+    let count = get_vault_count(e);
+    if count == 0 {
+        return;
+    }
+
+    let mut found_index: Option<u32> = None;
+    for i in 0..count {
+        if let Some(v) = get_vault_at_index(e, i) {
+            if v == vault {
+                found_index = Some(i);
+                break;
+            }
+        }
+    }
+
+    if let Some(index) = found_index {
+        let last_index = count - 1;
+        if index != last_index {
+            // Swap: move the last element to the position of the element being removed
+            if let Some(last_vault) = get_vault_at_index(e, last_index) {
+                let key = DataKey::VaultAtIndex(index);
+                e.storage().persistent().set(&key, &last_vault);
+                bump_persist(e, &key);
+            }
+        }
+        // Pop: remove the last element and decrement the count
+        e.storage()
+            .persistent()
+            .remove(&DataKey::VaultAtIndex(last_index));
+        put_vault_count(e, last_index);
+    }
+}
+
+pub fn get_vault_at_index(e: &Env, index: u32) -> Option<Address> {
+    e.storage().persistent().get(&DataKey::VaultAtIndex(index))
 }
 
 pub fn get_vault_deploy_counter(e: &Env) -> u32 {
@@ -213,72 +269,6 @@ pub fn increment_vault_deploy_counter(e: &Env) -> u32 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vault lists (Persistent)
-// ─────────────────────────────────────────────────────────────────────────────
-
-pub fn get_all_vaults(e: &Env) -> Vec<Address> {
-    e.storage()
-        .persistent()
-        .get(&DataKey::AllVaults)
-        .unwrap_or_else(|| vec![e])
-}
-
-pub fn push_all_vaults(e: &Env, addr: Address) {
-    let mut vaults = get_all_vaults(e);
-    vaults.push_back(addr);
-    e.storage().persistent().set(&DataKey::AllVaults, &vaults);
-    bump_persist(e, &DataKey::AllVaults);
-    put_vault_count(e, get_vault_count(e) + 1);
-}
-
-pub fn get_single_rwa_vaults(e: &Env) -> Vec<Address> {
-    e.storage()
-        .persistent()
-        .get(&DataKey::SingleRwaVaults)
-        .unwrap_or_else(|| vec![e])
-}
-
-pub fn push_single_rwa_vaults(e: &Env, addr: Address) {
-    let mut vaults = get_single_rwa_vaults(e);
-    vaults.push_back(addr);
-    e.storage()
-        .persistent()
-        .set(&DataKey::SingleRwaVaults, &vaults);
-    bump_persist(e, &DataKey::SingleRwaVaults);
-}
-
-pub fn get_active_vaults(e: &Env) -> Vec<Address> {
-    e.storage()
-        .persistent()
-        .get(&DataKey::ActiveVaults)
-        .unwrap_or_else(|| vec![e])
-}
-
-pub fn push_active_vaults(e: &Env, addr: Address) {
-    let mut vaults = get_active_vaults(e);
-    vaults.push_back(addr);
-    e.storage()
-        .persistent()
-        .set(&DataKey::ActiveVaults, &vaults);
-    bump_persist(e, &DataKey::ActiveVaults);
-}
-
-pub fn remove_from_active_vaults(e: &Env, vault: &Address) {
-    let vaults = get_active_vaults(e);
-    let mut updated: Vec<Address> = Vec::new(e);
-    for i in 0..vaults.len() {
-        let addr = vaults.get(i).unwrap();
-        if addr != *vault {
-            updated.push_back(addr);
-        }
-    }
-    e.storage()
-        .persistent()
-        .set(&DataKey::ActiveVaults, &updated);
-    bump_persist(e, &DataKey::ActiveVaults);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // VaultInfo (Persistent, keyed by vault address)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -292,40 +282,6 @@ pub fn put_vault_info(e: &Env, vault: &Address, info: VaultInfo) {
     let key = DataKey::VaultInfo(vault.clone());
     e.storage().persistent().set(&key, &info);
     bump_persist(e, &key);
-}
-
-/// Remove a vault address from the AllVaults list and decrement the counter.
-pub fn remove_from_all_vaults(e: &Env, vault: &Address) {
-    let vaults = get_all_vaults(e);
-    let mut updated: Vec<Address> = Vec::new(e);
-    for i in 0..vaults.len() {
-        let addr = vaults.get(i).unwrap();
-        if addr != *vault {
-            updated.push_back(addr);
-        }
-    }
-    e.storage().persistent().set(&DataKey::AllVaults, &updated);
-    bump_persist(e, &DataKey::AllVaults);
-    let count = get_vault_count(e);
-    if count > 0 {
-        put_vault_count(e, count - 1);
-    }
-}
-
-/// Remove a vault address from the SingleRwaVaults list.
-pub fn remove_from_single_rwa_vaults(e: &Env, vault: &Address) {
-    let vaults = get_single_rwa_vaults(e);
-    let mut updated: Vec<Address> = Vec::new(e);
-    for i in 0..vaults.len() {
-        let addr = vaults.get(i).unwrap();
-        if addr != *vault {
-            updated.push_back(addr);
-        }
-    }
-    e.storage()
-        .persistent()
-        .set(&DataKey::SingleRwaVaults, &updated);
-    bump_persist(e, &DataKey::SingleRwaVaults);
 }
 
 /// Delete the persistent VaultInfo entry for the given vault address.

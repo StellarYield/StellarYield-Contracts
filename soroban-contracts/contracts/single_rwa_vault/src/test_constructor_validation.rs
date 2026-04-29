@@ -23,7 +23,8 @@ fn get_valid_params(e: &Env) -> InitParams {
         funding_deadline: 0,
         min_deposit: 10,
         max_deposit_per_user: 100,
-        early_redemption_fee_bps: 200,
+        early_redemption_fee_bps: 200u32,
+        operator_fee_bps: 0u32,
         rwa_name: String::from_str(e, "RWA"),
         rwa_symbol: String::from_str(e, "R"),
         rwa_document_uri: String::from_str(e, "uri"),
@@ -99,6 +100,23 @@ fn test_constructor_rejects_max_deposit_below_min() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Asset address validation (#163)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Constructor must reject an asset address that is the vault's own address,
+/// because a self-referential asset would create an accounting loop.
+#[test]
+#[should_panic(expected = "Error(Contract, #26)")]
+fn test_constructor_rejects_self_as_asset() {
+    let e = Env::default();
+    let vault_addr = Address::generate(&e);
+    let mut params = get_valid_params(&e);
+    params.asset = vault_addr.clone();
+
+    e.register_at(&vault_addr, SingleRWAVault, (params,));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Minimal config (#195)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -128,7 +146,8 @@ fn test_constructor_minimal_config() {
         funding_deadline: 0,
         min_deposit: 0,
         max_deposit_per_user: 0,
-        early_redemption_fee_bps: 0,
+        early_redemption_fee_bps: 0u32,
+        operator_fee_bps: 0u32,
         rwa_name: String::from_str(&e, "Min RWA"),
         rwa_symbol: String::from_str(&e, "MR"),
         rwa_document_uri: String::from_str(&e, "uri"),
@@ -185,7 +204,8 @@ fn test_constructor_maximum_config() {
         funding_deadline: 0,
         min_deposit: 1,
         max_deposit_per_user: 0,
-        early_redemption_fee_bps: 1000,
+        early_redemption_fee_bps: 1000u32,
+        operator_fee_bps: 0u32,
         rwa_name: String::from_str(&e, "Max RWA Bond"),
         rwa_symbol: String::from_str(&e, "MAXRWA"),
         rwa_document_uri: String::from_str(&e, "https://example.com/max"),

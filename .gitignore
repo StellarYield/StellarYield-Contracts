@@ -34,7 +34,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .pnpm-store/
-package-lock.json
+# Keep SDK lockfile tracked for reproducible CI installs
+!sdk/package-lock.json
 
 # ─────────────────────────────────────────────────────────────────
 # Environment & secrets
@@ -79,6 +80,13 @@ coverage/
 *.log
 *.tmp
 *.bak
+**/check_output.txt
 
 issue.md
 pr.md
+LOCAL_LOW_COMPLEXITY_ISSUES.md
+
+target/
+target_local/
+target_debug/
+

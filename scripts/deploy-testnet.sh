@@ -42,20 +42,20 @@ NON_INTERACTIVE=false
 
 info()    { echo "[INFO]  $*"; }
 success() { echo "[OK]    $*"; }
-warn()    { echo "[WARN]  $*" >&2; }
 die()     { echo "[ERROR] $*" >&2; exit 1; }
 
 prompt() {
     local var_name="$1"
     local prompt_text="$2"
     local default="${3:-}"
+    local value
 
     if [[ -n "${!var_name:-}" ]]; then
         return
     fi
 
     if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        [[ -n "$default" ]] && eval "$var_name='$default'" && return
+        [[ -n "$default" ]] && printf -v "$var_name" '%s' "$default" && return
         die "Required variable '$var_name' not set and running non-interactively."
     fi
 
@@ -65,7 +65,7 @@ prompt() {
     read -rp "${prompt_text}${display_default}: " value
     value="${value:-$default}"
     [[ -z "$value" ]] && die "'$var_name' cannot be empty."
-    eval "$var_name='$value'"
+    printf -v "$var_name" '%s' "$value"
 }
 
 # ---------------------------------------------------------------------------
@@ -73,7 +73,6 @@ prompt() {
 # ---------------------------------------------------------------------------
 
 command -v stellar >/dev/null 2>&1 || die "'stellar' CLI not found. Install with: cargo install --locked stellar-cli"
-command -v jq      >/dev/null 2>&1 || warn "'jq' not found — some output formatting will be skipped."
 
 # Load previously saved environment if it exists
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE" && info "Loaded existing config from $ENV_FILE"

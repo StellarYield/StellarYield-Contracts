@@ -276,6 +276,7 @@ Before submitting a PR, ensure:
 
 - [ ] **Code follows style guidelines** (`make fmt` and `make lint` pass)
 - [ ] **All tests pass** (`make test` passes)
+- [ ] **Review Checklist followed** (see [REVIEW_CHECKLIST.md](docs/REVIEW_CHECKLIST.md))
 - [ ] **New functionality has tests** (minimum 80% coverage for new code)
 - [ ] **No new `panic!`** statements (use `panic_with_error!`)
 - [ ] **Events emitted** for all state changes
@@ -451,4 +452,4 @@ panic!("This should never happen");
 - **Security concerns**: Email security@stellaryield.io
 - **General chat**: Join our Discord community
 
-Thank you for contributing to StellarYield! 🚀
+Thank you for contributing to StellarYield 🚀

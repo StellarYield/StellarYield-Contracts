@@ -6,8 +6,9 @@ use soroban_sdk::{symbol_short, Address, Env, String};
 
 use crate::types::{Role, VaultState};
 
-pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
-    e.events().publish((symbol_short!("zkme_upd"),), (old, new));
+pub fn emit_zkme_verifier_updated(e: &Env, caller: Address, old: Address, new: Address) {
+    e.events()
+        .publish((symbol_short!("zkme_upd"), caller), (old, new));
 }
 
 pub fn emit_cooperator_updated(e: &Env, old: Address, new: Address) {
@@ -28,8 +29,18 @@ pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }
 
-pub fn emit_maturity_date_set(e: &Env, timestamp: u64) {
-    e.events().publish((symbol_short!("mat_set"),), timestamp);
+pub fn emit_maturity_date_set(
+    e: &Env,
+    caller: Address,
+    old: u64,
+    new: u64,
+    state: VaultState,
+    timestamp: u64,
+) {
+    e.events().publish(
+        (symbol_short!("mat_set"), caller),
+        (old, new, state, timestamp),
+    );
 }
 
 pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
@@ -39,6 +50,20 @@ pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
 pub fn emit_operator_updated(e: &Env, operator: Address, status: bool) {
     e.events()
         .publish((symbol_short!("op_upd"), operator), status);
+}
+
+/// Emitted when an operator is added (status=true).
+/// Includes caller and timestamp for off-chain monitoring.
+pub fn emit_operator_added(e: &Env, caller: Address, operator: Address, timestamp: u64) {
+    e.events()
+        .publish((symbol_short!("op_add"), caller, operator), timestamp);
+}
+
+pub fn emit_operator_removed(e: &Env, caller: Address, operator: Address) {
+    e.events().publish(
+        (symbol_short!("op_rem"), caller, operator),
+        e.ledger().timestamp(),
+    );
 }
 
 /// Emitted when the admin grants a role to an address.
@@ -221,15 +246,32 @@ pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
         .publish((symbol_short!("vest_set"),), vesting_period);
 }
 
-/// Emitted by `set_funding_target`.
-pub fn emit_funding_target_set(e: &Env, target: i128) {
-    e.events().publish((symbol_short!("fund_set"),), target);
+/// Emitted by `set_funding_target` / `set_funding_target_with_reason`.
+///
+/// `reason` is a short operator-provided context string (may be empty).
+pub fn emit_funding_target_set(
+    e: &Env,
+    caller: Address,
+    target: i128,
+    reason: String,
+    timestamp: u64,
+) {
+    e.events().publish(
+        (symbol_short!("fund_set"), caller),
+        (target, reason, timestamp),
+    );
 }
 
 /// Emitted by `set_blacklisted`.
 pub fn emit_address_blacklisted(e: &Env, address: Address, status: bool) {
     e.events()
         .publish((symbol_short!("blacklist"), address), status);
+}
+
+/// Emitted by `set_transfer_exempt`.
+pub fn emit_transfer_exemption_set(e: &Env, address: Address, exempt: bool) {
+    e.events()
+        .publish((symbol_short!("xfer_exm"), address), exempt);
 }
 
 /// Emitted by `cancel_funding` — vault moved to Cancelled state.
@@ -242,6 +284,11 @@ pub fn emit_funding_cancelled(e: &Env) {
 pub fn emit_refunded(e: &Env, user: Address, amount: i128) {
     e.events()
         .publish((symbol_short!("refunded"), user), amount);
+}
+
+/// Emitted by `set_cooperator` — cooperator address has been updated. (Task #346)
+pub fn emit_cooperator_fee_updated(e: &Env, old: Address, new: Address) {
+    e.events().publish((symbol_short!("coop_fee"),), (old, new));
 }
 
 /// Emitted by `emergency_enable_pro_rata` — vault enters Emergency state.

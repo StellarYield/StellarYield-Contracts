@@ -50,11 +50,16 @@ if (rpc.Api.isSimulationError(sim)) throw new Error(sim.error);
 
 ---
 
-## Example 2 — Claim yield
+## Example 2 — Claim all pending yield
+
+The `claim_yield` function claims all unclaimed yield across all epochs in a single transaction.
 
 ```typescript
 import { Networks, rpc } from "@stellar/stellar-sdk";
-import { SingleRwaVaultClient, buildUnsignedTransaction } from "@stellaryield/sdk";
+import {
+  SingleRwaVaultClient,
+  buildUnsignedTransaction,
+} from "@stellaryield/sdk";
 
 const server = new rpc.Server("https://soroban-testnet.stellar.org");
 const user = "G...";
@@ -62,6 +67,12 @@ const vaultId = "C...";
 
 const account = await server.getAccount(user);
 const vault = new SingleRwaVaultClient(vaultId);
+
+// Check pending yield before claiming
+const pending = await vault.pendingYield(user);
+console.log(`Pending yield: ${pending}`);
+
+// Claim all pending yield
 const op = vault.claimYield(user);
 
 const tx = buildUnsignedTransaction({
@@ -74,13 +85,81 @@ const sim = await server.simulateTransaction(tx);
 // ... sign & send
 ```
 
+**When to use:**
+
+- User wants to claim all available yield at once
+- Simplest integration for wallets and frontends
+- Most gas-efficient for users who claim periodically
+
 ---
 
-## Example 3 — Create a vault via the factory
+## Example 3 — Claim yield for a specific epoch
+
+The `claim_yield_for_epoch` function allows granular claiming of yield from individual epochs. This is useful when yield has a vesting period or for advanced integrations.
 
 ```typescript
 import { Networks, rpc } from "@stellar/stellar-sdk";
-import { VaultFactoryClient, buildUnsignedTransaction } from "@stellaryield/sdk";
+import {
+  SingleRwaVaultClient,
+  buildUnsignedTransaction,
+} from "@stellaryield/sdk";
+
+const server = new rpc.Server("https://soroban-testnet.stellar.org");
+const user = "G...";
+const vaultId = "C...";
+
+const account = await server.getAccount(user);
+const vault = new SingleRwaVaultClient(vaultId);
+
+// Check yield for specific epoch
+const epochNumber = 3;
+const pendingForEpoch = await vault.pendingYieldForEpoch(user, epochNumber);
+console.log(`Pending yield for epoch ${epochNumber}: ${pendingForEpoch}`);
+
+// Claim only epoch 3 yield
+const op = vault.claimYieldForEpoch(user, epochNumber);
+
+const tx = buildUnsignedTransaction({
+  account,
+  networkPassphrase: Networks.TESTNET,
+  operation: op,
+});
+
+const sim = await server.simulateTransaction(tx);
+// ... sign & send
+```
+
+**When to use:**
+
+- Yield has a vesting period and user wants to claim vested portions incrementally
+- User wants to defer tax events by claiming specific epochs
+- Advanced integrations that need epoch-level control
+
+**Vesting example:**
+
+```typescript
+// Day 1: Epoch 1 distributed with 10,000 yield
+// (operator calls distribute_yield)
+
+// Day 15: 50% vested, user claims half
+const claimed1 = await vault.claimYieldForEpoch(user, 1);
+// claimed1 = 5,000 (50% of user's share)
+
+// Day 31: Fully vested, user claims remainder
+const claimed2 = await vault.claimYieldForEpoch(user, 1);
+// claimed2 = 5,000 (remaining 50%)
+```
+
+---
+
+## Example 4 — Create a vault via the factory
+
+```typescript
+import { Networks, rpc } from "@stellar/stellar-sdk";
+import {
+  VaultFactoryClient,
+  buildUnsignedTransaction,
+} from "@stellaryield/sdk";
 
 const server = new rpc.Server("https://soroban-testnet.stellar.org");
 const operator = "G...";
@@ -136,7 +215,9 @@ const shares = await simulateInvocation<bigint>({
   networkPassphrase: Networks.TESTNET,
   contractId: vault.contractId,
   method: "preview_deposit",
-  args: [/* use scI128 from encode helpers */],
+  args: [
+    /* use scI128 from encode helpers */
+  ],
 });
 ```
 

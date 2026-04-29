@@ -84,6 +84,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            operator_fee_bps: 0u32,
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),
@@ -326,4 +327,90 @@ fn test_claim_yield_for_epoch_during_funding_panics() {
     let vault = SingleRWAVaultClient::new(&env, &vault_id);
     // Vault is still in Funding -- must panic.
     vault.claim_yield_for_epoch(&user, &1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// process_early_redemption — state guard tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #5)")] // InvalidVaultState
+fn test_process_early_redemption_during_funding_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Vault still in Funding.
+    vault.process_early_redemption(&admin, &1u32);
+}
+
+#[test]
+fn test_process_early_redemption_during_active_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let request_id = vault.request_early_redemption(&user, &shares);
+
+    // Vault in Active - should succeed.
+    vault.process_early_redemption(&admin, &request_id);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #5)")] // InvalidVaultState
+fn test_process_early_redemption_during_matured_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let request_id = vault.request_early_redemption(&user, &shares);
+
+    let maturity = vault.maturity_date();
+    env.ledger().set_timestamp(maturity + 1);
+    vault.mature_vault(&admin);
+
+    // Vault in Matured.
+    vault.process_early_redemption(&admin, &request_id);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #5)")] // InvalidVaultState
+fn test_process_early_redemption_during_closed_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    // Fund user and activate vault.
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &user, 1_000_000);
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Redeem all shares so total_supply drops to 0 — required for close_vault.
+    crate::test_helpers::MockZkmeClient::new(&env, &zkme_id).approve_user(&user);
+    vault.redeem(&user, &shares, &user, &user);
+
+    // Advance time past maturity and transition to Matured then Closed.
+    let maturity = vault.maturity_date();
+    env.ledger().set_timestamp(maturity + 1);
+    vault.mature_vault(&admin);
+    vault.close_vault(&admin);
+
+    // Vault is now Closed. process_early_redemption must panic with InvalidVaultState (#5).
+    vault.process_early_redemption(&admin, &1u32);
 }

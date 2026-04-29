@@ -6,7 +6,7 @@ use soroban_sdk::{
     Address, Env, IntoVal, String,
 };
 
-use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
+use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -82,6 +82,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            operator_fee_bps: 0u32,
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),
@@ -304,6 +305,42 @@ fn test_emergency_withdraw_zero_balance_no_transfer() {
 }
 
 #[test]
+fn test_emergency_withdraw_treasury_manager_authorized() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, token_id, _zkme_id, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let token = MockTokenClient::new(&e, &token_id);
+    let tm = Address::generate(&e);
+    let recipient = Address::generate(&e);
+
+    // Grant TreasuryManager role
+    vault.grant_role(&admin, &tm, &Role::TreasuryManager);
+
+    token.mint(&vault_id, &1000);
+    vault.emergency_withdraw(&tm, &recipient);
+
+    assert_eq!(token.balance(&recipient), 1000);
+    assert!(vault.paused());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // Error::NotOperator = 3
+fn test_emergency_withdraw_unauthorized_role_panics() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let lm = Address::generate(&e);
+    let recipient = Address::generate(&e);
+
+    // Grant LifecycleManager role — this is authorized for some things, but NOT emergency withdraw
+    vault.grant_role(&admin, &lm, &Role::LifecycleManager);
+
+    vault.emergency_withdraw(&lm, &recipient);
+}
+
+#[test]
 fn test_full_operator_can_clear_blacklist_under_current_design() {
     let e = Env::default();
     e.mock_all_auths();
@@ -321,6 +358,69 @@ fn test_full_operator_can_clear_blacklist_under_current_design() {
     vault.set_blacklisted(&operator, &user, &false);
 
     assert!(!vault.is_blacklisted(&user));
+}
+
+#[test]
+fn test_unblacklisted_user_can_resume_deposit_and_withdraw() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let token = MockTokenClient::new(&e, &token_id);
+    let zkme = MockZkmeClient::new(&e, &zkme_id);
+    let operator = Address::generate(&e);
+    let user = Address::generate(&e);
+
+    let initial_deposit = 1_000_000i128;
+    let resumed_deposit = 250_000i128;
+    let resumed_withdraw = 200_000i128;
+
+    vault.set_operator(&admin, &operator, &true);
+    zkme.approve_user(&user);
+    token.mint(&user, &2_000_000);
+
+    vault.deposit(&user, &initial_deposit, &user);
+    assert_eq!(vault.balance(&user), initial_deposit);
+
+    // Move to Active so both deposit and withdraw are valid once the issue is resolved.
+    vault.set_funding_target(&admin, &initial_deposit);
+    vault.activate_vault(&admin);
+
+    vault.set_blacklisted(&admin, &user, &true);
+    assert!(vault.is_blacklisted(&user));
+
+    let blocked_deposit = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        vault.deposit(&user, &resumed_deposit, &user);
+    }));
+    assert!(
+        blocked_deposit.is_err(),
+        "blacklisted user deposit must fail"
+    );
+
+    let blocked_withdraw = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        vault.withdraw(&user, &resumed_withdraw, &user, &user);
+    }));
+    assert!(
+        blocked_withdraw.is_err(),
+        "blacklisted user withdraw must fail"
+    );
+
+    // Current design allows a FullOperator to clear blacklist status.
+    vault.set_blacklisted(&operator, &user, &false);
+    assert!(!vault.is_blacklisted(&user));
+
+    vault.deposit(&user, &resumed_deposit, &user);
+    assert_eq!(vault.balance(&user), initial_deposit + resumed_deposit);
+
+    vault.withdraw(&user, &resumed_withdraw, &user, &user);
+    assert_eq!(
+        vault.balance(&user),
+        initial_deposit + resumed_deposit - resumed_withdraw
+    );
+    assert_eq!(
+        token.balance(&user),
+        2_000_000 - initial_deposit - resumed_deposit + resumed_withdraw
+    );
 }
 
 #[test]
@@ -442,4 +542,113 @@ fn test_pause_does_not_add_share_transfer_state_guard_in_contract() {
             && !transfer_fn_tail.contains("require_not_frozen"),
         "share transfer must not gate on pause/freeze so holders can still move claims off-wallet"
     );
+}
+
+// ─── Test: operator cannot transfer admin ─────────────────────────────────────
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")] // Error::NotAdmin = 4
+fn test_operator_cannot_transfer_admin() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+
+    let operator = Address::generate(&e);
+    let new_admin = Address::generate(&e);
+
+    // Grant full operator privileges to `operator`
+    vault.set_operator(&admin, &operator, &true);
+    assert!(vault.is_operator(&operator));
+
+    // Operator attempts an admin-only action: transfer_admin
+    // Must panic with NotAdmin (#4), not the timelock error (#38)
+    // that fires when a legitimate admin calls this.
+    vault.transfer_admin(&operator, &new_admin);
+}
+
+/// Companion positive test: after the attempted escalation fails, the admin
+/// address is unchanged and the operator retains only operator privileges.
+/// This confirms the failure is clean — no partial state mutation occurs.
+#[test]
+fn test_operator_escalation_attempt_leaves_state_intact() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+
+    let operator = Address::generate(&e);
+    let new_admin = Address::generate(&e);
+
+    vault.set_operator(&admin, &operator, &true);
+    assert!(vault.is_operator(&operator));
+
+    // Capture the result without panicking
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        vault.transfer_admin(&operator, &new_admin);
+    }));
+
+    // Call must have failed
+    assert!(result.is_err(), "operator transfer_admin must fail");
+
+    // Admin address must be unchanged
+    assert_eq!(
+        vault.admin(),
+        admin,
+        "admin address must not change after failed operator escalation"
+    );
+
+    // Operator must still be an operator (not silently revoked)
+    assert!(
+        vault.is_operator(&operator),
+        "operator status must be unchanged after failed escalation"
+    );
+
+    // new_admin must not have become admin
+    assert_ne!(
+        vault.admin(),
+        new_admin,
+        "new_admin must not have been installed"
+    );
+}
+
+/// Admin-only actions beyond transfer_admin: `set_operator` itself is also
+/// admin-only. An operator must not be able to grant operator status to others.
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")] // Error::NotAdmin = 4
+fn test_operator_cannot_grant_operator_to_others() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+
+    let operator = Address::generate(&e);
+    let new_oper = Address::generate(&e);
+
+    vault.set_operator(&admin, &operator, &true);
+
+    // Operator attempts to grant operator status to another address
+    // Must fail with NotAdmin — only admin can manage operator assignments
+    vault.set_operator(&operator, &new_oper, &true);
+}
+
+/// An operator also must not be able to revoke another operator.
+/// Operator management is exclusively an admin capability.
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")] // Error::NotAdmin = 4
+fn test_operator_cannot_revoke_other_operator() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+
+    let operator_a = Address::generate(&e);
+    let operator_b = Address::generate(&e);
+
+    // Admin grants both operators
+    vault.set_operator(&admin, &operator_a, &true);
+    vault.set_operator(&admin, &operator_b, &true);
+
+    // operator_a attempts to revoke operator_b — must fail
+    vault.set_operator(&operator_a, &operator_b, &false);
 }

@@ -47,13 +47,14 @@ prompt() {
     local var_name="$1"
     local prompt_text="$2"
     local default="${3:-}"
+    local value
 
     if [[ -n "${!var_name:-}" ]]; then
         return
     fi
 
     if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        [[ -n "$default" ]] && eval "$var_name='$default'" && return
+        [[ -n "$default" ]] && printf -v "$var_name" '%s' "$default" && return
         die "Required variable '$var_name' not set and running non-interactively."
     fi
 
@@ -63,7 +64,7 @@ prompt() {
     read -rp "${prompt_text}${display_default}: " value
     value="${value:-$default}"
     [[ -z "$value" ]] && die "'$var_name' cannot be empty."
-    eval "$var_name='$value'"
+    printf -v "$var_name" '%s' "$value"
 }
 
 # ---------------------------------------------------------------------------

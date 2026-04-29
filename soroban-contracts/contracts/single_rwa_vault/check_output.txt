@@ -1,0 +1,359 @@
+    Checking single_rwa_vault v0.1.0 (/home/stealth_dev/Documents/PROJECTS/DRIPS PROJECT/task20-Stellaryield/StellarYield-Contracts/soroban-contracts/contracts/single_rwa_vault)
+error[E0432]: unresolved import `crate::storage::put_storage_schema_version`
+  --> soroban-contracts/contracts/single_rwa_vault/src/migrations.rs:13:37
+   |
+13 | use crate::storage::{bump_instance, put_storage_schema_version};
+   |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `put_storage_schema_version` in `storage`
+
+error: cannot find macro `instance_get` in this scope
+   --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:510:1
+    |
+510 | instance_get!(get_storage_schema_version, StorSch, u32);
+    | ^^^^^^^^^^^^
+
+error: cannot find macro `instance_put` in this scope
+   --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:511:1
+    |
+511 | instance_put!(put_storage_schema_version, StorSch, u32);
+    | ^^^^^^^^^^^^
+
+error[E0425]: cannot find function `put_operator` in this scope
+   --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:140:9
+    |
+140 |         put_operator(e, params.admin.clone(), true);
+    |         ^^^^^^^^^^^^ help: a function with a similar name exists: `put_cooperator`
+    |
+   ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:370:1
+    |
+370 | pub fn put_cooperator(e: &Env, val: Address) {
+    | -------------------------------------------- similarly named function `put_cooperator` defined here
+
+error[E0425]: cannot find function `put_contract_version` in this scope
+   --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:175:9
+    |
+175 |         put_contract_version(e, 1u32);
+    |         ^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `put_storage_schema_version` in this scope
+   --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:176:9
+    |
+176 |         put_storage_schema_version(e, 1u32);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:463:13
+    |
+463 |             put_share_allowance(e, &owner, &caller, allowance - shares);
+    |             ^^^^^^^^^^^^^^^^^^^---------------------------------------- argument #5 of type `u32` is missing
+    |
+note: function defined here
+   --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:561:8
+    |
+561 | pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+    |        ^^^^^^^^^^^^^^^^^^^                                                            ----------------------
+help: provide the argument
+    |
+463 |             put_share_allowance(e, &owner, &caller, allowance - shares, /* u32 */);
+    |                                                                       +++++++++++
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+   --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:514:13
+    |
+514 |             put_share_allowance(e, &owner, &caller, allowance - shares);
+    |             ^^^^^^^^^^^^^^^^^^^---------------------------------------- argument #5 of type `u32` is missing
+    |
+note: function defined here
+   --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:561:8
+    |
+561 | pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+    |        ^^^^^^^^^^^^^^^^^^^                                                            ----------------------
+help: provide the argument
+    |
+514 |             put_share_allowance(e, &owner, &caller, allowance - shares, /* u32 */);
+    |                                                                       +++++++++++
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1293:13
+     |
+1293 |             put_share_allowance(e, &owner, &caller, allowance - shares);
+     |             ^^^^^^^^^^^^^^^^^^^---------------------------------------- argument #5 of type `u32` is missing
+     |
+note: function defined here
+    --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:561:8
+     |
+561  | pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+     |        ^^^^^^^^^^^^^^^^^^^                                                            ----------------------
+help: provide the argument
+     |
+1293 |             put_share_allowance(e, &owner, &caller, allowance - shares, /* u32 */);
+     |                                                                       +++++++++++
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1360:9
+     |
+1360 |         bump_balance(e, &caller);
+     |         ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1459:9
+     |
+1459 |         bump_balance(e, &caller);
+     |         ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1491:9
+     |
+1491 |         bump_balance(e, &user);
+     |         ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `get_role` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1567:9
+     |
+1567 |         get_role(e, &addr, Role::FullOperator) || get_role(e, &addr, role)
+     |         ^^^^^^^^ help: a function with a similar name exists: `put_role`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:355:1
+     |
+355  | pub fn put_role(e: &Env, addr: &Address, role: Role, authorized: bool) {
+     | ---------------------------------------------------------------------- similarly named function `put_role` defined here
+
+error[E0425]: cannot find function `get_role` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1567:51
+     |
+1567 |         get_role(e, &addr, Role::FullOperator) || get_role(e, &addr, role)
+     |                                                   ^^^^^^^^ help: a function with a similar name exists: `put_role`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:355:1
+     |
+355  | pub fn put_role(e: &Env, addr: &Address, role: Role, authorized: bool) {
+     | ---------------------------------------------------------------------- similarly named function `put_role` defined here
+
+error[E0425]: cannot find function `put_operator` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1575:9
+     |
+1575 |         put_operator(e, operator.clone(), status);
+     |         ^^^^^^^^^^^^ help: a function with a similar name exists: `put_cooperator`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:370:1
+     |
+370  | pub fn put_cooperator(e: &Env, val: Address) {
+     | -------------------------------------------- similarly named function `put_cooperator` defined here
+
+error[E0425]: cannot find function `get_operator` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1582:9
+     |
+1582 |         get_operator(e, &account)
+     |         ^^^^^^^^^^^^ help: a function with a similar name exists: `get_cooperator`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:367:1
+     |
+367  | pub fn get_cooperator(e: &Env) -> Address {
+     | ----------------------------------------- similarly named function `get_cooperator` defined here
+
+error[E0425]: cannot find function `remove_emergency_signers` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1863:13
+     |
+1863 |             remove_emergency_signers(e);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `get_emergency_signers`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:679:1
+     |
+679  | pub fn get_emergency_signers(e: &Env) -> Option<Vec<Address>> {
+     | ------------------------------------------------------------- similarly named function `get_emergency_signers` defined here
+
+error[E0425]: cannot find function `remove_emergency_threshold` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1864:13
+     |
+1864 |             remove_emergency_threshold(e);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `get_emergency_threshold`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:685:1
+     |
+685  | pub fn get_emergency_threshold(e: &Env) -> u32 {
+     | ---------------------------------------------- similarly named function `get_emergency_threshold` defined here
+
+error[E0425]: cannot find function `increment_emergency_proposal_counter` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1884:27
+     |
+1884 |         let proposal_id = increment_emergency_proposal_counter(e);
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `get_storage_schema_version` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2086:27
+     |
+2086 |         let old_version = get_storage_schema_version(e);
+     |                           ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `get_storage_schema_version` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2099:9
+     |
+2099 |         get_storage_schema_version(e)
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `get_contract_version` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2104:9
+     |
+2104 |         get_contract_version(e)
+     |         ^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `put_share_allowance_with_expiry` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2172:9
+     |
+2172 |         put_share_allowance_with_expiry(e, &from, &spender, amount, expiration_ledger);
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2212:9
+     |
+2212 |         put_share_allowance(e, &from, &spender, allowance - amount);
+     |         ^^^^^^^^^^^^^^^^^^^---------------------------------------- argument #5 of type `u32` is missing
+     |
+note: function defined here
+    --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:561:8
+     |
+561  | pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+     |        ^^^^^^^^^^^^^^^^^^^                                                            ----------------------
+help: provide the argument
+     |
+2212 |         put_share_allowance(e, &from, &spender, allowance - amount, /* u32 */);
+     |                                                                   +++++++++++
+
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2234:9
+     |
+2234 |         put_share_allowance(e, &from, &spender, allowance - amount);
+     |         ^^^^^^^^^^^^^^^^^^^---------------------------------------- argument #5 of type `u32` is missing
+     |
+note: function defined here
+    --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:561:8
+     |
+561  | pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, amount: i128, expiration_ledger: u32) {
+     |        ^^^^^^^^^^^^^^^^^^^                                                            ----------------------
+help: provide the argument
+     |
+2234 |         put_share_allowance(e, &from, &spender, allowance - amount, /* u32 */);
+     |                                                                   +++++++++++
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2352:5
+     |
+2352 |     bump_balance(e, to);
+     |     ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2366:5
+     |
+2366 |     bump_balance(e, from);
+     |     ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2375:5
+     |
+2375 |     bump_balance(e, from);
+     |     ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2381:5
+     |
+2381 |     bump_balance(e, to);
+     |     ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `get_last_interacted_epoch` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2386:22
+     |
+2386 |     let last_epoch = get_last_interacted_epoch(e, user);
+     |                      ^^^^^^^^^^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `get_last_interaction_epoch`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:586:1
+     |
+586  | pub fn get_last_interaction_epoch(e: &Env, addr: &Address) -> u32 {
+     | ----------------------------------------------------------------- similarly named function `get_last_interaction_epoch` defined here
+
+error[E0425]: cannot find function `put_last_interacted_epoch` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2396:5
+     |
+2396 |     put_last_interacted_epoch(e, user, current_epoch);
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `put_last_interaction_epoch`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:589:1
+     |
+589  | pub fn put_last_interaction_epoch(e: &Env, addr: &Address, val: u32) {
+     | -------------------------------------------------------------------- similarly named function `put_last_interaction_epoch` defined here
+
+error[E0425]: cannot find function `bump_balance` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2397:5
+     |
+2397 |     bump_balance(e, user);
+     |     ^^^^^^^^^^^^ help: a function with a similar name exists: `bump_instance`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:710:1
+     |
+710  | pub fn bump_instance(e: &Env) {
+     | ----------------------------- similarly named function `bump_instance` defined here
+
+error[E0425]: cannot find function `get_storage_schema_version` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2422:8
+     |
+2422 |     if get_storage_schema_version(e) != CURRENT_SCHEMA_VERSION {
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find function `get_role` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2443:8
+     |
+2443 |     if get_role(e, caller, Role::FullOperator) {
+     |        ^^^^^^^^ help: a function with a similar name exists: `put_role`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:355:1
+     |
+355  | pub fn put_role(e: &Env, addr: &Address, role: Role, authorized: bool) {
+     | ---------------------------------------------------------------------- similarly named function `put_role` defined here
+
+error[E0425]: cannot find function `get_role` in this scope
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:2446:9
+     |
+2446 |     if !get_role(e, caller, role) {
+     |         ^^^^^^^^ help: a function with a similar name exists: `put_role`
+     |
+    ::: soroban-contracts/contracts/single_rwa_vault/src/storage.rs:355:1
+     |
+355  | pub fn put_role(e: &Env, addr: &Address, role: Role, authorized: bool) {
+     | ---------------------------------------------------------------------- similarly named function `put_role` defined here
+
+Some errors have detailed explanations: E0061, E0425, E0432.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `single_rwa_vault` (lib) due to 35 previous errors

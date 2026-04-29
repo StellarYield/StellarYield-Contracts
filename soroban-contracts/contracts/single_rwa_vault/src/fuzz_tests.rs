@@ -85,6 +85,7 @@ fn setup() -> TestCtx {
             min_deposit: 1i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            operator_fee_bps: 0u32,
             rwa_name: String::from_str(&env, "Fuzz RWA"),
             rwa_symbol: String::from_str(&env, "FRWA"),
             rwa_document_uri: String::from_str(&env, "https://example.com"),
@@ -193,6 +194,11 @@ proptest! {
             "share conservation violated: {} + {} + {} != {}",
             bal_a, bal_b, bal_c, total
         );
+
+        // Sanity: no balance is negative and none exceeds total supply.
+        prop_assert!(bal_a >= 0 && bal_b >= 0 && bal_c >= 0, "balance went negative");
+        prop_assert!(total >= 0, "total supply went negative");
+        prop_assert!(bal_a <= total && bal_b <= total && bal_c <= total, "balance exceeds total supply");
     }
 }
 
@@ -372,5 +378,58 @@ proptest! {
             "yield conservation violated after transfer: {} + {} > {}",
             pending_a, pending_b, distributed
         );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 7: Balance sanity invariants
+// Balances never go negative, never exceed total supply, and sum matches total.
+// ─────────────────────────────────────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    #[test]
+    #[ignore]
+    fn fuzz_balance_sanity_invariants(
+        deposit_a in 1_000i128..10_000_000i128,
+        deposit_b in 1_000i128..10_000_000i128,
+        transfer_pct in 0u32..=100u32,
+    ) {
+        let ctx = setup();
+        let vault = SingleRWAVaultClient::new(&ctx.env, &ctx.vault_id);
+
+        let user_a = Address::generate(&ctx.env);
+        let user_b = Address::generate(&ctx.env);
+
+        mint_and_deposit(&ctx, &user_a, deposit_a);
+        mint_and_deposit(&ctx, &user_b, deposit_b);
+
+        let bal_a_before = vault.balance(&user_a);
+        let transfer_amount = bal_a_before.saturating_mul(transfer_pct as i128) / 100;
+        if transfer_amount > 0 {
+            vault.transfer(&user_a, &user_b, &transfer_amount);
+        }
+
+        let bal_a = vault.balance(&user_a);
+        let bal_b = vault.balance(&user_b);
+        let total = vault.total_supply();
+
+        prop_assert!(bal_a >= 0, "user_a balance negative: {}", bal_a);
+        prop_assert!(bal_b >= 0, "user_b balance negative: {}", bal_b);
+        prop_assert!(total >= 0, "total_supply negative: {}", total);
+
+        prop_assert!(bal_a <= total, "user_a balance ({}) exceeds total_supply ({})", bal_a, total);
+        prop_assert!(bal_b <= total, "user_b balance ({}) exceeds total_supply ({})", bal_b, total);
+
+        prop_assert_eq!(
+            bal_a + bal_b,
+            total,
+            "sum of balances ({} + {}) != total_supply ({})",
+            bal_a, bal_b, total
+        );
+
+        // Overflow sanity: adding the two balances must not wrap.
+        prop_assert!(bal_a.checked_add(bal_b).is_some(), "balance sum overflowed");
     }
 }

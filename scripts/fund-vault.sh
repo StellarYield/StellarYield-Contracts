@@ -50,13 +50,14 @@ prompt() {
     local var_name="$1"
     local prompt_text="$2"
     local default="${3:-}"
+    local value
 
     if [[ -n "${!var_name:-}" ]]; then
         return
     fi
 
     if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        [[ -n "$default" ]] && eval "$var_name='$default'" && return
+        [[ -n "$default" ]] && printf -v "$var_name" '%s' "$default" && return
         die "Required variable '$var_name' not set and running non-interactively."
     fi
 
@@ -66,7 +67,7 @@ prompt() {
     read -rp "${prompt_text}${display_default}: " value
     value="${value:-$default}"
     [[ -z "$value" ]] && die "'$var_name' cannot be empty."
-    eval "$var_name='$value'"
+    printf -v "$var_name" '%s' "$value"
 }
 
 # ---------------------------------------------------------------------------
@@ -91,7 +92,6 @@ prompt ASSET            "Deposit asset contract ID" "${DEFAULT_ASSET:-}"
 prompt DEPOSITOR        "Depositor Stellar address (G...) — must be KYC-verified"
 prompt SOURCE_ACCOUNT   "Stellar CLI key name for signing" "default"
 prompt DEPOSIT_AMOUNT   "Deposit amount in stroops (1 USDC = 10000000)" "100000000"
-RECEIVER_ADDRESS="${RECEIVER_ADDRESS:-$DEPOSITOR}"
 prompt RECEIVER_ADDRESS "Receiver address for vault shares" "$DEPOSITOR"
 
 # Approve expiry — current ledger + ~30 days worth of ledgers (5s per ledger)

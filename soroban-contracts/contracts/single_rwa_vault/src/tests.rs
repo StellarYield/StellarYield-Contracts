@@ -83,6 +83,7 @@ pub fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             min_deposit: 0i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            operator_fee_bps: 0u32,
             rwa_name: String::from_str(env, "Bond A"),
             rwa_symbol: String::from_str(env, "BOND"),
             rwa_document_uri: String::from_str(env, "https://example.com"),
@@ -177,6 +178,118 @@ fn test_transfer_kyc_flag_disabled_allows_unverified_to() {
     vault.transfer(&from, &to, &shares);
     assert_eq!(vault.balance(&from), 0);
     assert_eq!(vault.balance(&to), shares);
+}
+
+/// Transfer exemptions let an unverified recipient receive shares while the
+/// transfer KYC gate remains enabled.
+#[test]
+fn test_transfer_to_exempt_recipient_bypasses_kyc() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let from = Address::generate(&env);
+    let to = Address::generate(&env); // NOT approved in zkMe
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &from, 1_000_000);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    vault.set_transfer_exempt(&admin, &to, &true);
+
+    assert!(vault.is_transfer_exempt(&to));
+    let exempt_addresses = vault.get_transfer_exempt_addresses();
+    assert_eq!(exempt_addresses.len(), 1);
+    assert_eq!(exempt_addresses.get(0).unwrap(), to);
+
+    vault.transfer(&from, &to, &shares);
+    assert_eq!(vault.balance(&from), 0);
+    assert_eq!(vault.balance(&to), shares);
+}
+
+/// transfer_from should honor the same exemption path as direct transfers.
+#[test]
+fn test_transfer_from_to_exempt_recipient_bypasses_kyc() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let owner = Address::generate(&env);
+    let spender = Address::generate(&env);
+    let to = Address::generate(&env); // NOT approved in zkMe
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &owner, 1_000_000);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    vault.set_transfer_exempt(&admin, &to, &true);
+    vault.approve(&owner, &spender, &shares, &999_999u32);
+    vault.transfer_from(&spender, &owner, &to, &shares);
+
+    assert_eq!(vault.balance(&owner), 0);
+    assert_eq!(vault.balance(&to), shares);
+}
+
+/// Exempt addresses still remain blocked by blacklist enforcement.
+#[test]
+#[should_panic]
+fn test_transfer_exemption_does_not_bypass_blacklist() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let from = Address::generate(&env);
+    let to = Address::generate(&env);
+
+    let shares = fund_user(&env, &vault_id, &token_id, &zkme_id, &from, 1_000_000);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    vault.set_transfer_exempt(&admin, &to, &true);
+    vault.set_blacklisted(&admin, &to, &true);
+
+    vault.transfer(&from, &to, &shares);
+}
+
+#[test]
+fn test_get_transfer_exempt_addresses_tracks_current_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, _, _, admin) = make_vault(&env);
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    let market_maker = Address::generate(&env);
+    let liquidity_pool = Address::generate(&env);
+
+    vault.set_transfer_exempt(&admin, &market_maker, &true);
+    vault.set_transfer_exempt(&admin, &liquidity_pool, &true);
+
+    let exempt_addresses = vault.get_transfer_exempt_addresses();
+    assert_eq!(exempt_addresses.len(), 2);
+    assert_eq!(exempt_addresses.get(0).unwrap(), market_maker);
+    assert_eq!(exempt_addresses.get(1).unwrap(), liquidity_pool);
+
+    vault.set_transfer_exempt(&admin, &market_maker, &false);
+
+    assert!(!vault.is_transfer_exempt(&market_maker));
+    let updated = vault.get_transfer_exempt_addresses();
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated.get(0).unwrap(), liquidity_pool);
+}
+
+#[test]
+#[should_panic]
+fn test_transfer_exemption_list_is_bounded() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, _, _, admin) = make_vault(&env);
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    for _ in 0..SingleRWAVault::MAX_TRANSFER_EXEMPTIONS {
+        let address = Address::generate(&env);
+        vault.set_transfer_exempt(&admin, &address, &true);
+    }
+
+    let extra = Address::generate(&env);
+    vault.set_transfer_exempt(&admin, &extra, &true);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
