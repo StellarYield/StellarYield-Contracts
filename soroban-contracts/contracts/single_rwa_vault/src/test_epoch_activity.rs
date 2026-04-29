@@ -254,3 +254,22 @@ fn test_get_lifetime_activity_returns_zero_before_any_ops() {
     assert_eq!(act.yield_claims_count, 0);
     assert_eq!(act.redemptions_count, 0);
 }
+
+#[test]
+fn test_last_interaction_epoch_getter_defaults_and_updates() {
+    let ctx = setup_with_kyc_bypass();
+    let e = &ctx.env;
+    let client = SingleRWAVaultClient::new(e, &ctx.vault_id);
+
+    // No interaction yet -> defaults to epoch 0.
+    assert_eq!(client.last_interaction_epoch(&ctx.user), 0);
+
+    mint_usdc(e, &ctx.asset_id, &ctx.user, 1_000_000);
+    client.deposit(&ctx.user, &1_000_000i128, &ctx.user);
+
+    // Deposit records interaction in current epoch.
+    assert_eq!(
+        client.last_interaction_epoch(&ctx.user),
+        client.current_epoch()
+    );
+}

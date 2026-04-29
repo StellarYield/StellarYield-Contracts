@@ -220,7 +220,7 @@ fn test_yield_distribution_fails_in_funding_state() {
 
 ///NEW: Deleted test_yield_distribution_fails_in_cancelled_state because
 /// VaultState doesn't have Cancelled and there's no cancel_vault fn.
-
+///
 /// Attempting to distribute yield in Closed state must fail with NotActive
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #5)")] // NotActive
