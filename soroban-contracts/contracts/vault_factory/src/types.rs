@@ -65,12 +65,26 @@ pub struct SingleRwaVaultInitParams {
 }
 
 /// Parameters for batch vault creation (mirrors BatchVaultParams in Solidity).
+///
+/// # Share Decimals
+/// `share_decimals` determines the decimal precision of the vault's share token.
+/// This is independent of the underlying asset's decimals. Common conventions:
+/// - 6: USDC convention (matching USDC/USDT)
+/// - 7: SEP-41 convention (Stellar ecosystem standard for asset-anchored tokens)
+/// - 8: BTC-pegged tokens convention
+/// - 18: ETH/ERC-20 convention (for compatibility with ETH-based systems)
+///
+/// The share/asset ratio is calculated based on these decimals, so using the
+/// wrong value will result in incorrect share pricing.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct BatchVaultParams {
     pub asset: Address,
     pub name: String,
     pub symbol: String,
+    /// Number of decimal places for the vault's share token.
+    /// Default: 7u32 (SEP-41 convention). Set to 6u32 for USDC-aligned assets.
+    pub share_decimals: u32,
     pub rwa_name: String,
     pub rwa_symbol: String,
     pub rwa_document_uri: String,
