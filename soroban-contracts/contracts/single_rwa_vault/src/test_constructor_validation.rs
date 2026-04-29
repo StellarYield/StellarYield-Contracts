@@ -10,6 +10,7 @@ use crate::{InitParams, SingleRWAVault};
 
 fn get_valid_params(e: &Env) -> InitParams {
     InitParams {
+        yield_vesting_period: 0,
         asset: Address::generate(e),
         share_name: String::from_str(e, "Test"),
         share_symbol: String::from_str(e, "T"),
@@ -30,7 +31,6 @@ fn get_valid_params(e: &Env) -> InitParams {
         rwa_category: String::from_str(e, "cat"),
         expected_apy: 500,
         timelock_delay: 172800u64, // 48 hours
-        yield_vesting_period: 0u64,
     }
 }
 
