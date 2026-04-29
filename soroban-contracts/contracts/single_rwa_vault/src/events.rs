@@ -37,8 +37,10 @@ pub fn emit_maturity_date_set(
     state: VaultState,
     timestamp: u64,
 ) {
-    e.events()
-        .publish((symbol_short!("mat_set"), caller), (old, new, state, timestamp));
+    e.events().publish(
+        (symbol_short!("mat_set"), caller),
+        (old, new, state, timestamp),
+    );
 }
 
 pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
@@ -58,8 +60,10 @@ pub fn emit_operator_added(e: &Env, caller: Address, operator: Address, timestam
 }
 
 pub fn emit_operator_removed(e: &Env, caller: Address, operator: Address) {
-    e.events()
-        .publish((symbol_short!("op_rem"), caller, operator), e.ledger().timestamp());
+    e.events().publish(
+        (symbol_short!("op_rem"), caller, operator),
+        e.ledger().timestamp(),
+    );
 }
 
 /// Emitted when the admin grants a role to an address.
@@ -252,8 +256,10 @@ pub fn emit_funding_target_set(
     reason: String,
     timestamp: u64,
 ) {
-    e.events()
-        .publish((symbol_short!("fund_set"), caller), (target, reason, timestamp));
+    e.events().publish(
+        (symbol_short!("fund_set"), caller),
+        (target, reason, timestamp),
+    );
 }
 
 /// Emitted by `set_blacklisted`.

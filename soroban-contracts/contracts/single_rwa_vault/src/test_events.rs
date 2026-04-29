@@ -297,7 +297,8 @@ fn test_set_funding_target_emits_event_with_caller_and_timestamp() {
     let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
     assert_eq!(topic_caller, ctx.admin);
 
-    let (event_target, _reason, event_ts): (i128, soroban_sdk::String, u64) = data.into_val(&ctx.env);
+    let (event_target, _reason, event_ts): (i128, soroban_sdk::String, u64) =
+        data.into_val(&ctx.env);
     assert_eq!(event_target, target);
     assert_eq!(event_ts, ctx.env.ledger().timestamp());
 }

@@ -100,7 +100,10 @@ fn test_safe_preview_deposit_exceeds_max() {
     // assets > max_deposit_per_user
     let result = vault.safe_preview_deposit(&50_000i128);
     assert!(!result.ok);
-    assert_eq!(result.reason, SafePreviewDepositReason::ExceedsMaximumDeposit);
+    assert_eq!(
+        result.reason,
+        SafePreviewDepositReason::ExceedsMaximumDeposit
+    );
 }
 
 #[test]
@@ -124,7 +127,10 @@ fn test_safe_preview_deposit_funding_target_exceeded() {
     // A deposit of 1_000 would push total_assets (4_500 + 1_000 = 5_500) past target (5_000).
     let result = vault.safe_preview_deposit(&1_000i128);
     assert!(!result.ok);
-    assert_eq!(result.reason, SafePreviewDepositReason::FundingTargetExceeded);
+    assert_eq!(
+        result.reason,
+        SafePreviewDepositReason::FundingTargetExceeded
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
