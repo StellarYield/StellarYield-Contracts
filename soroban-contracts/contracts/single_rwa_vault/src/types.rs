@@ -56,7 +56,10 @@ pub enum VaultState {
     Active,
     /// Investment matured, full redemptions enabled.
     Matured,
-    /// Vault is closed.
+    /// Vault is closed. Reserved for future decommissioning of completed vaults.
+    /// Transitions to Closed are admin-only and require a migration ceremony.
+    /// All operations (deposits, withdrawals, claims) halt in this state.
+    /// Cleanup semantics (e.g., archive user snapshots, return remaining assets) are TBD.
     Closed,
     /// Funding failed (deadline passed without meeting target); refunds available.
     Cancelled,

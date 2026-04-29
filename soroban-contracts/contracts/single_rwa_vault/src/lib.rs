@@ -67,6 +67,8 @@ mod test_redemption;
 #[cfg(test)]
 mod test_rwa_setters;
 #[cfg(test)]
+mod test_safe_preview;
+#[cfg(test)]
 mod test_share_price_oracle;
 #[cfg(test)]
 mod test_token;
@@ -78,8 +80,6 @@ mod test_withdraw;
 mod test_yield_vesting;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod test_safe_preview;
 
 pub use crate::storage::Key;
 pub use crate::types::*;
@@ -1139,6 +1139,74 @@ impl SingleRWAVault {
         }
 
         results
+    }
+
+    /// Returns the share balance of a user at a specific epoch.
+    ///
+    /// This enables UIs to build per-epoch claim mechanics and determine which
+    /// epochs have already been claimed. Returns the snapshot balance taken at
+    /// the end of the given epoch. If the snapshot does not exist, returns 0.
+    ///
+    /// Used by claim-tracking UIs to disable "Claim" buttons for already-claimed epochs.
+    pub fn user_shares_at_epoch(e: &Env, user: Address, epoch: u32) -> i128 {
+        get_user_shares_at_epoch(e, &user, epoch)
+    }
+
+    /// Check if a single user can deposit a given amount without mutation.
+    ///
+    /// Returns explicit reason codes for UIs to show human-friendly error messages.
+    /// Checks KYC status (if applicable), minimum deposit, per-user deposit limit,
+    /// funding target, and vault state. Gas cost is minimal.
+    ///
+    /// Status codes:
+    /// - 0: deposit allowed, check `expected_shares`
+    /// - Non-zero: error code (e.g., BelowMinimumDeposit = 6, ExceedsMaximumDeposit = 7)
+    pub fn can_deposit(e: &Env, user: Address, amount: i128) -> DepositCheckResult {
+        let users = Vec::from_array(e, [user.clone()]);
+        let amounts = Vec::from_array(e, [amount]);
+        let results = Self::can_deposit_many(e, users, amounts);
+
+        if !results.is_empty() {
+            results.get_unchecked(0)
+        } else {
+            DepositCheckResult {
+                user,
+                status_code: 0,
+                expected_shares: 0,
+            }
+        }
+    }
+
+    /// Check if a user can withdraw a given asset amount without mutation.
+    ///
+    /// Returns explicit reason codes for callers to show human-friendly messages.
+    /// Checks KYC status, vault state, and user balance. Does not check deposit limits.
+    /// Returns status code 0 if withdrawal is allowed; non-zero indicates failure reason.
+    pub fn can_withdraw(e: &Env, user: Address, assets: i128) -> u32 {
+        if get_paused(e) {
+            return Error::VaultPaused as u32;
+        }
+
+        let state = get_vault_state(e);
+        if state != VaultState::Active && state != VaultState::Matured {
+            return Error::InvalidVaultState as u32;
+        }
+
+        if !Self::is_kyc_verified(e, user.clone()) {
+            return Error::NotKYCVerified as u32;
+        }
+
+        let share_balance = get_share_balance(e, &user);
+        if share_balance == 0 {
+            return Error::InsufficientBalance as u32;
+        }
+
+        let convertible = convert_to_assets_floor(e, share_balance);
+        if convertible < assets {
+            return Error::InsufficientBalance as u32;
+        }
+
+        0
     }
 
     /// Returns the total assets currently held or controlled by the vault.

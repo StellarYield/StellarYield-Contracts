@@ -268,5 +268,8 @@ fn test_last_interaction_epoch_getter_defaults_and_updates() {
     client.deposit(&ctx.user, &1_000_000i128, &ctx.user);
 
     // Deposit records interaction in current epoch.
-    assert_eq!(client.last_interaction_epoch(&ctx.user), client.current_epoch());
+    assert_eq!(
+        client.last_interaction_epoch(&ctx.user),
+        client.current_epoch()
+    );
 }
