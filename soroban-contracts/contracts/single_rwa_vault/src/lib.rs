@@ -868,6 +868,16 @@ impl SingleRWAVault {
         }
     }
 
+    /// Returns the ID that will be assigned to the next early redemption request.
+    ///
+    /// This is useful for frontends and indexers to predict the next request ID
+    /// without calling `request_early_redemption`.
+    ///
+    /// Note: Redemption IDs are 1-based and monotonically increasing.
+    pub fn next_redemption_request_id(e: &Env) -> u32 {
+        get_redemption_counter(e) + 1
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // ERC-4626 max helpers
     // ─────────────────────────────────────────────────────────────────
@@ -2598,12 +2608,12 @@ impl SingleRWAVault {
     }
 
     /// Revoke `role` from `addr`.  Only the admin may revoke roles.
-    pub fn revoke_role(e: &Env, caller: Address, addr: Address, role: Role) {
+    pub fn revoke_role(e: &Env, caller: Address, addr: Address, role: Role, reason: Option<String>) {
         caller.require_auth();
         require_admin(e, &caller);
         put_role(e, addr.clone(), role.clone(), false);
         if role == Role::FullOperator {
-            emit_operator_removed(e, caller.clone(), addr.clone());
+            emit_operator_removed(e, caller.clone(), addr.clone(), reason.clone());
         }
         emit_role_revoked(e, addr, role);
         bump_instance(e);
@@ -2620,7 +2630,7 @@ impl SingleRWAVault {
 
     /// Backward-compatible: grants or revokes the `FullOperator` superrole.
     /// Prefer `grant_role` / `revoke_role` for new integrations.
-    pub fn set_operator(e: &Env, caller: Address, operator: Address, status: bool) {
+    pub fn set_operator(e: &Env, caller: Address, operator: Address, status: bool, reason: Option<String>) {
         caller.require_auth();
         require_admin(e, &caller);
         require_valid_address(e, &operator);
@@ -2629,7 +2639,7 @@ impl SingleRWAVault {
         if status {
             emit_operator_added(e, caller, operator, e.ledger().timestamp());
         } else {
-            emit_operator_removed(e, caller, operator);
+            emit_operator_removed(e, caller, operator, reason);
         }
         bump_instance(e);
     }

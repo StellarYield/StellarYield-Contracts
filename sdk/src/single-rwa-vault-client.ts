@@ -104,6 +104,9 @@ export class SingleRwaVaultClient {
   redemptionRequest(requestId: number): SorobanOperation {
     return this.call("redemption_request", scU32(requestId));
   }
+  nextRedemptionRequestId(): SorobanOperation {
+    return this.call("next_redemption_request_id");
+  }
   maxDeposit(receiver: string): SorobanOperation {
     return this.call("max_deposit", scAddress(receiver));
   }

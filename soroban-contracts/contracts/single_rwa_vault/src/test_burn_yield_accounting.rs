@@ -18,7 +18,7 @@ fn test_burn_snapshots_yield_for_explicit_claim() {
     let token = crate::tests::MockTokenClient::new(&env, &token_id);
     let zkme = crate::tests::MockZkmeClient::new(&env, &zkme_id);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     vault.activate_vault(&admin);
 
     // Deposit and create yield
@@ -59,7 +59,7 @@ fn test_burn_from_snapshots_yield_for_explicit_claim() {
     let token = crate::tests::MockTokenClient::new(&env, &token_id);
     let zkme = crate::tests::MockZkmeClient::new(&env, &zkme_id);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     vault.activate_vault(&admin);
 
     // Deposit and create yield

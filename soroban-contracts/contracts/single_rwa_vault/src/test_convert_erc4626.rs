@@ -14,7 +14,7 @@ fn test_convert_to_shares_and_assets_floor_division() {
     let token = crate::tests::MockTokenClient::new(&env, &token_id);
     let zkme = crate::tests::MockZkmeClient::new(&env, &zkme_id);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     // Helper to mint assets to user and deposit into vault
     let mint_and_deposit = |amount: i128| {
@@ -97,7 +97,7 @@ fn test_convert_edge_cases_zero_assets_or_supply() {
     let token = crate::tests::MockTokenClient::new(&env, &token_id);
     let zkme = crate::tests::MockZkmeClient::new(&env, &zkme_id);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     // Zero assets, zero supply: 1:1
     assert_eq!(vault.convert_to_shares(&5000i128), 5000i128);
@@ -127,7 +127,7 @@ fn test_convert_vs_preview_rounding_differences() {
     let token = crate::tests::MockTokenClient::new(&env, &token_id);
     let zkme = crate::tests::MockZkmeClient::new(&env, &zkme_id);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     // Create non-trivial price
     vault.activate_vault(&admin);

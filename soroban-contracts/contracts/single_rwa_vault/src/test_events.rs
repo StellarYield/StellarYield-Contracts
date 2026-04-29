@@ -333,7 +333,7 @@ fn test_set_operator_true_emits_operator_added_event() {
     let ctx = setup_with_kyc_bypass();
     let new_operator = soroban_sdk::Address::generate(&ctx.env);
 
-    ctx.vault().set_operator(&ctx.admin, &new_operator, &true);
+    ctx.vault().set_operator(&ctx.admin, &new_operator, &true, &None);
 
     let events = ctx.env.events().all();
     let op_add_event = events.iter().find(|(contract, topics, _)| {
