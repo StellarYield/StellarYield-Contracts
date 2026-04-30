@@ -1044,6 +1044,10 @@ impl SingleRWAVault {
                 reason,
             });
         }
+
+        results
+    }
+
         results
     }
     /// Batched deposit preflight check (bounded to avoid expensive calls).
@@ -2113,6 +2117,107 @@ impl SingleRWAVault {
             is_kyc_verified: Self::is_kyc_verified(e, address),
         }
     }
+
+    /// Global yield accounting reconciliation snapshot for auditors.
+    pub fn get_yield_reconciliation(e: &Env) -> YieldReconciliation {
+        let total_yield_distributed = get_total_yield_distributed(e);
+        let lifetime = get_lifetime_activity(e);
+        let total_yield_claimed = lifetime.yield_claims_volume;
+        let total_yield_unclaimed = total_yield_distributed - total_yield_claimed;
+
+        let vault_asset_balance = asset_balance_of_vault(e);
+
+        // `total_deposited` currently tracks net inflows including yield distributions.
+        // Principal is therefore approximated as (total_deposited - total_yield_distributed).
+        let total_principal_deposited = (get_total_deposited(e) - total_yield_distributed).max(0);
+
+        let principal_plus_unclaimed = total_principal_deposited + total_yield_unclaimed;
+        let balance_discrepancy = vault_asset_balance - principal_plus_unclaimed;
+
+        YieldReconciliation {
+            total_yield_distributed,
+            total_yield_claimed,
+            total_yield_unclaimed,
+            vault_asset_balance,
+            total_principal_deposited,
+            balance_discrepancy,
+        }
+    }
+
+    /// Public reconciliation view of a user's current position.
+    pub fn get_user_position(e: &Env, user: Address) -> UserPosition {
+        let share_balance = get_share_balance(e, &user);
+        let total_supply = get_total_supply(e);
+        let share_percentage = if total_supply <= 0 || share_balance <= 0 {
+            0
+        } else {
+            math::mul_div(e, share_balance, 10_000, total_supply)
+        };
+
+        let pending_yield = Self::pending_yield(e, user.clone());
+        let total_yield_claimed = get_total_yield_claimed(e, &user);
+        let total_deposited = get_user_deposited(e, &user);
+
+        let estimated_redemption_value = if share_balance <= 0 {
+            pending_yield
+        } else {
+            preview_redeem(e, share_balance) + pending_yield
+        };
+
+        let last_interaction_epoch = get_last_interaction_epoch(e, &user);
+        let has_pending_redemption = get_escrowed_shares(e, &user) > 0;
+
+        UserPosition {
+            share_balance,
+            share_percentage,
+            total_deposited,
+            total_yield_claimed,
+            pending_yield,
+            estimated_redemption_value,
+            last_interaction_epoch,
+            has_pending_redemption,
+        }
+    }
+
+    /// High-level vault health snapshot for auditors and dashboards.
+    pub fn get_vault_health(e: &Env) -> VaultHealth {
+        let state = get_vault_state(e);
+        let paused = get_paused(e);
+        let total_supply = get_total_supply(e);
+        let total_assets = total_assets(e);
+        let share_price = if total_supply <= 0 || total_assets <= 0 {
+            0
+        } else {
+            math::mul_div(e, total_assets, PRECISION, total_supply)
+        };
+
+        let current_epoch = get_current_epoch(e);
+        let time_to_maturity = Self::time_to_maturity(e);
+
+        let target = get_funding_target(e);
+        let funding_progress = if target <= 0 || total_assets <= 0 {
+            0
+        } else {
+            math::mul_div(e, total_assets, 10_000, target).clamp(0, 10_000)
+        };
+
+        let lifetime = get_lifetime_activity(e);
+        let investor_count = lifetime
+            .new_investors
+            .saturating_sub(lifetime.exiting_investors);
+
+        VaultHealth {
+            state,
+            paused,
+            total_supply,
+            total_assets,
+            share_price,
+            current_epoch,
+            time_to_maturity,
+            funding_progress,
+            investor_count,
+        }
+    }
     /// Returns the total asset amount targeted during the Funding state.
     ///
     /// ## Decimals & Formatting
@@ -2337,6 +2442,8 @@ impl SingleRWAVault {
                 put_has_claimed_epoch(e, &owner, i, true);
             }
             put_total_yield_claimed(e, &owner, get_total_yield_claimed(e, &owner) + pending);
+            // Keep global reconciliation totals consistent with auto-claims at maturity.
+            record_yield_claim_activity(e, get_current_epoch(e), pending);
         }
 
         update_user_snapshot(e, &owner);
