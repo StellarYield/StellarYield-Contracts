@@ -25,6 +25,16 @@ pub fn emit_yield_claimed(e: &Env, user: Address, amount: i128, epoch: u32) {
         .publish((symbol_short!("yield_clm"), user), (amount, epoch));
 }
 
+pub fn emit_yield_claimed_partial(e: &Env, user: Address, clm: i128, shf: i128, ep: u32) {
+    e.events()
+        .publish((symbol_short!("prt_yld"), user), (clm, shf, ep));
+}
+
+pub fn emit_yield_shortfall_resolved(e: &Env, user: Address, amt: i128, rem: i128) {
+    e.events()
+        .publish((symbol_short!("ys_res"), user), (amt, rem));
+}
+
 pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }

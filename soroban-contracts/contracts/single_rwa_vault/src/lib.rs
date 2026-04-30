@@ -77,6 +77,8 @@ mod test_vault_state_guards;
 #[cfg(test)]
 mod test_withdraw;
 #[cfg(test)]
+mod test_yield_shortfall;
+#[cfg(test)]
 mod test_yield_vesting;
 #[cfg(test)]
 mod tests;
@@ -1394,22 +1396,77 @@ impl SingleRWAVault {
         // --- Effects ---
         let epoch = get_current_epoch(e);
         let last_claimed = get_last_claimed_epoch(e, &caller);
-        // Mark every epoch in the unclaimed window as claimed — including epochs
-        // where the user had 0 shares.  This prevents the loop from re-scanning
-        // dead epochs on every subsequent call (O(new_epochs) instead of O(total)).
+        // Mark every epoch in the unclaimed window as claimed
         for i in (last_claimed + 1)..=epoch {
             put_has_claimed_epoch(e, &caller, i, true);
         }
         put_last_claimed_epoch(e, &caller, epoch);
 
-        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
-        record_yield_claim_activity(e, epoch, amount);
-        transfer_asset_from_vault(e, &caller, amount);
+        let already_claimed = get_total_yield_claimed(e, &caller);
+        let vault_balance = asset_balance_of_vault(e);
+        let transfer_amount = amount.min(vault_balance);
+        let shortfall = amount - transfer_amount;
 
-        emit_yield_claimed(e, caller, amount, epoch);
+        put_total_yield_claimed(e, &caller, already_claimed + transfer_amount);
+        record_yield_claim_activity(e, epoch, transfer_amount);
+
+        if shortfall > 0 {
+            let current_shortfall = get_yield_shortfall(e, &caller);
+            put_yield_shortfall(e, &caller, current_shortfall + shortfall);
+            crate::events::emit_yield_claimed_partial(
+                e,
+                caller.clone(),
+                transfer_amount,
+                shortfall,
+                epoch,
+            );
+        }
+
+        if transfer_amount > 0 {
+            transfer_asset_from_vault(e, &caller, transfer_amount);
+            emit_yield_claimed(e, caller, transfer_amount, epoch);
+        }
+
         bump_instance(e);
         release_lock(e);
-        amount
+        transfer_amount
+    }
+
+    /// Resolve a recorded yield shortfall by transferring the claimed amount to the user.
+    pub fn resolve_yield_shortfall(e: &Env, caller: Address, user: Address, amount: i128) -> i128 {
+        caller.require_auth();
+        require_current_schema(e);
+        acquire_lock(e);
+        require_role(e, &caller, Role::YieldOperator);
+
+        if amount <= 0 {
+            panic_with_error!(e, Error::ZeroAmount);
+        }
+
+        let current_shortfall = get_yield_shortfall(e, &user);
+        if current_shortfall <= 0 {
+            panic_with_error!(e, Error::YieldShortfallNotFound);
+        }
+
+        if amount > current_shortfall {
+            panic_with_error!(e, Error::InsufficientShortfall);
+        }
+
+        // --- Interaction ---
+        transfer_asset_from_vault(e, &user, amount);
+
+        // --- Effects ---
+        let remaining = current_shortfall - amount;
+        if remaining > 0 {
+            put_yield_shortfall(e, &user, remaining);
+        } else {
+            delete_yield_shortfall(e, &user);
+        }
+
+        crate::events::emit_yield_shortfall_resolved(e, user, amount, remaining);
+        bump_instance(e);
+        release_lock(e);
+        remaining
     }
 
     /// Claim yield for a specific epoch only.
@@ -1461,11 +1518,30 @@ impl SingleRWAVault {
             put_last_claimed_epoch(e, &caller, cursor);
         }
 
-        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
-        record_yield_claim_activity(e, get_current_epoch(e), amount);
-        transfer_asset_from_vault(e, &caller, amount);
+        let already_claimed_total = get_total_yield_claimed(e, &caller);
+        let vault_balance = asset_balance_of_vault(e);
+        let transfer_amount = amount.min(vault_balance);
+        let shortfall = amount - transfer_amount;
 
-        emit_yield_claimed(e, caller, amount, epoch);
+        put_total_yield_claimed(e, &caller, already_claimed_total + transfer_amount);
+        record_yield_claim_activity(e, epoch, transfer_amount);
+
+        if shortfall > 0 {
+            let current_shortfall = get_yield_shortfall(e, &caller);
+            put_yield_shortfall(e, &caller, current_shortfall + shortfall);
+            crate::events::emit_yield_claimed_partial(
+                e,
+                caller.clone(),
+                transfer_amount,
+                shortfall,
+                epoch,
+            );
+        }
+
+        if transfer_amount > 0 {
+            transfer_asset_from_vault(e, &caller, transfer_amount);
+            emit_yield_claimed(e, caller, transfer_amount, epoch);
+        }
         bump_instance(e);
         release_lock(e);
         amount
@@ -3142,7 +3218,7 @@ impl SingleRWAVault {
         // Ensure no double-approval.
         for i in 0..approvals.len() {
             if approvals.get(i).unwrap() == caller {
-                panic_with_error!(e, Error::AlreadyApproved);
+                panic_with_error!(e, Error::AlreadyProcessed);
             }
         }
 
