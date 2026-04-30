@@ -69,10 +69,10 @@ pub fn emit_operator_added(e: &Env, caller: Address, operator: Address, timestam
         .publish((symbol_short!("op_add"), caller, operator), timestamp);
 }
 
-pub fn emit_operator_removed(e: &Env, caller: Address, operator: Address) {
+pub fn emit_operator_removed(e: &Env, caller: Address, operator: Address, reason: Option<String>) {
     e.events().publish(
         (symbol_short!("op_rem"), caller, operator),
-        e.ledger().timestamp(),
+        (e.ledger().timestamp(), reason),
     );
 }
 

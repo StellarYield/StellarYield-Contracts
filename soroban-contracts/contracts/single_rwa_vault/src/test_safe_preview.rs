@@ -33,7 +33,7 @@ fn test_safe_preview_deposit_success_after_yield() {
     let user = Address::generate(&env);
     let operator = Address::generate(&env);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     // Deposit then distribute yield so share price > 1.
     token.mint(&user, &10_000i128);
@@ -162,7 +162,7 @@ fn test_safe_preview_mint_success_after_yield() {
     let user = Address::generate(&env);
     let operator = Address::generate(&env);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     token.mint(&user, &10_000i128);
     vault.deposit(&user, &10_000i128, &user);
@@ -298,7 +298,7 @@ fn test_vault_asset_balance_after_yield() {
     let user = Address::generate(&env);
     let operator = Address::generate(&env);
     zkme.approve_user(&user);
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     token.mint(&user, &10_000i128);
     vault.deposit(&user, &10_000i128, &user);

@@ -209,7 +209,7 @@ pub fn setup() -> TestContext {
     let vault_id = env.register(SingleRWAVault, (params.clone(),));
 
     // Add a secondary operator.
-    SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true);
+    SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true, &None);
 
     TestContext {
         env,
@@ -278,7 +278,7 @@ fn setup_with_registered_contracts(
     );
     let vault_id = env.register(SingleRWAVault, (params.clone(),));
 
-    SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true);
+    SingleRWAVaultClient::new(&env, &vault_id).set_operator(&admin, &operator, &true, &None);
 
     TestContext {
         env,
