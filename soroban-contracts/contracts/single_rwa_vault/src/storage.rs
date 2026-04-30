@@ -95,6 +95,7 @@ pub enum Key {
     LstClmEp(Address),
     /// Track how much yield a user has claimed for a specific epoch (for vesting)
     UsrEpYldClm(Address, u32),
+    YieldShortfall(Address),
 
     // --- User share snapshots ---
     UsrShrEp(Address, u32),
@@ -169,6 +170,7 @@ const K_TAG_BLACKLST: u32 = 216;
 const K_TAG_HAS_CLM_EMG: u32 = 217;
 const K_TAG_TLK_ACT: u32 = 218;
 const K_TAG_TRANSFER_EXEMPT: u32 = 219;
+const K_TAG_YIELD_SHORTFALL: u32 = 220;
 
 impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
     fn into_val(&self, env: &Env) -> soroban_sdk::Val {
@@ -193,6 +195,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::TransferExempt(a) => (K_TAG_TRANSFER_EXEMPT, a.clone()).into_val(env),
             Key::HasClmEmg(a) => (K_TAG_HAS_CLM_EMG, a.clone()).into_val(env),
             Key::TlkAct(n) => (K_TAG_TLK_ACT, *n).into_val(env),
+            Key::YieldShortfall(a) => (K_TAG_YIELD_SHORTFALL, a.clone()).into_val(env),
 
             Key::ShareName => 0u32.into_val(env),
             Key::ShrSymb => 1u32.into_val(env),
@@ -266,6 +269,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
                 K_TAG_BLACKLST => Key::Blacklst(a),
                 K_TAG_TRANSFER_EXEMPT => Key::TransferExempt(a),
                 K_TAG_HAS_CLM_EMG => Key::HasClmEmg(a),
+                K_TAG_YIELD_SHORTFALL => Key::YieldShortfall(a),
                 _ => return Err(soroban_sdk::Error::from_contract_error(1)),
             });
         }
@@ -1348,4 +1352,27 @@ pub fn put_emergency_proposal_approvals(e: &Env, id: u32, approvals: Vec<Address
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+pub fn get_yield_shortfall(e: &Env, user: &Address) -> i128 {
+    e.storage()
+        .persistent()
+        .get(&Key::YieldShortfall(user.clone()))
+        .unwrap_or(0)
+}
+
+pub fn put_yield_shortfall(e: &Env, user: &Address, shortfall: i128) {
+    if shortfall < 0 {
+        return;
+    }
+    let key = Key::YieldShortfall(user.clone());
+    e.storage().persistent().set(&key, &shortfall);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn delete_yield_shortfall(e: &Env, user: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&Key::YieldShortfall(user.clone()));
 }
