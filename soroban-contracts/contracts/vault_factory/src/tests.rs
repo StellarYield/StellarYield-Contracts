@@ -20,6 +20,8 @@ use single_rwa_vault::SingleRWAVaultClient;
 // Test Context
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Unused test context - kept for potential future use
+#[allow(dead_code)]
 pub struct TestContext {
     pub env: Env,
     pub factory_id: Address,
@@ -27,8 +29,9 @@ pub struct TestContext {
     pub asset_id: Address,
 }
 
+#[allow(dead_code)]
 impl TestContext {
-    pub fn factory(&self) -> VaultFactoryClient {
+    pub fn factory(&self) -> VaultFactoryClient<'_> {
         VaultFactoryClient::new(&self.env, &self.factory_id)
     }
 }
@@ -59,6 +62,7 @@ pub fn setup_factory(e: &Env) -> (Address, Address) {
 }
 
 /// Setup a test context with factory and necessary addresses.
+#[allow(dead_code)]
 pub fn setup_test_context() -> TestContext {
     let env = Env::default();
     env.mock_all_auths();
@@ -73,7 +77,8 @@ pub fn setup_test_context() -> TestContext {
     }
 }
 
-fn create_default_vault(ctx: &TestContext) -> (Address, SingleRWAVaultClient) {
+#[allow(dead_code)]
+fn create_default_vault(ctx: &TestContext) -> (Address, SingleRWAVaultClient<'_>) {
     let factory = ctx.factory();
 
     // Use a future maturity date

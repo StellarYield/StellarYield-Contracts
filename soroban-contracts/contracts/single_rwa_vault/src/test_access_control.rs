@@ -6,7 +6,7 @@ use soroban_sdk::{
     Address, Env, IntoVal, String,
 };
 
-use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
+use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -302,6 +302,42 @@ fn test_emergency_withdraw_zero_balance_no_transfer() {
 
     assert_eq!(token.balance(&recipient), 0);
     assert!(vault.paused());
+}
+
+#[test]
+fn test_emergency_withdraw_treasury_manager_authorized() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, token_id, _zkme_id, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let token = MockTokenClient::new(&e, &token_id);
+    let tm = Address::generate(&e);
+    let recipient = Address::generate(&e);
+
+    // Grant TreasuryManager role
+    vault.grant_role(&admin, &tm, &Role::TreasuryManager);
+
+    token.mint(&vault_id, &1000);
+    vault.emergency_withdraw(&tm, &recipient);
+
+    assert_eq!(token.balance(&recipient), 1000);
+    assert!(vault.paused());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // Error::NotOperator = 3
+fn test_emergency_withdraw_unauthorized_role_panics() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let lm = Address::generate(&e);
+    let recipient = Address::generate(&e);
+
+    // Grant LifecycleManager role — this is authorized for some things, but NOT emergency withdraw
+    vault.grant_role(&admin, &lm, &Role::LifecycleManager);
+
+    vault.emergency_withdraw(&lm, &recipient);
 }
 
 #[test]

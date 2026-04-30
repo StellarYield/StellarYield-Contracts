@@ -787,6 +787,37 @@ impl VaultFactory {
     pub fn default_zkme_verifier(e: &Env) -> Address {
         get_default_zkme_verifier(e)
     }
+    /// Returns the cooperator address currently configured as the factory-wide
+    /// default for new vault deployments.
+    ///
+    /// # Semantics
+    /// The cooperator is the off-chain principal recognised by the zkMe
+    /// verifier when checking whether an account is KYC-approved
+    /// (`zkme_verifier.has_approved(cooperator, user)`). Every vault deployed
+    /// through the factory is initialised with this default at creation time
+    /// — there is no per-call override on `create_single_rwa_vault*`,
+    /// `create_single_rwa_vault_full`, or `batch_create_vaults`. Tooling that
+    /// renders deployment forms can rely on this value to preview the
+    /// cooperator that a newly minted vault will start with.
+    ///
+    /// # Overrides
+    /// - **At creation:** not overridable. All factory-deployed vaults inherit
+    ///   this default.
+    /// - **Per-vault, post-deployment:** each vault exposes its own
+    ///   `set_cooperator(caller, new_cooperator)` (compliance-officer / admin
+    ///   gated) which only mutates that vault's local cooperator. Updating
+    ///   this factory-level default does **not** retroactively update vaults
+    ///   that have already been deployed.
+    /// - **Updating the default:** admin-only via
+    ///   [`set_defaults`](Self::set_defaults), which also re-validates the
+    ///   address and emits `defaults_updated`.
+    ///
+    /// # Read-only / Gas
+    /// View-only; performs a single instance-storage read. Safe to call from
+    /// off-chain RPC simulations and explorer pages without auth.
+    ///
+    /// # Returns
+    /// The factory's currently configured default cooperator `Address`.
     pub fn default_cooperator(e: &Env) -> Address {
         get_default_cooperator(e)
     }
