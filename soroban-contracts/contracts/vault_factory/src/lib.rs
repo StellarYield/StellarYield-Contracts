@@ -432,6 +432,18 @@ impl VaultFactory {
         get_vault_count(e)
     }
 
+    /// Returns the current number of registered vaults.
+    ///
+    /// This is an O(1) operation that reads a dedicated counter from persistent
+    /// storage. Useful for wallets and explorers to quickly verify vault
+    /// authenticity without loading the full vault list.
+    ///
+    /// # Returns
+    /// The total count of registered vaults in the factory.
+    pub fn vault_count(e: &Env) -> u32 {
+        get_vault_count(e)
+    }
+
     /// Returns all vaults whose `active` flag is set.
     pub fn get_active_vaults(e: &Env) -> Vec<Address> {
         let count = get_vault_count(e);

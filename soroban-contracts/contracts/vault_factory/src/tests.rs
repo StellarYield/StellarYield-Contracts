@@ -338,6 +338,28 @@ fn test_vault_count_matches_list_length() {
     });
 }
 
+/// vault_count() alias returns the same value as get_vault_count().
+#[test]
+fn test_vault_count_alias_matches_get_vault_count() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (factory_id, _) = setup_factory(&e);
+    let client = VaultFactoryClient::new(&e, &factory_id);
+
+    // Both should return 0 initially
+    assert_eq!(client.vault_count(), 0);
+    assert_eq!(client.vault_count(), client.get_vault_count());
+
+    // Add some vaults
+    inject_vault(&e, &factory_id, true);
+    inject_vault(&e, &factory_id, false);
+
+    // Both should return the same count
+    assert_eq!(client.vault_count(), 2);
+    assert_eq!(client.vault_count(), client.get_vault_count());
+}
+
 /// Offset past the end of the active list returns an empty vec (#186).
 #[test]
 fn test_get_active_vaults_offset_out_of_range() {
