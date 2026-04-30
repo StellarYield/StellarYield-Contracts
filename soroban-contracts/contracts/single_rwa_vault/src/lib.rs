@@ -2532,7 +2532,18 @@ impl SingleRWAVault {
         put_escrowed_shares(e, &caller, escrowed);
         bump_balance(e, &caller);
 
-        let id = get_redemption_counter(e) + 1;
+        // Compute approximate 1-based queue position before inserting the new
+        // request — count unprocessed entries that precede it.
+        let prev_total = get_redemption_counter(e);
+        let mut pending_before: u32 = 0;
+        for i in 1..=prev_total {
+            if !get_redemption_request(e, i).processed {
+                pending_before += 1;
+            }
+        }
+        let queue_position = pending_before + 1;
+
+        let id = prev_total + 1;
         put_redemption_counter(e, id);
         let user = caller.clone();
         put_redemption_request(
@@ -2547,7 +2558,7 @@ impl SingleRWAVault {
             },
         );
 
-        emit_early_redemption_requested(e, user, id, shares);
+        emit_early_redemption_requested(e, user, id, shares, queue_position);
         bump_instance(e);
         id
     }
