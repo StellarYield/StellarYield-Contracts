@@ -1088,7 +1088,7 @@ All events use Soroban's `e.events().publish(topics, data)` API.
 | `adm_xfr` | `(symbol,)` | `(old: Address, new: Address)` | `transfer_admin` |
 | `op_upd` | `(symbol, operator: Address)` | `status: bool` | `set_operator` |
 | `def_upd` | `(symbol,)` | `(asset: Address, zkme_verifier: Address, cooperator: Address)` | `set_defaults` |
-| `wasm_upd` | `(symbol,)` | `(new_hash: BytesN<32>, updated_by: Address)` | `set_vault_wasm_hash` |
+| `wasm_upd` | `(symbol, updated_by: Address)` | `(old_hash: BytesN<32>, new_hash: BytesN<32>)` | `set_vault_wasm_hash` |
 | `role_grt` | `(symbol, addr: Address)` | `role: Role` | `grant_role` |
 | `role_rvk` | `(symbol, addr: Address)` | `role: Role` | `revoke_role` |
 | `data_mig` | `(symbol, old_version: u32, new_version: u32)` | `()` | `migrate` |

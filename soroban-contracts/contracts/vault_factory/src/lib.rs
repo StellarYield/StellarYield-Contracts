@@ -782,8 +782,9 @@ impl VaultFactory {
         if hash == BytesN::from_array(e, &[0u8; 32]) {
             panic_with_error!(e, Error::InvalidWasmHash);
         }
+        let old_hash = get_vault_wasm_hash(e);
         put_vault_wasm_hash(e, hash.clone());
-        emit_wasm_hash_updated(e, hash, caller);
+        emit_wasm_hash_updated(e, old_hash, hash, caller);
         bump_instance(e);
     }
 
