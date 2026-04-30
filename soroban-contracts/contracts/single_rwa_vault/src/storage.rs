@@ -4,8 +4,11 @@
 //!
 //! • **Instance** – global shared config that must never be archived while
 //!   the contract is live (admin, pause flag, vault state, epoch counters …)
+//!   Instance storage contains only bounded configuration values. Unbounded
+//!   per-epoch data (EpochYield, EpochTotalShares) is stored in persistent
+//!   storage to prevent instance storage growth.
 //! • **Persistent** – per-user data that should survive long term (balances,
-//!   allowances, snapshots, yield-claim flags …)
+//!   allowances, snapshots, yield-claim flags, per-epoch data …)
 //! • **Temporary** – nothing here (all data is permanent in this contract)
 //!
 //! TTL constants assume ~5-second ledger close times.
@@ -95,6 +98,7 @@ pub enum Key {
     LstClmEp(Address),
     /// Track how much yield a user has claimed for a specific epoch (for vesting)
     UsrEpYldClm(Address, u32),
+    YieldShortfall(Address),
 
     // --- User share snapshots ---
     UsrShrEp(Address, u32),
@@ -140,6 +144,9 @@ pub enum Key {
     TlkDelay,
     TlkCount,
     TlkAct(u32),
+
+    // --- Operator fee ---
+    OpFee,
 }
 
 // Manual serialization for `Key`: unit variants use a bare `u32` tag; any key that
@@ -166,6 +173,7 @@ const K_TAG_BLACKLST: u32 = 216;
 const K_TAG_HAS_CLM_EMG: u32 = 217;
 const K_TAG_TLK_ACT: u32 = 218;
 const K_TAG_TRANSFER_EXEMPT: u32 = 219;
+const K_TAG_YIELD_SHORTFALL: u32 = 220;
 
 impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
     fn into_val(&self, env: &Env) -> soroban_sdk::Val {
@@ -190,6 +198,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::TransferExempt(a) => (K_TAG_TRANSFER_EXEMPT, a.clone()).into_val(env),
             Key::HasClmEmg(a) => (K_TAG_HAS_CLM_EMG, a.clone()).into_val(env),
             Key::TlkAct(n) => (K_TAG_TLK_ACT, *n).into_val(env),
+            Key::YieldShortfall(a) => (K_TAG_YIELD_SHORTFALL, a.clone()).into_val(env),
 
             Key::ShareName => 0u32.into_val(env),
             Key::ShrSymb => 1u32.into_val(env),
@@ -230,6 +239,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::EmgTotSup => 49u32.into_val(env),
             Key::TlkDelay => 50u32.into_val(env),
             Key::TlkCount => 51u32.into_val(env),
+            Key::OpFee => 54u32.into_val(env),
         }
     }
 }
@@ -262,6 +272,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
                 K_TAG_BLACKLST => Key::Blacklst(a),
                 K_TAG_TRANSFER_EXEMPT => Key::TransferExempt(a),
                 K_TAG_HAS_CLM_EMG => Key::HasClmEmg(a),
+                K_TAG_YIELD_SHORTFALL => Key::YieldShortfall(a),
                 _ => return Err(soroban_sdk::Error::from_contract_error(1)),
             });
         }
@@ -320,6 +331,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             49 => Ok(Key::EmgTotSup),
             50 => Ok(Key::TlkDelay),
             51 => Ok(Key::TlkCount),
+            54 => Ok(Key::OpFee),
             100 => Ok(Key::YldVstPer),
             _ => Err(soroban_sdk::Error::from_contract_error(1)),
         }
@@ -493,6 +505,8 @@ instance_get!(get_max_deposit_per_user, MaxDepUsr, i128);
 instance_put!(put_max_deposit_per_user, MaxDepUsr, i128);
 instance_get!(get_early_redemption_fee_bps, ERedFee, u32);
 instance_put!(put_early_redemption_fee_bps, ERedFee, u32);
+instance_get!(get_operator_fee_bps, OpFee, u32);
+instance_put!(put_operator_fee_bps, OpFee, u32);
 
 pub fn get_yield_vesting_period(e: &Env) -> u64 {
     e.storage().instance().get(&Key::YldVstPer).unwrap_or(0) // Default to 0 for backward compatibility (instant claiming)
@@ -618,27 +632,40 @@ pub fn put_operator(e: &Env, addr: Address, val: bool) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-epoch data (instance, keyed by epoch number — small integers)
+// Per-epoch data (persistent storage — migrated from instance in issue #51)
+//
+// Instance storage contains only bounded configuration. Unbounded epoch data
+// is in persistent storage. EpochYield and EpochTotalShares moved to persistent
+// storage to prevent instance storage growth with each epoch, which would inflate
+// bump_instance costs and risk hitting Soroban's instance storage size limit.
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn get_epoch_yield(e: &Env, epoch: u32) -> i128 {
     e.storage()
-        .instance()
+        .persistent()
         .get(&Key::EpYield(epoch))
         .unwrap_or(0)
 }
 pub fn put_epoch_yield(e: &Env, epoch: u32, val: i128) {
-    e.storage().instance().set(&Key::EpYield(epoch), &val);
+    let key = Key::EpYield(epoch);
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_epoch_total_shares(e: &Env, epoch: u32) -> i128 {
     e.storage()
-        .instance()
+        .persistent()
         .get(&Key::EpTotShr(epoch))
         .unwrap_or(0)
 }
 pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
-    e.storage().instance().set(&Key::EpTotShr(epoch), &val);
+    let key = Key::EpTotShr(epoch);
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
@@ -1341,4 +1368,27 @@ pub fn put_emergency_proposal_approvals(e: &Env, id: u32, approvals: Vec<Address
     e.storage()
         .persistent()
         .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+pub fn get_yield_shortfall(e: &Env, user: &Address) -> i128 {
+    e.storage()
+        .persistent()
+        .get(&Key::YieldShortfall(user.clone()))
+        .unwrap_or(0)
+}
+
+pub fn put_yield_shortfall(e: &Env, user: &Address, shortfall: i128) {
+    if shortfall < 0 {
+        return;
+    }
+    let key = Key::YieldShortfall(user.clone());
+    e.storage().persistent().set(&key, &shortfall);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn delete_yield_shortfall(e: &Env, user: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&Key::YieldShortfall(user.clone()));
 }

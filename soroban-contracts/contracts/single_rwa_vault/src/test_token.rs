@@ -30,6 +30,7 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         min_deposit: 1_000_i128,
         max_deposit_per_user: 0_i128,
         early_redemption_fee_bps: 100_u32,
+        operator_fee_bps: 0u32,
         funding_deadline: 0_u64,
         rwa_name: String::from_str(env, "Test RWA"),
         rwa_symbol: String::from_str(env, "TRWA"),
@@ -54,7 +55,7 @@ fn setup() -> (Env, Address, Address, Address) {
     let vault_id = env.register(SingleRWAVault, (default_params(&env, &admin, &asset_id),));
 
     // Redirect zkme_verifier to the vault itself → is_kyc_verified always true.
-    SingleRWAVaultClient::new(&env, &vault_id).set_zkme_verifier(&admin, &vault_id);
+    SingleRWAVaultClient::new(&env, &vault_id).set_zkme_verifier(&admin, &admin.clone());
 
     (env, vault_id, asset_id, admin)
 }

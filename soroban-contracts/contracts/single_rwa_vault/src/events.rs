@@ -2,12 +2,13 @@
 //!
 //! Each function mirrors an EVM event from ISingleRWA_Vault.sol.
 
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, String};
 
-use crate::types::{Role, VaultState};
+use crate::types::{EarlyRedemptionCloseReason, Role, VaultState};
 
-pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
-    e.events().publish((symbol_short!("zkme_upd"),), (old, new));
+pub fn emit_zkme_verifier_updated(e: &Env, caller: Address, old: Address, new: Address) {
+    e.events()
+        .publish((symbol_short!("zkme_upd"), caller), (old, new));
 }
 
 pub fn emit_cooperator_updated(e: &Env, old: Address, new: Address) {
@@ -24,13 +25,32 @@ pub fn emit_yield_claimed(e: &Env, user: Address, amount: i128, epoch: u32) {
         .publish((symbol_short!("yield_clm"), user), (amount, epoch));
 }
 
+pub fn emit_yield_claimed_partial(e: &Env, user: Address, clm: i128, shf: i128, ep: u32) {
+    e.events()
+        .publish((symbol_short!("prt_yld"), user), (clm, shf, ep));
+}
+
+pub fn emit_yield_shortfall_resolved(e: &Env, user: Address, amt: i128, rem: i128) {
+    e.events()
+        .publish((symbol_short!("ys_res"), user), (amt, rem));
+}
+
 pub fn emit_vault_state_changed(e: &Env, old: VaultState, new: VaultState) {
     e.events().publish((symbol_short!("st_chg"),), (old, new));
 }
 
-pub fn emit_maturity_date_set(e: &Env, old: u64, new: u64, state: VaultState) {
-    e.events()
-        .publish((symbol_short!("mat_set"),), (old, new, state));
+pub fn emit_maturity_date_set(
+    e: &Env,
+    caller: Address,
+    old: u64,
+    new: u64,
+    state: VaultState,
+    timestamp: u64,
+) {
+    e.events().publish(
+        (symbol_short!("mat_set"), caller),
+        (old, new, state, timestamp),
+    );
 }
 
 pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
@@ -40,6 +60,20 @@ pub fn emit_deposit_limits_updated(e: &Env, min: i128, max: i128) {
 pub fn emit_operator_updated(e: &Env, operator: Address, status: bool) {
     e.events()
         .publish((symbol_short!("op_upd"), operator), status);
+}
+
+/// Emitted when an operator is added (status=true).
+/// Includes caller and timestamp for off-chain monitoring.
+pub fn emit_operator_added(e: &Env, caller: Address, operator: Address, timestamp: u64) {
+    e.events()
+        .publish((symbol_short!("op_add"), caller, operator), timestamp);
+}
+
+pub fn emit_operator_removed(e: &Env, caller: Address, operator: Address) {
+    e.events().publish(
+        (symbol_short!("op_rem"), caller, operator),
+        e.ledger().timestamp(),
+    );
 }
 
 /// Emitted when the admin grants a role to an address.
@@ -55,6 +89,19 @@ pub fn emit_role_revoked(e: &Env, addr: Address, role: Role) {
 pub fn emit_emergency_action(e: &Env, paused: bool, reason: String) {
     e.events()
         .publish((symbol_short!("emergency"),), (paused, reason));
+}
+
+/// Enriched pause lifecycle event (backward-compatible companion to `emit_emergency_action`).
+///
+/// Includes an actor role hint (`admin` or `operator`) to reduce off-chain chain reads.
+pub fn emit_emergency_action_v2(e: &Env, paused: bool, reason: String, is_admin_actor: bool) {
+    let actor_role: Symbol = if is_admin_actor {
+        symbol_short!("admin")
+    } else {
+        symbol_short!("operator")
+    };
+    e.events()
+        .publish((symbol_short!("emerg_v2"),), (paused, reason, actor_role));
 }
 
 // SEP-41 events
@@ -130,6 +177,13 @@ enum EarlyRedemptionUserEventKind {
     Cancelled,
 }
 
+/// Which early-redemption non-success event to emit.
+#[derive(Copy, Clone)]
+enum EarlyRedemptionNonSuccessEventKind {
+    Cancelled,
+    Rejected,
+}
+
 /// Common early-redemption event layout: topics `(tag, user)`, data `(request_id, amount)`.
 ///
 /// Each `symbol_short!` lives in a `match` arm so topic symbols stay compile-time literals
@@ -153,6 +207,32 @@ fn publish_early_redemption_user_event(
         EarlyRedemptionUserEventKind::Cancelled => {
             e.events()
                 .publish((symbol_short!("erq_can"), user), (request_id, amount));
+        }
+    }
+}
+
+/// Enriched non-success early-redemption event layout: topics `(tag, user)`,
+/// data `(request_id, shares, reason_code)`.
+fn publish_early_redemption_non_success_event_v2(
+    e: &Env,
+    kind: EarlyRedemptionNonSuccessEventKind,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    reason: EarlyRedemptionCloseReason,
+) {
+    match kind {
+        EarlyRedemptionNonSuccessEventKind::Cancelled => {
+            e.events().publish(
+                (symbol_short!("erq_can2"), user),
+                (request_id, shares, reason),
+            );
+        }
+        EarlyRedemptionNonSuccessEventKind::Rejected => {
+            e.events().publish(
+                (symbol_short!("erq_rej2"), user),
+                (request_id, shares, reason),
+            );
         }
     }
 }
@@ -190,7 +270,46 @@ pub fn emit_early_redemption_cancelled(e: &Env, user: Address, request_id: u32, 
     );
 }
 
+/// Enriched event emitted by `cancel_early_redemption` (backward-compatible companion
+/// to `emit_early_redemption_cancelled`).
+pub fn emit_early_redemption_cancelled_v2(
+    e: &Env,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    reason: EarlyRedemptionCloseReason,
+) {
+    publish_early_redemption_non_success_event_v2(
+        e,
+        EarlyRedemptionNonSuccessEventKind::Cancelled,
+        user,
+        request_id,
+        shares,
+        reason,
+    );
+}
+
+/// Enriched event emitted by `reject_early_redemption` (backward-compatible companion
+/// to `emit_early_redemption_cancelled`).
+pub fn emit_early_redemption_rejected_v2(
+    e: &Env,
+    user: Address,
+    request_id: u32,
+    shares: i128,
+    reason: EarlyRedemptionCloseReason,
+) {
+    publish_early_redemption_non_success_event_v2(
+        e,
+        EarlyRedemptionNonSuccessEventKind::Rejected,
+        user,
+        request_id,
+        shares,
+        reason,
+    );
+}
+
 /// Emitted by `transfer_admin`.
+#[allow(dead_code)]
 pub fn emit_admin_transferred(e: &Env, old_admin: Address, new_admin: Address) {
     e.events()
         .publish((symbol_short!("adm_xfr"),), (old_admin, new_admin));
@@ -224,9 +343,17 @@ pub fn emit_yield_vesting_period_set(e: &Env, vesting_period: u64) {
 /// Emitted by `set_funding_target` / `set_funding_target_with_reason`.
 ///
 /// `reason` is a short operator-provided context string (may be empty).
-pub fn emit_funding_target_set(e: &Env, target: i128, reason: String) {
-    e.events()
-        .publish((symbol_short!("fund_set"),), (target, reason));
+pub fn emit_funding_target_set(
+    e: &Env,
+    caller: Address,
+    target: i128,
+    reason: String,
+    timestamp: u64,
+) {
+    e.events().publish(
+        (symbol_short!("fund_set"), caller),
+        (target, reason, timestamp),
+    );
 }
 
 /// Emitted by `set_blacklisted`.
@@ -251,6 +378,11 @@ pub fn emit_funding_cancelled(e: &Env) {
 pub fn emit_refunded(e: &Env, user: Address, amount: i128) {
     e.events()
         .publish((symbol_short!("refunded"), user), amount);
+}
+
+/// Emitted by `set_cooperator` — cooperator address has been updated. (Task #346)
+pub fn emit_cooperator_fee_updated(e: &Env, old: Address, new: Address) {
+    e.events().publish((symbol_short!("coop_fee"),), (old, new));
 }
 
 /// Emitted by `emergency_enable_pro_rata` — vault enters Emergency state.

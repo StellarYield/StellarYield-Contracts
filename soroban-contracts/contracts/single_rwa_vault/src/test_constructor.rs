@@ -69,6 +69,8 @@ fn test_initial_vault_state() {
 
     assert_eq!(v.vault_state(), VaultState::Funding);
     assert!(!v.paused());
+    assert!(!v.is_paused());
+    assert!(!v.is_pause());
     assert_eq!(v.current_epoch(), 0u32);
 }
 
@@ -84,11 +86,13 @@ fn test_vault_config_matches_init_params() {
     assert_eq!(v.funding_target(), ctx.params.funding_target);
     assert_eq!(v.maturity_date(), ctx.params.maturity_date);
     assert_eq!(v.min_deposit(), ctx.params.min_deposit);
+    assert_eq!(v.get_min_deposit(), ctx.params.min_deposit);
     assert_eq!(v.max_deposit_per_user(), ctx.params.max_deposit_per_user);
     assert_eq!(
         v.early_redemption_fee_bps(),
         ctx.params.early_redemption_fee_bps
     );
+    assert_eq!(v.operator_fee_bps(), ctx.params.operator_fee_bps);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,7 +119,9 @@ fn test_zkme_verifier_and_cooperator_stored() {
     let v = ctx.vault();
 
     assert_eq!(v.zkme_verifier(), ctx.kyc_id);
+    assert_eq!(v.get_zkme_verifier(), ctx.kyc_id);
     assert_eq!(v.cooperator(), ctx.cooperator);
+    assert_eq!(v.get_cooperator(), ctx.cooperator);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

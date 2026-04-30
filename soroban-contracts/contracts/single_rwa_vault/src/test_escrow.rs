@@ -193,6 +193,7 @@ fn deploy_underfunded(funding_deadline: u64) -> (Env, Address, Address, Address,
         min_deposit: 1_000_000i128,  // 1 USDC
         max_deposit_per_user: 0i128, // unlimited
         early_redemption_fee_bps: 200u32,
+        operator_fee_bps: 0u32,
         rwa_name: String::from_str(&env, "US Treasury Bond 2026"),
         rwa_symbol: String::from_str(&env, "USTB26"),
         rwa_document_uri: String::from_str(&env, "https://example.com/ustb26"),
