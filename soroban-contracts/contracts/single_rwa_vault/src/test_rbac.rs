@@ -73,7 +73,7 @@ fn test_grant_and_revoke_role() {
     client.grant_role(&admin, &addr, &Role::YieldOperator);
     assert!(client.has_role(&addr, &Role::YieldOperator));
 
-    client.revoke_role(&admin, &addr, &Role::YieldOperator);
+    client.revoke_role(&admin, &addr, &Role::YieldOperator, &None);
     assert!(!client.has_role(&addr, &Role::YieldOperator));
 }
 
@@ -127,11 +127,11 @@ fn test_set_operator_grants_full_operator() {
     let op = Address::generate(&env);
 
     // Backward-compat API
-    client.set_operator(&admin, &op, &true);
+    client.set_operator(&admin, &op, &true, &None);
     assert!(client.is_operator(&op));
     assert!(client.has_role(&op, &Role::FullOperator));
 
-    client.set_operator(&admin, &op, &false);
+    client.set_operator(&admin, &op, &false, &None);
     assert!(!client.is_operator(&op));
     assert!(!client.has_role(&op, &Role::FullOperator));
 }

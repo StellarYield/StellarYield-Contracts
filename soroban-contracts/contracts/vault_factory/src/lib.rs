@@ -31,6 +31,10 @@ const MAX_BATCH_SIZE: u32 = 10;
 /// Maximum page size for status-filtered vault list queries.
 const MAX_STATUS_PAGE_SIZE: u32 = 50;
 
+/// Maximum number of entries to scan when building the recent list.
+/// Bounds runtime even if many historic vaults have been removed.
+const MAX_RECENT_SCAN: u32 = 200;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Contract
 // ─────────────────────────────────────────────────────────────────────────────
@@ -428,6 +432,18 @@ impl VaultFactory {
         get_vault_count(e)
     }
 
+    /// Returns the current number of registered vaults.
+    ///
+    /// This is an O(1) operation that reads a dedicated counter from persistent
+    /// storage. Useful for wallets and explorers to quickly verify vault
+    /// authenticity without loading the full vault list.
+    ///
+    /// # Returns
+    /// The total count of registered vaults in the factory.
+    pub fn vault_count(e: &Env) -> u32 {
+        get_vault_count(e)
+    }
+
     /// Returns all vaults whose `active` flag is set.
     pub fn get_active_vaults(e: &Env) -> Vec<Address> {
         let count = get_vault_count(e);
@@ -465,6 +481,40 @@ impl VaultFactory {
                 result.push_back(vault);
             }
         }
+        result
+    }
+
+    /// Returns the most recently created vaults (newest-first).
+    ///
+    /// Deterministic ordering is based on the factory's monotonic deploy counter,
+    /// not the live registry index (which uses swap-remove on deletion).
+    ///
+    /// `limit` is capped to 50. Returns an empty vec when `limit == 0` or when
+    /// no vaults exist. Removed vaults are skipped.
+    pub fn list_recent_vaults(e: &Env, limit: u32) -> Vec<Address> {
+        let capped = limit.min(MAX_STATUS_PAGE_SIZE);
+        let mut result: Vec<Address> = Vec::new(e);
+        if capped == 0 {
+            return result;
+        }
+
+        let mut deploy_id = get_vault_deploy_counter(e);
+        if deploy_id == 0 {
+            return result;
+        }
+
+        let mut scanned: u32 = 0;
+        while deploy_id > 0 && result.len() < capped && scanned < MAX_RECENT_SCAN {
+            if let Some(vault) = get_vault_by_deploy_id(e, deploy_id) {
+                // Skip removed/unregistered vaults.
+                if get_vault_info(e, &vault).is_some() {
+                    result.push_back(vault);
+                }
+            }
+            deploy_id -= 1;
+            scanned += 1;
+        }
+
         result
     }
 
@@ -732,8 +782,9 @@ impl VaultFactory {
         if hash == BytesN::from_array(e, &[0u8; 32]) {
             panic_with_error!(e, Error::InvalidWasmHash);
         }
+        let old_hash = get_vault_wasm_hash(e);
         put_vault_wasm_hash(e, hash.clone());
-        emit_wasm_hash_updated(e, hash, caller);
+        emit_wasm_hash_updated(e, old_hash, hash, caller);
         bump_instance(e);
     }
 
@@ -749,6 +800,37 @@ impl VaultFactory {
     pub fn default_zkme_verifier(e: &Env) -> Address {
         get_default_zkme_verifier(e)
     }
+    /// Returns the cooperator address currently configured as the factory-wide
+    /// default for new vault deployments.
+    ///
+    /// # Semantics
+    /// The cooperator is the off-chain principal recognised by the zkMe
+    /// verifier when checking whether an account is KYC-approved
+    /// (`zkme_verifier.has_approved(cooperator, user)`). Every vault deployed
+    /// through the factory is initialised with this default at creation time
+    /// — there is no per-call override on `create_single_rwa_vault*`,
+    /// `create_single_rwa_vault_full`, or `batch_create_vaults`. Tooling that
+    /// renders deployment forms can rely on this value to preview the
+    /// cooperator that a newly minted vault will start with.
+    ///
+    /// # Overrides
+    /// - **At creation:** not overridable. All factory-deployed vaults inherit
+    ///   this default.
+    /// - **Per-vault, post-deployment:** each vault exposes its own
+    ///   `set_cooperator(caller, new_cooperator)` (compliance-officer / admin
+    ///   gated) which only mutates that vault's local cooperator. Updating
+    ///   this factory-level default does **not** retroactively update vaults
+    ///   that have already been deployed.
+    /// - **Updating the default:** admin-only via
+    ///   [`set_defaults`](Self::set_defaults), which also re-validates the
+    ///   address and emits `defaults_updated`.
+    ///
+    /// # Read-only / Gas
+    /// View-only; performs a single instance-storage read. Safe to call from
+    /// off-chain RPC simulations and explorer pages without auth.
+    ///
+    /// # Returns
+    /// The factory's currently configured default cooperator `Address`.
     pub fn default_cooperator(e: &Env) -> Address {
         get_default_cooperator(e)
     }
@@ -865,6 +947,8 @@ impl VaultFactory {
         };
         put_vault_info(e, &vault_addr, info);
         register_vault(e, vault_addr.clone());
+        // Persist deploy ordering for recent-vault queries.
+        put_vault_by_deploy_id(e, counter, &vault_addr);
         push_vaults_by_asset(e, &vault_asset, vault_addr.clone());
 
         emit_vault_created(

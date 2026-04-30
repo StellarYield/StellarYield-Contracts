@@ -248,3 +248,107 @@ fn test_set_zkme_verifier_emits_event_with_caller_and_addresses() {
         "zkme verifier event: new verifier must match"
     );
 }
+
+#[test]
+fn test_set_cooperator_emits_event_with_old_and_new_addresses() {
+    let ctx = setup_with_kyc_bypass();
+    let old_cooperator = ctx.vault().cooperator();
+    let new_cooperator = soroban_sdk::Address::generate(&ctx.env);
+
+    ctx.vault().set_cooperator(&ctx.admin, &new_cooperator);
+
+    let events = ctx.env.events().all();
+    let cooperator_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("coop_upd")
+        }
+    });
+    let (_, _, data) = cooperator_event.expect("cooperator event must be emitted");
+
+    let (event_old, event_new): (soroban_sdk::Address, soroban_sdk::Address) =
+        data.into_val(&ctx.env);
+    assert_eq!(
+        event_old, old_cooperator,
+        "cooperator event: old cooperator must match"
+    );
+    assert_eq!(
+        event_new, new_cooperator,
+        "cooperator event: new cooperator must match"
+    );
+}
+
+#[test]
+fn test_set_funding_target_emits_event_with_caller_and_timestamp() {
+    let ctx = setup_with_kyc_bypass();
+    let target = 42_000_000i128;
+
+    ctx.vault().set_funding_target(&ctx.admin, &target);
+
+    let events = ctx.env.events().all();
+    let funding_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("fund_set")
+        }
+    });
+    let (_, topics, data) = funding_event.expect("funding target event must be emitted");
+
+    let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
+    assert_eq!(topic_caller, ctx.admin);
+
+    let (event_target, _reason, event_ts): (i128, soroban_sdk::String, u64) =
+        data.into_val(&ctx.env);
+    assert_eq!(event_target, target);
+    assert_eq!(event_ts, ctx.env.ledger().timestamp());
+}
+
+#[test]
+fn test_set_maturity_date_emits_caller_and_timestamp() {
+    let ctx = setup_with_kyc_bypass();
+    let new_maturity = 2_100_000_000u64;
+
+    ctx.vault().set_maturity_date(&ctx.operator, &new_maturity);
+
+    let events = ctx.env.events().all();
+    let maturity_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("mat_set")
+        }
+    });
+    let (_, topics, data) = maturity_event.expect("maturity event must be emitted");
+
+    let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
+    assert_eq!(topic_caller, ctx.operator);
+
+    let (_old, event_new, _state, event_ts): (u64, u64, crate::types::VaultState, u64) =
+        data.into_val(&ctx.env);
+    assert_eq!(event_new, new_maturity);
+    assert_eq!(event_ts, ctx.env.ledger().timestamp());
+}
+
+#[test]
+fn test_set_operator_true_emits_operator_added_event() {
+    let ctx = setup_with_kyc_bypass();
+    let new_operator = soroban_sdk::Address::generate(&ctx.env);
+
+    ctx.vault().set_operator(&ctx.admin, &new_operator, &true, &None);
+
+    let events = ctx.env.events().all();
+    let op_add_event = events.iter().find(|(contract, topics, _)| {
+        *contract == ctx.vault_id && {
+            let sym: soroban_sdk::Symbol = topics.get_unchecked(0).into_val(&ctx.env);
+            sym == symbol_short!("op_add")
+        }
+    });
+    let (_, topics, data) = op_add_event.expect("operator-added event must be emitted");
+
+    let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
+    let topic_operator: soroban_sdk::Address = topics.get_unchecked(2).into_val(&ctx.env);
+    assert_eq!(topic_caller, ctx.admin);
+    assert_eq!(topic_operator, new_operator);
+
+    let event_ts: u64 = data.into_val(&ctx.env);
+    assert_eq!(event_ts, ctx.env.ledger().timestamp());
+}

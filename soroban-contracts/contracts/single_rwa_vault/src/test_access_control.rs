@@ -6,7 +6,7 @@ use soroban_sdk::{
     Address, Env, IntoVal, String,
 };
 
-use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
+use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -111,7 +111,7 @@ fn test_set_operator_grants_access() {
     // With mock_all_auths, every address passes auth checks
     // So we can't test non-operator status properly
     // Just test that we can set an operator
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     assert!(vault.is_operator(&operator));
 }
 
@@ -123,9 +123,9 @@ fn test_set_operator_revokes_access() {
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
     let operator = Address::generate(&e);
 
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     assert!(vault.is_operator(&operator));
-    vault.set_operator(&admin, &operator, &false);
+    vault.set_operator(&admin, &operator, &false, &None);
     assert!(!vault.is_operator(&operator));
 }
 
@@ -139,7 +139,7 @@ fn test_set_operator_non_admin_panics() {
     let non_admin = Address::generate(&e);
     let operator = Address::generate(&e);
 
-    vault.set_operator(&non_admin, &operator, &true);
+    vault.set_operator(&non_admin, &operator, &true, &None);
 }
 
 #[test]
@@ -172,7 +172,7 @@ fn test_pause_blocks_deposits() {
     let user = Address::generate(&e);
 
     // Grant operator to admin so they can pause
-    vault.set_operator(&admin, &admin, &true);
+    vault.set_operator(&admin, &admin, &true, &None);
     vault.pause(&admin, &String::from_str(&e, "Maintenance"));
     assert!(vault.paused());
 
@@ -189,7 +189,7 @@ fn test_unpause_resumes_operations() {
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
     let user = Address::generate(&e);
 
-    vault.set_operator(&admin, &admin, &true);
+    vault.set_operator(&admin, &admin, &true, &None);
     vault.pause(&admin, &String::from_str(&e, "Maintenance"));
     assert!(vault.paused());
 
@@ -225,7 +225,7 @@ fn test_pause_emits_event_with_reason() {
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
 
-    vault.set_operator(&admin, &admin, &true);
+    vault.set_operator(&admin, &admin, &true, &None);
     let reason = String::from_str(&e, "Critical failure");
     vault.pause(&admin, &reason);
 
@@ -305,6 +305,42 @@ fn test_emergency_withdraw_zero_balance_no_transfer() {
 }
 
 #[test]
+fn test_emergency_withdraw_treasury_manager_authorized() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, token_id, _zkme_id, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let token = MockTokenClient::new(&e, &token_id);
+    let tm = Address::generate(&e);
+    let recipient = Address::generate(&e);
+
+    // Grant TreasuryManager role
+    vault.grant_role(&admin, &tm, &Role::TreasuryManager);
+
+    token.mint(&vault_id, &1000);
+    vault.emergency_withdraw(&tm, &recipient);
+
+    assert_eq!(token.balance(&recipient), 1000);
+    assert!(vault.paused());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3)")] // Error::NotOperator = 3
+fn test_emergency_withdraw_unauthorized_role_panics() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, _, _, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let lm = Address::generate(&e);
+    let recipient = Address::generate(&e);
+
+    // Grant LifecycleManager role — this is authorized for some things, but NOT emergency withdraw
+    vault.grant_role(&admin, &lm, &Role::LifecycleManager);
+
+    vault.emergency_withdraw(&lm, &recipient);
+}
+
+#[test]
 fn test_full_operator_can_clear_blacklist_under_current_design() {
     let e = Env::default();
     e.mock_all_auths();
@@ -318,7 +354,7 @@ fn test_full_operator_can_clear_blacklist_under_current_design() {
 
     // Backward-compatible operator assignment grants the FullOperator superrole,
     // which currently satisfies ComplianceOfficer checks as well.
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     vault.set_blacklisted(&operator, &user, &false);
 
     assert!(!vault.is_blacklisted(&user));
@@ -339,7 +375,7 @@ fn test_unblacklisted_user_can_resume_deposit_and_withdraw() {
     let resumed_deposit = 250_000i128;
     let resumed_withdraw = 200_000i128;
 
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     zkme.approve_user(&user);
     token.mint(&user, &2_000_000);
 
@@ -398,7 +434,7 @@ fn test_multiple_consecutive_pauses_and_unpauses() {
     let user = Address::generate(&e);
 
     // Grant operator to admin
-    vault.set_operator(&admin, &admin, &true);
+    vault.set_operator(&admin, &admin, &true, &None);
 
     // Approve user for KYC
     zkme.approve_user(&user);
@@ -468,7 +504,7 @@ fn test_share_transfer_succeeds_while_vault_paused() {
     let from_user = Address::generate(&e);
     let to_user = Address::generate(&e);
 
-    vault.set_operator(&admin, &admin, &true);
+    vault.set_operator(&admin, &admin, &true, &None);
     zkme.approve_user(&from_user);
     zkme.approve_user(&to_user);
 
@@ -522,7 +558,7 @@ fn test_operator_cannot_transfer_admin() {
     let new_admin = Address::generate(&e);
 
     // Grant full operator privileges to `operator`
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     assert!(vault.is_operator(&operator));
 
     // Operator attempts an admin-only action: transfer_admin
@@ -544,7 +580,7 @@ fn test_operator_escalation_attempt_leaves_state_intact() {
     let operator = Address::generate(&e);
     let new_admin = Address::generate(&e);
 
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
     assert!(vault.is_operator(&operator));
 
     // Capture the result without panicking
@@ -589,11 +625,11 @@ fn test_operator_cannot_grant_operator_to_others() {
     let operator = Address::generate(&e);
     let new_oper = Address::generate(&e);
 
-    vault.set_operator(&admin, &operator, &true);
+    vault.set_operator(&admin, &operator, &true, &None);
 
     // Operator attempts to grant operator status to another address
     // Must fail with NotAdmin — only admin can manage operator assignments
-    vault.set_operator(&operator, &new_oper, &true);
+    vault.set_operator(&operator, &new_oper, &true, &None);
 }
 
 /// An operator also must not be able to revoke another operator.
@@ -610,9 +646,9 @@ fn test_operator_cannot_revoke_other_operator() {
     let operator_b = Address::generate(&e);
 
     // Admin grants both operators
-    vault.set_operator(&admin, &operator_a, &true);
-    vault.set_operator(&admin, &operator_b, &true);
+    vault.set_operator(&admin, &operator_a, &true, &None);
+    vault.set_operator(&admin, &operator_b, &true, &None);
 
     // operator_a attempts to revoke operator_b — must fail
-    vault.set_operator(&operator_a, &operator_b, &false);
+    vault.set_operator(&operator_a, &operator_b, &false, &None);
 }

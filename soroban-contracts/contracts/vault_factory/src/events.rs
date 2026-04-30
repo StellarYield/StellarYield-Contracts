@@ -45,9 +45,24 @@ pub fn emit_vault_removed(e: &Env, vault: Address, removed_by: Address) {
 }
 
 /// Emitted when the vault WASM hash is updated by the admin.
-pub fn emit_wasm_hash_updated(e: &Env, new_hash: BytesN<32>, updated_by: Address) {
+///
+/// # Arguments
+/// * `old_hash` - Previous WASM hash (helps off-chain systems track changes)
+/// * `new_hash` - New WASM hash being set
+/// * `updated_by` - Address that performed the update
+///
+/// Off-chain indexers can use this event to:
+/// - Track WASM hash history without heavy RPC calls
+/// - Support pagination UIs by indexing events instead of calling contract views
+/// - Detect unauthorized changes by monitoring `updated_by`
+pub fn emit_wasm_hash_updated(
+    e: &Env,
+    old_hash: BytesN<32>,
+    new_hash: BytesN<32>,
+    updated_by: Address,
+) {
     e.events()
-        .publish((symbol_short!("wasm_upd"),), (new_hash, updated_by));
+        .publish((symbol_short!("wasm_upd"), updated_by), (old_hash, new_hash));
 }
 
 /// Emitted when the admin grants a role to an address.
