@@ -81,6 +81,19 @@ pub fn emit_emergency_action(e: &Env, paused: bool, reason: String) {
         .publish((symbol_short!("emergency"),), (paused, reason));
 }
 
+/// Enriched pause lifecycle event (backward-compatible companion to `emit_emergency_action`).
+///
+/// Includes an actor role hint (`admin` or `operator`) to reduce off-chain chain reads.
+pub fn emit_emergency_action_v2(e: &Env, paused: bool, reason: String, is_admin_actor: bool) {
+    let actor_role: Symbol = if is_admin_actor {
+        symbol_short!("admin")
+    } else {
+        symbol_short!("operator")
+    };
+    e.events()
+        .publish((symbol_short!("emerg_v2"),), (paused, reason, actor_role));
+}
+
 // SEP-41 events
 pub fn emit_approval(
     e: &Env,

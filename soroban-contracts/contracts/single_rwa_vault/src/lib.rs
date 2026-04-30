@@ -2921,6 +2921,9 @@ impl SingleRWAVault {
         require_role(e, &caller, Role::TreasuryManager);
         put_paused(e, true);
         put_freeze_flags(e, Self::FREEZE_ALL);
+        let is_admin_actor = caller == get_admin(e);
+        // Emit v2 first so legacy listeners that read "last event" still see `emergency`.
+        emit_emergency_action_v2(e, true, reason.clone(), is_admin_actor);
         emit_emergency_action(e, true, reason);
         bump_instance(e);
     }
@@ -2935,7 +2938,10 @@ impl SingleRWAVault {
         require_admin(e, &caller);
         put_paused(e, false);
         put_freeze_flags(e, 0u32);
-        emit_emergency_action(e, false, String::from_str(e, ""));
+        let reason = String::from_str(e, "");
+        // Emit v2 first so legacy listeners that read "last event" still see `emergency`.
+        emit_emergency_action_v2(e, false, reason.clone(), true);
+        emit_emergency_action(e, false, reason);
         bump_instance(e);
     }
 
@@ -3036,11 +3042,11 @@ impl SingleRWAVault {
         // --- Effects (pause before transferring) ---
         put_paused(e, true);
         put_freeze_flags(e, Self::FREEZE_ALL);
-        emit_emergency_action(
-            e,
-            true,
-            String::from_str(e, "Emergency withdrawal executed"),
-        );
+        let reason = String::from_str(e, "Emergency withdrawal executed");
+        let is_admin_actor = caller == get_admin(e);
+        // Emit v2 first so legacy listeners that read "last event" still see `emergency`.
+        emit_emergency_action_v2(e, true, reason.clone(), is_admin_actor);
+        emit_emergency_action(e, true, reason);
 
         // --- Interaction ---
         if balance > 0 {
