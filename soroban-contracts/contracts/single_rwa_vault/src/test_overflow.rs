@@ -60,4 +60,26 @@ mod test {
         let c = 1i128;
         math::mul_div(&e, a, b, c);
     }
+
+    #[test]
+    fn test_assert_nonnegative_accepts_zero_and_positive() {
+        let e = Env::default();
+        math::assert_nonnegative(&e, 0);
+        math::assert_nonnegative(&e, 1);
+        math::assert_nonnegative(&e, i128::MAX);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_nonnegative_rejects_negative() {
+        let e = Env::default();
+        math::assert_nonnegative(&e, -1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_assert_nonnegative_rejects_min() {
+        let e = Env::default();
+        math::assert_nonnegative(&e, i128::MIN);
+    }
 }

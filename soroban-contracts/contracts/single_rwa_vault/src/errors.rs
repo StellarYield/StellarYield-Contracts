@@ -6,7 +6,6 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     NotKYCVerified = 1,
-    ZKMEVerifierNotSet = 2,
     NotOperator = 3,
     NotAdmin = 4,
     InvalidVaultState = 5,
@@ -35,8 +34,6 @@ pub enum Error {
     AlreadyProcessed = 21,
     /// Requested fee exceeds the permitted maximum.
     FeeTooHigh = 22,
-    /// Price aggregator is not supported or not recognised.
-    AggregatorNotSupported = 23,
     /// The specified redemption request ID is invalid or not found.
     InvalidRedemptionRequest = 24,
     /// Operation or component is not supported.
@@ -76,8 +73,6 @@ pub enum Error {
     ProposalAlreadyExecuted = 42,
     /// Approval threshold has not been reached yet.
     ThresholdNotMet = 43,
-    /// This signer has already approved this proposal.
-    AlreadyApproved = 44,
     /// Threshold must be >= 1 and <= number of signers.
     InvalidThreshold = 45,
     /// Vault total assets exceeds the funding target during the funding phase.
@@ -90,4 +85,8 @@ pub enum Error {
     TransferExemptionLimitExceeded = 49,
     /// Cannot distribute yield when there are no shareholders.
     NoShareholders = 50,
+    /// No yield shortfall is recorded for this user.
+    YieldShortfallNotFound = 51,
+    /// The resolution amount is greater than the recorded shortfall.
+    InsufficientShortfall = 52,
 }
