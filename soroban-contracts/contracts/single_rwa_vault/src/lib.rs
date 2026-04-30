@@ -3554,6 +3554,29 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
+    /// Returns the number of decimal places used by this vault's share token.
+    ///
+    /// The value is set once during contract initialization via the
+    /// `share_decimals` field in the `InitParams` struct and is immutable for the
+    /// lifetime of the vault. It must be in the range `0..=18`; values greater
+    /// than 18 are rejected at construction with `Error::InvalidInitParams`.
+    ///
+    /// # Uniqueness Across Vaults
+    /// Decimals are **not** unique across vaults. Each vault chooses its own
+    /// `share_decimals` at deployment, and two vaults may legitimately publish
+    /// the same value. Integrators MUST always read this view from the specific
+    /// vault address they are interacting with — never assume a protocol-wide
+    /// default — and MUST scale share-denominated values (e.g. `total_supply`,
+    /// `balance`, `share_price`) by `10^decimals` accordingly.
+    ///
+    /// # UI / Display Implications
+    /// Front-ends and wallets should use this value to format raw on-chain
+    /// share amounts (which are stored as integer `i128` units) into
+    /// human-readable balances. Because the vault permits up to 18 decimals,
+    /// UIs SHOULD truncate or round display values to a sensible number of
+    /// fractional digits (commonly 2–6) rather than rendering the full
+    /// precision. Truncation is a display-only concern and MUST NOT be
+    /// applied to values used for further on-chain computation.
     pub fn decimals(e: &Env) -> u32 {
         get_share_decimals(e)
     }
