@@ -39,6 +39,8 @@ mod test_epoch_activity;
 #[cfg(test)]
 mod test_epoch_history;
 #[cfg(test)]
+mod test_epoch_storage_migration;
+#[cfg(test)]
 mod test_escrow;
 #[cfg(test)]
 mod test_events;

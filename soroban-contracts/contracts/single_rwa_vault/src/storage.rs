@@ -4,8 +4,11 @@
 //!
 //! • **Instance** – global shared config that must never be archived while
 //!   the contract is live (admin, pause flag, vault state, epoch counters …)
+//!   Instance storage contains only bounded configuration values. Unbounded
+//!   per-epoch data (EpochYield, EpochTotalShares) is stored in persistent
+//!   storage to prevent instance storage growth.
 //! • **Persistent** – per-user data that should survive long term (balances,
-//!   allowances, snapshots, yield-claim flags …)
+//!   allowances, snapshots, yield-claim flags, per-epoch data …)
 //! • **Temporary** – nothing here (all data is permanent in this contract)
 //!
 //! TTL constants assume ~5-second ledger close times.
@@ -629,27 +632,40 @@ pub fn put_operator(e: &Env, addr: Address, val: bool) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Per-epoch data (instance, keyed by epoch number — small integers)
+// Per-epoch data (persistent storage — migrated from instance in issue #51)
+//
+// Instance storage contains only bounded configuration. Unbounded epoch data
+// is in persistent storage. EpochYield and EpochTotalShares moved to persistent
+// storage to prevent instance storage growth with each epoch, which would inflate
+// bump_instance costs and risk hitting Soroban's instance storage size limit.
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn get_epoch_yield(e: &Env, epoch: u32) -> i128 {
     e.storage()
-        .instance()
+        .persistent()
         .get(&Key::EpYield(epoch))
         .unwrap_or(0)
 }
 pub fn put_epoch_yield(e: &Env, epoch: u32, val: i128) {
-    e.storage().instance().set(&Key::EpYield(epoch), &val);
+    let key = Key::EpYield(epoch);
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_epoch_total_shares(e: &Env, epoch: u32) -> i128 {
     e.storage()
-        .instance()
+        .persistent()
         .get(&Key::EpTotShr(epoch))
         .unwrap_or(0)
 }
 pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
-    e.storage().instance().set(&Key::EpTotShr(epoch), &val);
+    let key = Key::EpTotShr(epoch);
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
 }
 
 pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
