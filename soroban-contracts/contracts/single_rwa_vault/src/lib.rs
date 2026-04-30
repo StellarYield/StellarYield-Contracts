@@ -2725,7 +2725,41 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    /// Backward-compatible: returns `true` when `account` holds `FullOperator`.
+    /// Helper view: returns `true` when `account` currently holds the
+    /// `FullOperator` superrole, `false` otherwise.
+    ///
+    /// # Semantics
+    /// `FullOperator` is the legacy "operator" flag (the boolean toggled by
+    /// `set_operator(_, _, true|false)`). It is a superrole that passes every
+    /// granular role check (`YieldOperator`, `LifecycleManager`,
+    /// `ComplianceOfficer`, `TreasuryManager`). This view checks **only** the
+    /// `FullOperator` flag — it does **not** return `true` for accounts that
+    /// hold a single granular role, nor for the admin (admin is a separate
+    /// principal returned by `admin()`).
+    ///
+    /// # When To Use This vs. `has_role`
+    /// - Use `is_operator(account)` when you only care about the
+    ///   backward-compatible "is this a full operator?" question — e.g. mirroring
+    ///   the boolean semantics of older clients.
+    /// - Use [`has_role(account, role)`](Self::has_role) when you need to know
+    ///   whether `account` can perform a *specific* privileged action; it
+    ///   returns `true` for the matching granular role, for `FullOperator`,
+    ///   and for the admin.
+    /// - Use [`admin()`](Self::admin) to fetch the admin address directly.
+    ///
+    /// # Frontend / UI Implications
+    /// Frontends typically use this view to decide whether to render
+    /// operator-only controls (e.g. activate vault, distribute yield, pause).
+    /// Because granular roles are not reflected here, UIs that surface
+    /// role-specific controls SHOULD prefer `has_role(addr, role)` keyed to the
+    /// action being rendered, falling back to `is_operator` only for the
+    /// coarse "show the operator panel at all?" decision. When the vault is
+    /// paused, the same view can be used to determine whether the connected
+    /// wallet has permission to call `unpause` (operators and admin only).
+    ///
+    /// # Gas / Storage
+    /// Single instance-storage read; safe to call from view contexts and
+    /// off-chain RPC simulations.
     pub fn is_operator(e: &Env, account: Address) -> bool {
         get_operator(e, &account)
     }
