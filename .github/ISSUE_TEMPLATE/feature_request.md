@@ -1,9 +1,9 @@
 ---
 name: Feature Request
 about: Suggest an idea for this project
-title: '[FEATURE] '
+title: "[FEATURE] "
 labels: enhancement
-assignees: ''
+assignees: ""
 ---
 
 ## Feature Description
@@ -12,7 +12,7 @@ assignees: ''
 
 ## Problem Statement
 
-<!-- 
+<!--
 What problem does this feature solve?
 What pain point does it address?
 Why is this feature needed?
@@ -20,7 +20,7 @@ Why is this feature needed?
 
 ## Proposed Solution
 
-<!-- 
+<!--
 Describe the solution you'd like to see implemented:
 - How would it work?
 - What would the user experience be?
@@ -29,7 +29,7 @@ Describe the solution you'd like to see implemented:
 
 ## Alternative Solutions Considered
 
-<!-- 
+<!--
 Describe any alternative solutions or features you've considered:
 - Why did you choose this approach over others?
 - What are the trade-offs?
@@ -38,7 +38,8 @@ Describe any alternative solutions or features you've considered:
 ## Detailed Requirements
 
 ### Functional Requirements
-<!-- 
+
+<!--
 List specific functional requirements:
 - User should be able to...
 - System must...
@@ -46,7 +47,8 @@ List specific functional requirements:
 -->
 
 ### Non-Functional Requirements
-<!-- 
+
+<!--
 List non-functional requirements:
 - Performance: Must complete within X seconds
 - Security: Must prevent Y attack vector
@@ -57,6 +59,7 @@ List non-functional requirements:
 ### API/Contract Changes
 
 #### Contract Functions (if applicable)
+
 ```rust
 // New function signatures
 pub fn new_function(e: &Env, param1: Type1, param2: Type2) -> ReturnType {
@@ -65,16 +68,22 @@ pub fn new_function(e: &Env, param1: Type1, param2: Type2) -> ReturnType {
 ```
 
 #### Storage Changes
+
 <!-- New storage keys or data structures -->
+
 - `DataKey::NewStorageKey` - Description of purpose
 - Modify `ExistingStruct` - Add new field
 
 #### Events (if applicable)
+
 <!-- New events to be emitted -->
+
 - `NewEvent` - Emitted when...
 
 #### SDK Changes (if applicable)
+
 <!-- TypeScript SDK additions -->
+
 ```typescript
 // New client methods
 vault.newMethod(param1: Type1, param2: Type2): Operation;
@@ -82,7 +91,7 @@ vault.newMethod(param1: Type1, param2: Type2): Operation;
 
 ## User Stories
 
-<!-- 
+<!--
 As a [user type], I want [goal] so that [benefit].
 
 Examples:
@@ -92,7 +101,7 @@ Examples:
 
 ## Acceptance Criteria
 
-<!-- 
+<!--
 Define the criteria that must be met for this feature to be considered complete:
 - [ ] Given [condition], when [action], then [expected result]
 - [ ] Integration tests pass for all scenarios
@@ -103,7 +112,8 @@ Define the criteria that must be met for this feature to be considered complete:
 ## Design Considerations
 
 ### Security
-<!-- 
+
+<!--
 Address any security implications:
 - Access control requirements
 - Fund flow changes
@@ -112,7 +122,8 @@ Address any security implications:
 -->
 
 ### Performance
-<!-- 
+
+<!--
 Consider performance impact:
 - Gas costs
 - Execution time
@@ -121,7 +132,8 @@ Consider performance impact:
 -->
 
 ### Compatibility
-<!-- 
+
+<!--
 Consider compatibility with:
 - Existing vault instances
 - Current SDK version
@@ -130,7 +142,8 @@ Consider compatibility with:
 -->
 
 ### Upgradability
-<!-- 
+
+<!--
 Consider how this feature will be upgraded in the future:
 - Storage migration needs
 - Backward compatibility
@@ -139,7 +152,7 @@ Consider how this feature will be upgraded in the future:
 
 ## Implementation Suggestions
 
-<!-- 
+<!--
 If you have ideas about how to implement this feature:
 - Suggested approach
 - Relevant code locations
@@ -149,7 +162,7 @@ If you have ideas about how to implement this feature:
 
 ## Mockups / Diagrams
 
-<!-- 
+<!--
 Include any mockups, wireframes, or diagrams:
 - User interface designs
 - Architecture diagrams
@@ -159,7 +172,7 @@ Include any mockups, wireframes, or diagrams:
 
 ## Testing Strategy
 
-<!-- 
+<!--
 Describe how this feature should be tested:
 - Unit tests needed
 - Integration test scenarios
@@ -170,7 +183,7 @@ Describe how this feature should be tested:
 
 ## Dependencies
 
-<!-- 
+<!--
 List any dependencies this feature has:
 - Other features that must be implemented first
 - External services or integrations
@@ -181,23 +194,26 @@ List any dependencies this feature has:
 ## Timeline & Priority
 
 ### Urgency
+
 - [ ] Critical - Blocks mainnet launch or major partnership
 - [ ] High - Important for user experience or competitive advantage
 - [ ] Medium - Nice to have for next release
 - [ ] Low - Can be scheduled for future release
 
 ### Estimated Effort
+
 - [ ] Small (1-3 days)
 - [ ] Medium (1-2 weeks)
 - [ ] Large (2-4 weeks)
 - [ ] Extra Large (1+ months)
 
 ### Target Release
+
 <!-- Which release should this target? -->
 
 ## Additional Context
 
-<!-- 
+<!--
 Add any other context, screenshots, or examples about the feature request here:
 - Links to similar implementations in other protocols
 - Research or references
@@ -207,7 +223,7 @@ Add any other context, screenshots, or examples about the feature request here:
 
 ## Community Impact
 
-<!-- 
+<!--
 How will this feature benefit the StellarYield community?
 - Will it attract new users?
 - Will it improve retention?

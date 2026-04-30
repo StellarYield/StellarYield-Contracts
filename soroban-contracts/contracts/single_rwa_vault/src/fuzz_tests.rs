@@ -85,6 +85,7 @@ fn setup() -> TestCtx {
             min_deposit: 1i128,
             max_deposit_per_user: 0i128,
             early_redemption_fee_bps: 200u32,
+            operator_fee_bps: 0u32,
             rwa_name: String::from_str(&env, "Fuzz RWA"),
             rwa_symbol: String::from_str(&env, "FRWA"),
             rwa_document_uri: String::from_str(&env, "https://example.com"),
@@ -430,5 +431,197 @@ proptest! {
 
         // Overflow sanity: adding the two balances must not wrap.
         prop_assert!(bal_a.checked_add(bal_b).is_some(), "balance sum overflowed");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 8: preview_deposit / preview_redeem are inverse-consistent
+// preview_redeem(preview_deposit(x)) <= x  (rounding always favors the vault)
+// ─────────────────────────────────────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    #[test]
+    #[ignore]
+    fn fuzz_preview_roundtrip_consistency(
+        assets in 1_000i128..10_000_000i128,
+    ) {
+        let ctx = setup();
+        let vault = SingleRWAVaultClient::new(&ctx.env, &ctx.vault_id);
+
+        // Seed the vault so share price is non-trivial
+        let user = Address::generate(&ctx.env);
+        mint_and_deposit(&ctx, &user, assets);
+
+        let shares = vault.preview_deposit(&assets);
+        prop_assert!(shares >= 0, "preview_deposit returned negative: {}", shares);
+
+        if shares > 0 {
+            let assets_back = vault.preview_redeem(&shares);
+            // Vault-favoring rounding: assets_back <= assets
+            prop_assert!(
+                assets_back <= assets,
+                "preview round-trip gave more assets back: deposited={}, shares={}, assets_back={}",
+                assets, shares, assets_back
+            );
+            // Rounding loss must be bounded (at most 1 unit per share)
+            let loss = assets - assets_back;
+            prop_assert!(
+                loss <= shares,
+                "rounding loss ({}) exceeds share count ({})",
+                loss, shares
+            );
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 9: convert_to_shares / convert_to_assets are monotone
+// a >= b  =>  convert_to_shares(a) >= convert_to_shares(b)
+//             convert_to_assets(a) >= convert_to_assets(b)
+// ─────────────────────────────────────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    #[test]
+    #[ignore]
+    fn fuzz_convert_monotonicity(
+        small in 1_000i128..5_000_000i128,
+        extra in 1i128..5_000_000i128,
+    ) {
+        let ctx = setup();
+        let vault = SingleRWAVaultClient::new(&ctx.env, &ctx.vault_id);
+
+        // Seed the vault so the share price is non-trivial
+        let user = Address::generate(&ctx.env);
+        mint_and_deposit(&ctx, &user, small + extra);
+
+        let large = small + extra;
+
+        let shares_small = vault.convert_to_shares(&small);
+        let shares_large = vault.convert_to_shares(&large);
+        prop_assert!(
+            shares_large >= shares_small,
+            "convert_to_shares not monotone: convert({}) = {} > convert({}) = {}",
+            large, shares_large, small, shares_small
+        );
+
+        let assets_small = vault.convert_to_assets(&small);
+        let assets_large = vault.convert_to_assets(&large);
+        prop_assert!(
+            assets_large >= assets_small,
+            "convert_to_assets not monotone: convert({}) = {} > convert({}) = {}",
+            large, assets_large, small, assets_small
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 10: max_deposit / max_redeem are non-negative and bounded
+// max_deposit(user) >= 0
+// max_redeem(user) >= 0 and <= total_supply
+// ─────────────────────────────────────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    #[test]
+    #[ignore]
+    fn fuzz_max_deposit_redeem_bounds(
+        deposit_a in 1_000i128..10_000_000i128,
+        deposit_b in 1_000i128..10_000_000i128,
+    ) {
+        let ctx = setup();
+        let vault = SingleRWAVaultClient::new(&ctx.env, &ctx.vault_id);
+
+        let user_a = Address::generate(&ctx.env);
+        let user_b = Address::generate(&ctx.env);
+
+        mint_and_deposit(&ctx, &user_a, deposit_a);
+        mint_and_deposit(&ctx, &user_b, deposit_b);
+
+        let max_dep_a = vault.max_deposit(&user_a);
+        let max_dep_b = vault.max_deposit(&user_b);
+        prop_assert!(max_dep_a >= 0, "max_deposit(a) negative: {}", max_dep_a);
+        prop_assert!(max_dep_b >= 0, "max_deposit(b) negative: {}", max_dep_b);
+
+        activate(&ctx);
+
+        let total = vault.total_supply();
+        let max_red_a = vault.max_redeem(&user_a);
+        let max_red_b = vault.max_redeem(&user_b);
+
+        prop_assert!(max_red_a >= 0, "max_redeem(a) negative: {}", max_red_a);
+        prop_assert!(max_red_b >= 0, "max_redeem(b) negative: {}", max_red_b);
+        prop_assert!(
+            max_red_a <= total,
+            "max_redeem(a) ({}) exceeds total_supply ({})",
+            max_red_a, total
+        );
+        prop_assert!(
+            max_red_b <= total,
+            "max_redeem(b) ({}) exceeds total_supply ({})",
+            max_red_b, total
+        );
+        // Each user can only redeem what they own
+        let bal_a = vault.balance(&user_a);
+        let bal_b = vault.balance(&user_b);
+        prop_assert!(
+            max_red_a <= bal_a,
+            "max_redeem(a) ({}) exceeds own balance ({})",
+            max_red_a, bal_a
+        );
+        prop_assert!(
+            max_red_b <= bal_b,
+            "max_redeem(b) ({}) exceeds own balance ({})",
+            max_red_b, bal_b
+        );
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Property 11: total_assets >= total_supply (share price >= 1 after yield)
+// After distributing yield, total_assets must be >= total_supply (in asset units)
+// because each share was minted 1:1 and yield only adds to the asset side.
+// ─────────────────────────────────────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(1000))]
+
+    #[test]
+    #[ignore]
+    fn fuzz_total_assets_gte_total_supply_after_yield(
+        deposit_a in 1_000i128..10_000_000i128,
+        deposit_b in 1_000i128..10_000_000i128,
+        yield_amount in 0i128..5_000_000i128,
+    ) {
+        let ctx = setup();
+        let vault = SingleRWAVaultClient::new(&ctx.env, &ctx.vault_id);
+
+        let user_a = Address::generate(&ctx.env);
+        let user_b = Address::generate(&ctx.env);
+
+        mint_and_deposit(&ctx, &user_a, deposit_a);
+        mint_and_deposit(&ctx, &user_b, deposit_b);
+        activate(&ctx);
+
+        if yield_amount > 0 {
+            FuzzTokenClient::new(&ctx.env, &ctx.token_id).mint(&ctx.admin, &yield_amount);
+            vault.distribute_yield(&ctx.admin, &yield_amount);
+        }
+
+        let ta = vault.total_assets();
+        let ts = vault.total_supply();
+
+        // total_assets must never be negative
+        prop_assert!(ta >= 0, "total_assets went negative: {}", ta);
+        // After yield, assets >= supply (share price >= 1)
+        prop_assert!(
+            ta >= ts,
+            "total_assets ({}) < total_supply ({}) after yield distribution",
+            ta, ts
+        );
     }
 }

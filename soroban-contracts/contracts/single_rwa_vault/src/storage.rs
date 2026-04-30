@@ -140,6 +140,9 @@ pub enum Key {
     TlkDelay,
     TlkCount,
     TlkAct(u32),
+
+    // --- Operator fee ---
+    OpFee,
 }
 
 // Manual serialization for `Key`: unit variants use a bare `u32` tag; any key that
@@ -230,6 +233,7 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::EmgTotSup => 49u32.into_val(env),
             Key::TlkDelay => 50u32.into_val(env),
             Key::TlkCount => 51u32.into_val(env),
+            Key::OpFee => 54u32.into_val(env),
         }
     }
 }
@@ -320,6 +324,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             49 => Ok(Key::EmgTotSup),
             50 => Ok(Key::TlkDelay),
             51 => Ok(Key::TlkCount),
+            54 => Ok(Key::OpFee),
             100 => Ok(Key::YldVstPer),
             _ => Err(soroban_sdk::Error::from_contract_error(1)),
         }
@@ -493,6 +498,8 @@ instance_get!(get_max_deposit_per_user, MaxDepUsr, i128);
 instance_put!(put_max_deposit_per_user, MaxDepUsr, i128);
 instance_get!(get_early_redemption_fee_bps, ERedFee, u32);
 instance_put!(put_early_redemption_fee_bps, ERedFee, u32);
+instance_get!(get_operator_fee_bps, OpFee, u32);
+instance_put!(put_operator_fee_bps, OpFee, u32);
 
 pub fn get_yield_vesting_period(e: &Env) -> u64 {
     e.storage().instance().get(&Key::YldVstPer).unwrap_or(0) // Default to 0 for backward compatibility (instant claiming)

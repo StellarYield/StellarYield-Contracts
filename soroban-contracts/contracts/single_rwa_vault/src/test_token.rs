@@ -30,6 +30,7 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         min_deposit: 1_000_i128,
         max_deposit_per_user: 0_i128,
         early_redemption_fee_bps: 100_u32,
+        operator_fee_bps: 0u32,
         funding_deadline: 0_u64,
         rwa_name: String::from_str(env, "Test RWA"),
         rwa_symbol: String::from_str(env, "TRWA"),
