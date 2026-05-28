@@ -1,0 +1,52 @@
+version: "3.9"
+name: stellaryield-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stellaryield-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=stellaryield
+      - POSTGRES_USER=${POSTGRES_USER:-stellaryield}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-stellaryield_dev}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-stellaryield}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    labels:
+      - "stellaryield.service=database"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: stellaryield-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./backend/.env.example
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-stellaryield}:${POSTGRES_PASSWORD:-stellaryield_dev}@postgres:5432/stellaryield
+      - NODE_ENV=development
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    labels:
+      - "stellaryield.service=backend"
+
+volumes:
+  pg_data:
+    driver: local
