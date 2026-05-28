@@ -865,7 +865,7 @@ impl SingleRWAVault {
         // to `total_requests`.  Requests that have been processed are skipped.
         for i in 1..=total_requests {
             let req = get_redemption_request(e, i); // This panics if ID invalid, but we stay in bounds.
-            if !req.processed {
+            if req.status == RedemptionStatus::Pending {
                 if pending_count == 0 {
                     oldest_request_timestamp = req.request_time;
                     oldest_request_id = i;
@@ -2535,7 +2535,7 @@ impl SingleRWAVault {
         let prev_total = get_redemption_counter(e);
         let mut pending_before: u32 = 0;
         for i in 1..=prev_total {
-            if !get_redemption_request(e, i).processed {
+            if get_redemption_request(e, i).status == RedemptionStatus::Pending {
                 pending_before += 1;
             }
         }
@@ -2553,6 +2553,7 @@ impl SingleRWAVault {
                 request_time: e.ledger().timestamp(),
                 processed: false,
                 locked_asset_value,
+                status: RedemptionStatus::Pending,
             },
         );
 
@@ -2577,7 +2578,7 @@ impl SingleRWAVault {
         require_state(e, VaultState::Active);
 
         let mut req = get_redemption_request(e, request_id);
-        if req.processed {
+        if req.status != RedemptionStatus::Pending {
             panic_with_error!(e, Error::AlreadyProcessed);
         }
 
@@ -2603,6 +2604,7 @@ impl SingleRWAVault {
 
         // --- Effects ---
         req.processed = true;
+        req.status = RedemptionStatus::Approved;
         put_redemption_request(e, request_id, req.clone());
         put_escrowed_shares(e, &req.user, escrowed - req.shares);
         put_total_supply(e, get_total_supply(e) - req.shares);
@@ -2632,12 +2634,13 @@ impl SingleRWAVault {
         if req.user != caller {
             panic_with_error!(e, Error::NotOperator);
         }
-        if req.processed {
+        if req.status != RedemptionStatus::Pending {
             panic_with_error!(e, Error::AlreadyProcessed);
         }
 
         // --- Effects ---
         req.processed = true; // Mark as processed so it can't be reused
+        req.status = RedemptionStatus::Rejected;
         put_redemption_request(e, request_id, req.clone());
 
         let escrowed = get_escrowed_shares(e, &caller);
@@ -2665,18 +2668,19 @@ impl SingleRWAVault {
     }
 
     /// Operator rejects an early redemption request and returns shares from escrow.
-    pub fn reject_early_redemption(e: &Env, operator: Address, request_id: u32) {
+    pub fn reject_early_redemption(e: &Env, operator: Address, request_id: u32, reason: String) {
         operator.require_auth();
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &operator, Role::LifecycleManager);
 
         let mut req = get_redemption_request(e, request_id);
-        if req.processed {
+        if req.status != RedemptionStatus::Pending {
             panic_with_error!(e, Error::AlreadyProcessed);
         }
 
         // --- Effects ---
         req.processed = true;
+        req.status = RedemptionStatus::Rejected;
         put_redemption_request(e, request_id, req.clone());
 
         let user = req.user.clone();
@@ -2699,6 +2703,7 @@ impl SingleRWAVault {
             request_id,
             req.shares,
             EarlyRedemptionCloseReason::OperatorRejected,
+            reason,
         );
         // Backward-compatible legacy event (historically emitted for both cancel and reject).
         emit_early_redemption_cancelled(e, user, request_id, req.shares);
