@@ -1,6 +1,6 @@
-import { SorobanRpc } from "@stellar/stellar-sdk";
+import { rpc } from "@stellar/stellar-sdk";
 import { config } from "../config.js";
 
-export function getSorobanRpc(): SorobanRpc.Server {
-  return new SorobanRpc.Server(config.stellar.rpcUrl);
+export function getSorobanRpc(): rpc.Server {
+  return new rpc.Server(config.stellar.rpcUrl);
 }

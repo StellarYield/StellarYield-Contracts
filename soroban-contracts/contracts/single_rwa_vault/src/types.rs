@@ -171,6 +171,14 @@ pub enum Role {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RedemptionStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
+#[contracttype]
 #[derive(Clone, Debug)]
 pub struct RedemptionRequest {
     pub user: Address,
@@ -181,6 +189,7 @@ pub struct RedemptionRequest {
     /// time so that yield distributed (or removed) between request and process
     /// cannot move the payout the user agreed to.
     pub locked_asset_value: i128,
+    pub status: RedemptionStatus,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

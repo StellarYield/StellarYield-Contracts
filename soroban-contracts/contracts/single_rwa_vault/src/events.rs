@@ -215,6 +215,7 @@ fn publish_early_redemption_non_success_event_v2(
     request_id: u32,
     shares: i128,
     reason: EarlyRedemptionCloseReason,
+    custom_reason: String,
 ) {
     match kind {
         EarlyRedemptionNonSuccessEventKind::Cancelled => {
@@ -226,7 +227,7 @@ fn publish_early_redemption_non_success_event_v2(
         EarlyRedemptionNonSuccessEventKind::Rejected => {
             e.events().publish(
                 (symbol_short!("erq_rej2"), user),
-                (request_id, shares, reason),
+                (request_id, shares, reason, custom_reason),
             );
         }
     }
@@ -289,6 +290,7 @@ pub fn emit_early_redemption_cancelled_v2(
         request_id,
         shares,
         reason,
+        String::from_str(e, ""),
     );
 }
 
@@ -300,6 +302,7 @@ pub fn emit_early_redemption_rejected_v2(
     request_id: u32,
     shares: i128,
     reason: EarlyRedemptionCloseReason,
+    custom_reason: String,
 ) {
     publish_early_redemption_non_success_event_v2(
         e,
@@ -308,6 +311,7 @@ pub fn emit_early_redemption_rejected_v2(
         request_id,
         shares,
         reason,
+        custom_reason,
     );
 }
 
