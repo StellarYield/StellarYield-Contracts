@@ -51,7 +51,7 @@ fn test_early_redemption_escrow_and_transfer_lock() {
 
     // Verify request is marked as processed after cancellation
     let req = v.redemption_request(&request_id);
-    assert!(req.processed);
+    assert!(req.status == crate::types::RedemptionStatus::Rejected);
 
     // Verify vault's token balance is unchanged (cancellation only affects shares, not tokens)
     let vault_token_balance_after = asset.balance(&ctx.vault_id);
@@ -98,7 +98,7 @@ fn test_early_redemption_process_burns_from_escrow() {
     assert_eq!(v.total_supply(), supply_before - request_shares);
 
     let req = v.redemption_request(&request_id);
-    assert!(req.processed);
+    assert!(req.status == crate::types::RedemptionStatus::Approved);
 
     // Verify exact refund amount: user receives (assets - fee)
     let user_token_balance_after = asset.balance(&ctx.user);
@@ -149,6 +149,113 @@ fn test_cannot_process_cancelled() {
     let request_id = v.request_early_redemption(&ctx.user, &5_000_000);
     v.cancel_early_redemption(&ctx.user, &request_id);
     v.process_early_redemption(&ctx.operator, &request_id);
+}
+
+#[test]
+fn test_reject_early_redemption() {
+    let ctx = setup();
+    let v = ctx.vault();
+    let _e = &ctx.env;
+
+    let deposit_amount = 10_000_000i128;
+    fund_and_approve(&ctx, &ctx.user, deposit_amount);
+    v.deposit(&ctx.user, &deposit_amount, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
+
+    let initial_balance = v.balance(&ctx.user);
+    let request_shares = 5_000_000i128;
+    let request_id = v.request_early_redemption(&ctx.user, &request_shares);
+
+    assert_eq!(v.balance(&ctx.user), initial_balance - request_shares);
+    assert_eq!(v.escrowed_balance(&ctx.user), request_shares);
+
+    let reason = String::from_str(&ctx.env, "KYC expired");
+    v.reject_early_redemption(&ctx.operator, &request_id, &reason);
+
+    assert_eq!(v.balance(&ctx.user), initial_balance);
+    assert_eq!(v.escrowed_balance(&ctx.user), 0);
+
+    let req = v.redemption_request(&request_id);
+    assert!(req.status == crate::types::RedemptionStatus::Rejected);
+}
+
+#[test]
+fn test_reject_with_reason() {
+    let ctx = setup();
+    let v = ctx.vault();
+
+    fund_and_approve(&ctx, &ctx.user, 10_000_000);
+    v.deposit(&ctx.user, &10_000_000i128, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
+
+    let request_id = v.request_early_redemption(&ctx.user, &5_000_000);
+    let reason = String::from_str(&ctx.env, "AML flag");
+    v.reject_early_redemption(&ctx.operator, &request_id, &reason);
+
+    let req = v.redemption_request(&request_id);
+    assert!(req.status == crate::types::RedemptionStatus::Rejected);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")] // AlreadyProcessed
+fn test_cannot_reject_twice() {
+    let ctx = setup();
+    let v = ctx.vault();
+
+    fund_and_approve(&ctx, &ctx.user, 10_000_000);
+    v.deposit(&ctx.user, &10_000_000i128, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
+
+    let request_id = v.request_early_redemption(&ctx.user, &5_000_000);
+    let reason = String::from_str(&ctx.env, "reason");
+    v.reject_early_redemption(&ctx.operator, &request_id, &reason);
+    v.reject_early_redemption(&ctx.operator, &request_id, &reason);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #21)")] // AlreadyProcessed
+fn test_cannot_process_rejected() {
+    let ctx = setup();
+    let v = ctx.vault();
+
+    fund_and_approve(&ctx, &ctx.user, 10_000_000);
+    v.deposit(&ctx.user, &10_000_000i128, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
+
+    let request_id = v.request_early_redemption(&ctx.user, &5_000_000);
+    let reason = String::from_str(&ctx.env, "reason");
+    v.reject_early_redemption(&ctx.operator, &request_id, &reason);
+    v.process_early_redemption(&ctx.operator, &request_id);
+}
+
+#[test]
+fn test_reject_then_re_request() {
+    let ctx = setup();
+    let v = ctx.vault();
+
+    fund_and_approve(&ctx, &ctx.user, 10_000_000);
+    v.deposit(&ctx.user, &10_000_000i128, &ctx.user);
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
+
+    let initial_balance = v.balance(&ctx.user);
+    let request_shares = 5_000_000i128;
+    let request_id = v.request_early_redemption(&ctx.user, &request_shares);
+
+    let reason = String::from_str(&ctx.env, "reason");
+    v.reject_early_redemption(&ctx.operator, &request_id, &reason);
+
+    assert_eq!(v.balance(&ctx.user), initial_balance);
+    assert_eq!(v.escrowed_balance(&ctx.user), 0);
+
+    let new_request_id = v.request_early_redemption(&ctx.user, &request_shares);
+    assert_eq!(new_request_id, request_id + 1);
+    assert_eq!(v.balance(&ctx.user), initial_balance - request_shares);
+    assert_eq!(v.escrowed_balance(&ctx.user), request_shares);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

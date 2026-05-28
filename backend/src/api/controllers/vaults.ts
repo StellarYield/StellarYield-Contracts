@@ -17,7 +17,7 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
 
 export async function getVault(req: Request, res: Response, next: NextFunction) {
   try {
-    const vault = await vaultService.getVault(req.params["contractId"]!);
+    const vault = await vaultService.getVault(String(req.params["contractId"]));
     if (!vault) {
       res.status(404).json({ error: "NotFound", message: "Vault not found" });
       return;
@@ -30,7 +30,7 @@ export async function getVault(req: Request, res: Response, next: NextFunction) 
 
 export async function getVaultPositions(req: Request, res: Response, next: NextFunction) {
   try {
-    const positions = await vaultService.getVaultPositions(req.params["contractId"]!);
+    const positions = await vaultService.getVaultPositions(String(req.params["contractId"]));
     res.json(positions);
   } catch (err) {
     next(err);
