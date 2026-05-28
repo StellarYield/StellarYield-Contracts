@@ -36,5 +36,12 @@ export const config = {
     pollIntervalMs: parseInt(optional("INDEXER_POLL_INTERVAL_MS", "5000"), 10),
   },
 
+  allowedOrigins: (() => {
+    const raw = process.env.ALLOWED_ORIGINS;
+    if (raw) return raw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (optional("NODE_ENV", "development") === "development") return ["*"];
+    return [];
+  })(),
+
   webhookSecret: optional("WEBHOOK_SECRET", ""),
 } as const;
