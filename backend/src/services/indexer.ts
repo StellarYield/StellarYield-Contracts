@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { logger } from "../logger.js";
 import { query } from "../db/index.js";
 import { getSorobanRpc } from "./stellar.js";
+import { VaultService } from "./vault.js";
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,9 +38,11 @@ async function withBackoff<T>(
 export class Indexer {
   lastLedger: number;
   private running = false;
+  private vaultService: VaultService;
 
   constructor() {
     this.lastLedger = config.indexer.startLedger;
+    this.vaultService = new VaultService();
   }
 
   async start(): Promise<void> {
@@ -168,6 +171,14 @@ export class Indexer {
     const yieldDist = parseYieldDistributedEvent(event);
     if (yieldDist) {
       await this.recordEvent(event, "yield_distributed");
+      return;
+    }
+
+    const vaultCreated = parseVaultCreatedEvent(event);
+    if (vaultCreated) {
+      await this.handleVaultCreated(vaultCreated);
+      await this.recordEvent(event, "vault_created");
+      return;
     }
   }
 
@@ -186,6 +197,23 @@ export class Indexer {
          updated_at = NOW()`,
       [deposit.receiver, deposit.shares.toString(), deposit.assets.toString(), contractId],
     );
+  }
+
+  private async handleVaultCreated(
+    vaultCreated: { factoryId: string; vault: string; vaultType: string; name: string; creator: string },
+  ): Promise<void> {
+    logger.info(
+      { vault: vaultCreated.vault, factoryId: vaultCreated.factoryId, name: vaultCreated.name },
+      "Processing vault_created event",
+    );
+
+    await this.vaultService.upsertVault({
+      contractId: vaultCreated.vault,
+      factoryId: vaultCreated.factoryId,
+      name: vaultCreated.name,
+      asset: "", // Asset will be populated later when vault details are fetched
+      state: "Funding",
+    });
   }
 
   private async recordEvent(event: any, eventType: string): Promise<void> {
@@ -288,6 +316,52 @@ export function parseYieldDistributedEvent(rawEvent: any): {
 
     return { epoch, amount, timestamp };
   } catch (error) {
+    return null;
+  }
+}
+
+export function parseVaultCreatedEvent(rawEvent: any): {
+  factoryId: string;
+  vault: string;
+  vaultType: string;
+  name: string;
+  creator: string;
+} | null {
+  try {
+    const topics = rawEvent?.topic || rawEvent?.topics;
+    const value = rawEvent?.value || rawEvent?.data;
+
+    if (!topics || topics.length < 2 || !value) return null;
+
+    const parsedTopics = topics.map((t: any) =>
+      typeof t === "string" ? xdr.ScVal.fromXDR(t, "base64") : t
+    );
+    const parsedValue = typeof value === "string"
+      ? xdr.ScVal.fromXDR(value, "base64")
+      : value;
+
+    let eventName = "";
+    try {
+      eventName = scValToNative(parsedTopics[0]);
+    } catch {
+      return null;
+    }
+
+    if (eventName !== "v_create") return null;
+
+    const vault = scValToNative(parsedTopics[1]) as string;
+
+    const data = scValToNative(parsedValue) as any;
+    const vaultType = String(Array.isArray(data) ? data[0] : (data?.vaultType ?? ""));
+    const name = String(Array.isArray(data) ? data[1] : (data?.name ?? ""));
+    const creator = String(Array.isArray(data) ? data[2] : (data?.creator ?? ""));
+
+    // The factory contract ID is the contractId field of the event
+    const factoryId = rawEvent.contractId ?? "";
+
+    return { factoryId, vault, vaultType, name, creator };
+  } catch (error) {
+    logger.warn({ error }, "Error parsing vault_created event");
     return null;
   }
 }
