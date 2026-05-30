@@ -4,10 +4,8 @@ import {
   listVaults,
   getVaultCount,
   listVaultsByFactory,
-  getVault,
   getVaultLiveState,
   getVaultLiveTotalAssets,
-  getVaultPositions,
   getRedemptionQueue,
 } from "../controllers/vaults.js";
 import { validateParams, validateQuery } from "../middleware/validate.js";
