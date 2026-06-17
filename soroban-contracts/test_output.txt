@@ -1,0 +1,209 @@
+warning: unused imports: `Env`, `IntoVal`, and `Val`
+ --> soroban-contracts/contracts/single_rwa_vault/src/types.rs:3:49
+  |
+3 | ... Bytes, Env, IntoVal, String, TryFromVal, Val};
+  |            ^^^  ^^^^^^^                      ^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `Env`
+ --> soroban-contracts/contracts/single_rwa_vault/src/test_allowance_ttl.rs:6:28
+  |
+6 | use soroban_sdk::{Address, Env};
+  |                            ^^^
+
+warning: unused import: `Address as _`
+  --> soroban-contracts/contracts/single_rwa_vault/src/test_events.rs:18:17
+   |
+18 |     testutils::{Address as _, Events as _},
+   |                 ^^^^^^^^^^^^
+
+warning: unused imports: `Address as _` and `Ledger as _`
+ --> soroban-contracts/contracts/single_rwa_vault/src/test_yield_vesting.rs:6:30
+  |
+6 | use soroban_sdk::testutils::{Address as _, Ledger as _};
+  |                              ^^^^^^^^^^^^  ^^^^^^^^^^^
+
+warning: unused imports: `Address` and `Env`
+ --> soroban-contracts/contracts/single_rwa_vault/src/test_yield_vesting.rs:7:19
+  |
+7 | use soroban_sdk::{Address, Env};
+  |                   ^^^^^^^  ^^^
+
+warning: unused imports: `Symbol`, `TryIntoVal`, and `Val`
+  --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:72:76
+   |
+72 | ..., Env, String, Symbol, TryIntoVal, Val,
+   |                   ^^^^^^  ^^^^^^^^^^  ^^^
+
+warning: unreachable statement
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1671:9
+     |
+1649 | /         match action.action_type {
+1650 | |             ActionType::EmergencyWithdraw => {
+...    |
+1668 | |         }
+     | |_________- any code following this `match` expression is unreachable, as all arms diverge
+...
+1671 |           action.executed = true;
+     |           ^^^^^^^^^^^^^^^^^^^^^^^ unreachable statement
+     |
+     = note: `#[warn(unreachable_code)]` on by default
+
+warning: unused import: `TryFromVal`
+ --> soroban-contracts/contracts/single_rwa_vault/src/types.rs:3:71
+  |
+3 | ...Env, IntoVal, String, TryFromVal, Val};
+  |                          ^^^^^^^^^^
+
+warning: unused variable: `i`
+  --> soroban-contracts/contracts/single_rwa_vault/src/test_allowance_ttl.rs:84:9
+   |
+84 |     for i in 0..200 {
+   |         ^ help: if this is intentional, prefix it with an underscore: `_i`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `i`
+   --> soroban-contracts/contracts/single_rwa_vault/src/test_allowance_ttl.rs:154:9
+    |
+154 |     for i in 0..50 {
+    |         ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `new_admin`
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1584:53
+     |
+1584 | ...caller: Address, new_admin: Address) {
+     |                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_new_admin`
+
+warning: variable does not need to be mutable
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1635:13
+     |
+1635 | ...   let mut action = get_timelock_action(e, action_id)
+     |           ----^^^^^^
+     |           |
+     |           help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` on by default
+
+warning: associated function `emergency_withdraw_internal` is never used
+    --> soroban-contracts/contracts/single_rwa_vault/src/lib.rs:1705:8
+     |
+  93 | impl SingleRWAVault {
+     | ------------------- associated function in this implementation
+...
+1705 |     fn emergency_withdraw_internal(e: &Env, recipient:...
+     |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
+
+warning: function `emit_admin_transferred` is never used
+   --> soroban-contracts/contracts/single_rwa_vault/src/events.rs:193:8
+    |
+193 | pub fn emit_admin_transferred(e: &Env, old_admin: Addre...
+    |        ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `has_timelock_action` is never used
+   --> soroban-contracts/contracts/single_rwa_vault/src/storage.rs:895:8
+    |
+895 | pub fn has_timelock_action(e: &Env, action_id: u32) -> ...
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: `single_rwa_vault` (lib test) generated 15 warnings (run `cargo fix --lib -p single_rwa_vault --tests` to apply 7 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/lib.rs (/home/godbrand/Documents/github2/StellarYield-Contracts/target/debug/deps/single_rwa_vault-87be5942be282ff7)
+
+running 32 tests
+test test_deposit_limits::test_deposit_exceeds_funding_target_panics - should panic ... FAILED
+test test_deposit_limits::test_deposit_exceeds_funding_target_by_small_amount_preserves_state ... FAILED
+test test_deposit_limits::test_deposit_exact_fill_succeeds ... ok
+test test_deposit_limits::test_deposit_cap_not_applied_in_active_state ... ok
+test test_deposit_limits::test_max_deposit_reflects_funding_target ... ok
+test test_deposit_limits::test_lowering_max_does_not_affect_existing_depositor ... ok
+test test_deposit_limits::test_set_deposit_limits_funding_state_operator_succeeds ... ok
+test test_deposit_limits::test_new_deposit_blocked_after_max_lowered - should panic ... ok
+test test_deposit_limits::test_set_deposit_limits_active_state_admin_succeeds ... ok
+test test_deposit_limits::test_set_deposit_limits_active_state_operator_panics - should panic ... ok
+test test_deposit_limits::test_set_deposit_limits_min_equals_max_is_valid ... ok
+test test_deposit_limits::test_set_deposit_limits_max_zero_allows_any_min ... ok
+test test_deposit_limits::test_set_deposit_limits_min_greater_than_max_panics - should panic ... ok
+test test_deposit_limits::test_set_deposit_limits_negative_max_panics - should panic ... ok
+test test_deposit_limits::test_set_deposit_limits_negative_min_panics - should panic ... ok
+test test_deposit_limits::test_set_deposit_limits_min_zero_allows_any_max ... ok
+test test_deposit_limits::test_set_deposit_limits_matured_state_panics - should panic ... ok
+test test_deposit_limits::test_set_deposit_limits_non_operator_panics - should panic ... FAILED
+test test_deposit_limits::test_set_max_deposit_per_user_below_existing_min_panics - should panic ... ok
+test test_deposit_limits::test_set_max_deposit_per_user_succeeds_in_funding ... ok
+test test_deposit_limits::test_set_max_deposit_per_user_negative_panics - should panic ... ok
+test test_deposit_limits::test_set_max_deposit_per_user_matured_panics - should panic ... ok
+test test_deposit_limits::test_set_max_deposit_per_user_active_operator_panics - should panic ... ok
+test test_deposit_limits::test_set_max_deposit_per_user_zero_removes_cap ... ok
+test test_deposit_limits::test_set_min_deposit_above_existing_max_panics - should panic ... ok
+test test_deposit_limits::test_set_min_deposit_negative_panics - should panic ... ok
+test test_deposit_limits::test_set_min_deposit_active_state_admin_succeeds ... ok
+test test_deposit_limits::test_set_min_deposit_zero_is_valid ... ok
+test test_deposit_limits::test_set_min_deposit_succeeds_in_funding ... ok
+test test_deposit_limits::test_set_min_deposit_matured_panics - should panic ... ok
+test test_deposit_limits::test_user_can_redeposit_after_withdrawal ... FAILED
+test test_deposit_limits::test_user_deposited_never_goes_negative ... ok
+
+failures:
+
+---- test_deposit_limits::test_deposit_exceeds_funding_target_panics stdout ----
+
+thread 'test_deposit_limits::test_deposit_exceeds_funding_target_panics' panicked at /home/godbrand/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #46)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #46)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #46)], data:["contract call failed", deposit, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, 100000001, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #46)], data:"caught error from function"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #46)], data:"escalating error to panic"
+   4: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #46)], data:["failing with contract error", 46]
+   5: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, topics:[fn_return, has_approved], data:true
+   6: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, has_approved], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M]
+   7: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, deposit], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, 100000001, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M]
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Writing test snapshot file for test "test_deposit_limits::test_deposit_exceeds_funding_target_panics" to "test_snapshots/test_deposit_limits/test_deposit_exceeds_funding_target_panics.1.json".
+note: panic did not contain expected string
+      panic message: "HostError: Error(Contract, #46)\n\nEvent log (newest first):\n   0: [Diagnostic Event] topics:[error, Error(Contract, #46)], data:\"escalating error to panic\"\n   1: [Diagnostic Event] topics:[error, Error(Contract, #46)], data:[\"contract call failed\", deposit, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, 100000001, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M]]\n   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #46)], data:\"caught error from function\"\n   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #46)], data:\"escalating error to panic\"\n   4: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #46)], data:[\"failing with contract error\", 46]\n   5: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, topics:[fn_return, has_approved], data:true\n   6: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, has_approved], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M]\n   7: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, deposit], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M, 100000001, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M]\n"
+ expected substring: "Error(Contract, #41)"
+---- test_deposit_limits::test_deposit_exceeds_funding_target_by_small_amount_preserves_state stdout ----
+
+thread 'test_deposit_limits::test_deposit_exceeds_funding_target_by_small_amount_preserves_state' panicked at soroban-contracts/contracts/single_rwa_vault/src/test_deposit_limits.rs:379:5:
+assertion `left == right` failed
+  left: 100000000
+ right: 0
+Writing test snapshot file for test "test_deposit_limits::test_deposit_exceeds_funding_target_by_small_amount_preserves_state" to "test_snapshots/test_deposit_limits/test_deposit_exceeds_funding_target_by_small_amount_preserves_state.1.json".
+
+---- test_deposit_limits::test_set_deposit_limits_non_operator_panics stdout ----
+Writing test snapshot file for test "test_deposit_limits::test_set_deposit_limits_non_operator_panics" to "test_snapshots/test_deposit_limits/test_set_deposit_limits_non_operator_panics.1.json".
+note: test did not panic as expected at soroban-contracts/contracts/single_rwa_vault/src/test_deposit_limits.rs:91:4
+---- test_deposit_limits::test_user_can_redeposit_after_withdrawal stdout ----
+
+thread 'test_deposit_limits::test_user_can_redeposit_after_withdrawal' panicked at /home/godbrand/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-host-22.1.3/src/host.rs:847:9:
+HostError: Error(Contract, #7)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Contract, #7)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Contract, #7)], data:["contract call failed", deposit, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5, 50000000, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #7)], data:"caught error from function"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #7)], data:"escalating error to panic"
+   4: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[error, Error(Contract, #7)], data:["failing with contract error", 7]
+   5: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, topics:[fn_return, has_approved], data:true
+   6: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4, has_approved], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5]
+   7: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM, deposit], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5, 50000000, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARQG5]
+
+Writing test snapshot file for test "test_deposit_limits::test_user_can_redeposit_after_withdrawal" to "test_snapshots/test_deposit_limits/test_user_can_redeposit_after_withdrawal.1.json".
+
+
+failures:
+    test_deposit_limits::test_deposit_exceeds_funding_target_by_small_amount_preserves_state
+    test_deposit_limits::test_deposit_exceeds_funding_target_panics
+    test_deposit_limits::test_set_deposit_limits_non_operator_panics
+    test_deposit_limits::test_user_can_redeposit_after_withdrawal
+
+test result: FAILED. 28 passed; 4 failed; 0 ignored; 0 measured; 222 filtered out; finished in 0.56s
+
+error: test failed, to rerun pass `-p single_rwa_vault --lib`
