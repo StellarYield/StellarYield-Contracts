@@ -39,6 +39,7 @@ export const vaultsRouter = Router();
 vaultsRouter.get("/", validateQuery(listVaultsQuerySchema), listVaults);
 vaultsRouter.get("/count", getVaultCount);
 vaultsRouter.get("/factory/:factoryId", validateParams(vaultFactoryParamsSchema), listVaultsByFactory);
+vaultsRouter.get("/:contractId", validateParams(vaultParamsSchema), getVault);
 vaultsRouter.get("/:contractId/state/live", validateParams(vaultParamsSchema), getVaultLiveState);
 vaultsRouter.get("/:contractId/total-assets/live", validateParams(vaultParamsSchema), getVaultLiveTotalAssets);
 vaultsRouter.get("/:contractId/redemption-queue", validateParams(vaultParamsSchema), getRedemptionQueue);
