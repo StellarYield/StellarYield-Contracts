@@ -10,6 +10,8 @@ import {
   getVaultPositions,
   getRedemptionQueue,
   getVaultSnapshot,
+  getVaultTopHolders,
+  getVaultHolders,
   getVaultTvlHistory,
   getEarlyRedemptionFee,
   exportVaultCsv,
@@ -43,6 +45,10 @@ vaultsRouter.get("/:contractId", validateParams(vaultParamsSchema), getVault);
 vaultsRouter.get("/:contractId/state/live", validateParams(vaultParamsSchema), getVaultLiveState);
 vaultsRouter.get("/:contractId/total-assets/live", validateParams(vaultParamsSchema), getVaultLiveTotalAssets);
 vaultsRouter.get("/:contractId/redemption-queue", validateParams(vaultParamsSchema), getRedemptionQueue);
+// Get top N holders leaderboard: GET /api/v1/vaults/:contractId/holders/top?n=10
+vaultsRouter.get("/:contractId/holders/top", validateParams(vaultParamsSchema), getVaultTopHolders);
+// Search holders by partial address: GET /api/v1/vaults/:contractId/holders?search=
+vaultsRouter.get("/:contractId/holders", validateParams(vaultParamsSchema), getVaultHolders);
 // Get vault snapshot: GET /api/v1/vaults/:contractId/snapshot
 vaultsRouter.get("/:contractId/snapshot", validateParams(vaultParamsSchema), getVaultSnapshot);
 // Get vault TVL history: GET /api/v1/vaults/:contractId/tvl-history
