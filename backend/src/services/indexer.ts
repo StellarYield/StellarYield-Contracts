@@ -450,6 +450,10 @@ export class Indexer {
          updated_at = NOW()`,
       [deposit.receiver, deposit.shares.toString(), deposit.assets.toString(), contractId],
     );
+    await query(
+      `UPDATE vaults SET total_shares_ever_minted = total_shares_ever_minted + $1 WHERE contract_id = $2`,
+      [deposit.shares.toString(), contractId],
+    );
     await this.recordTvlSnapshot(contractId);
     logger.info(
       { contractId, receiver: deposit.receiver, shares: deposit.shares.toString() },
@@ -470,6 +474,10 @@ export class Indexer {
          deposited = GREATEST(0, user_vault_positions.deposited - $3),
          updated_at = NOW()`,
       [withdraw.owner, withdraw.shares.toString(), withdraw.assets.toString(), contractId],
+    );
+    await query(
+      `UPDATE vaults SET total_shares_ever_burned = total_shares_ever_burned + $1 WHERE contract_id = $2`,
+      [withdraw.shares.toString(), contractId],
     );
     await this.recordTvlSnapshot(contractId);
     logger.info(
