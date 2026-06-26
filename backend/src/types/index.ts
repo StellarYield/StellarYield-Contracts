@@ -15,6 +15,8 @@ export interface Vault {
   state: VaultState;
   totalAssets: string;
   totalSupply: string;
+  totalSharesEverMinted: string;
+  totalSharesEverBurned: string;
   depositorCount: number;
   fundingTarget: string | null;
   fundingDeadline: Date | null;

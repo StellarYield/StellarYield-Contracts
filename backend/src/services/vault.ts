@@ -20,6 +20,8 @@ interface VaultRow {
   state: string;
   total_assets: string;
   total_supply: string;
+  total_shares_ever_minted: string;
+  total_shares_ever_burned: string;
   depositor_count: number;
   funding_target: string | null;
   funding_deadline: Date | null;
@@ -49,6 +51,8 @@ function mapVaultRow(row: VaultRow): Vault {
     // COALESCE in the query, but guard here too in case of raw inserts (#499).
     totalAssets: row.total_assets ?? "0",
     totalSupply: row.total_supply ?? "0",
+    totalSharesEverMinted: row.total_shares_ever_minted ?? "0",
+    totalSharesEverBurned: row.total_shares_ever_burned ?? "0",
     depositorCount: row.depositor_count,
     fundingTarget: row.funding_target,
     fundingDeadline: row.funding_deadline,
@@ -77,7 +81,8 @@ export class VaultService {
     // carries a non-null totalAssets string, satisfying issue #499.
     const vaults = await query<VaultRow>(
       `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
-              v.total_assets, v.total_supply, v.created_at, v.updated_at,
+              v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+              v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               COALESCE((
                 SELECT COUNT(*)::int
@@ -121,7 +126,8 @@ export class VaultService {
   async listVaultsByFactory(factoryId: string): Promise<Vault[]> {
     const rows = await query<VaultRow>(
       `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
-              v.total_assets, v.total_supply, v.created_at, v.updated_at,
+              v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+              v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               COALESCE((
                 SELECT COUNT(*)::int
@@ -140,7 +146,8 @@ export class VaultService {
   async getVault(contractId: string): Promise<Vault | null> {
     const rows = await query<VaultRow>(
       `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
-              v.total_assets, v.total_supply, v.created_at, v.updated_at,
+              v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+              v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               COALESCE((
                 SELECT COUNT(*)::int
