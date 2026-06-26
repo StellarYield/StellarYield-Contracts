@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS vaults (
   state           TEXT NOT NULL DEFAULT 'Funding',
   total_assets    NUMERIC DEFAULT 0,
   total_supply    NUMERIC DEFAULT 0,
+  total_shares_ever_minted NUMERIC NOT NULL DEFAULT 0,
+  total_shares_ever_burned NUMERIC NOT NULL DEFAULT 0,
   early_redemption_fee_bps INT DEFAULT 0,
   expected_apy    INT,
   maturity_date   TIMESTAMPTZ,

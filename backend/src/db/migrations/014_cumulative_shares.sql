@@ -1,0 +1,3 @@
+ALTER TABLE vaults
+  ADD COLUMN IF NOT EXISTS total_shares_ever_minted NUMERIC NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_shares_ever_burned NUMERIC NOT NULL DEFAULT 0;
