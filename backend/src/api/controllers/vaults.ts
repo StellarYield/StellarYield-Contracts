@@ -252,6 +252,25 @@ export async function getVaultSnapshot(req: Request, res: Response, next: NextFu
     );
     const lastIndexedAt = lastEventRows[0]?.created_at?.toISOString() ?? null;
 
+    // Compute top-10 holder concentration metric
+    const top10Rows = await query<{ top10_shares: string }>(
+      `SELECT COALESCE(SUM(shares), 0)::text AS top10_shares
+       FROM (
+         SELECT uvp.shares
+         FROM user_vault_positions uvp
+         WHERE uvp.vault_id = $1 AND uvp.shares > 0
+         ORDER BY uvp.shares DESC
+         LIMIT 10
+       ) top10`,
+      [vault.id],
+    );
+    const totalSupplyNum = parseFloat(vault.totalSupply);
+    let top10HolderSharePercent: number | null = null;
+    if (totalSupplyNum > 0) {
+      const top10Shares = parseFloat(top10Rows[0]?.top10_shares ?? "0");
+      top10HolderSharePercent = Math.round((top10Shares / totalSupplyNum) * 100 * 100) / 100;
+    }
+
     const snapshot = {
       state: vault.state,
       totalAssets: vault.totalAssets,
@@ -259,6 +278,7 @@ export async function getVaultSnapshot(req: Request, res: Response, next: NextFu
       depositorCount: vault.depositorCount,
       epochCount,
       lastIndexedAt,
+      top10HolderSharePercent,
     };
 
     setCacheHeaders(res);
