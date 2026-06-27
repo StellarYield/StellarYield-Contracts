@@ -137,3 +137,11 @@ export interface KycHistoryEntry {
   ledger: number;
   timestamp: string;
 }
+
+export interface OperatorLogEntry {
+  operatorAddress: string;
+  action: "added" | "removed";
+  callerAddress: string;
+  ledger: number;
+  timestamp: string;
+}

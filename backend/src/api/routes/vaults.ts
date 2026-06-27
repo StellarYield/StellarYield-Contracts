@@ -17,6 +17,7 @@ import {
   getEarlyRedemptionFee,
   exportVaultCsv,
   getVaultOperators,
+  getOperatorLog,
   getCompoundProjection,
   getVaultAnnualReport,
   getEpochBreakdown,
@@ -129,6 +130,8 @@ vaultsRouter.get(
 vaultsRouter.get("/:contractId/export.csv", validateParams(vaultParamsSchema), exportVaultCsv);
 // Operators list: GET /api/v1/vaults/:contractId/operators
 vaultsRouter.get("/:contractId/operators", validateParams(vaultParamsSchema), getVaultOperators);
+// Operator activity log: GET /api/v1/vaults/:contractId/operators/log
+vaultsRouter.get("/:contractId/operators/log", validateParams(vaultParamsSchema), getOperatorLog);
 // Vault detail: GET /api/v1/vaults/:contractId
 vaultsRouter.get("/:contractId", validateParams(vaultParamsSchema), getVault);
 // Annual vault performance report: GET /api/v1/vaults/:contractId/report?year=2025

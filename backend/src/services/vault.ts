@@ -1,14 +1,8 @@
-import type { Vault, VaultOperator, UserVaultPosition, PaginatedResponse } from "../types/index.js";
-import type {
-  Vault,
-  UserVaultPosition,
-  PaginatedResponse,
-  VaultHolder,
-  VaultHolderSort,
-} from "../types/index.js";
+import type { Vault, VaultOperator, UserVaultPosition, PaginatedResponse, VaultHolder, VaultHolderSort, OperatorLogEntry } from "../types/index.js";
 import { query } from "../db/index.js";
 import { logger } from "../logger.js";
 import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
+import { xdr, scValToNative } from "@stellar/stellar-sdk";
 
 const TTL_BY_STATE: Record<string, number> = {
   Active: 10,
@@ -730,6 +724,76 @@ export class VaultService {
       assignedAt: row.assigned_at.toISOString(),
     }));
   }
+
+  async getOperatorLog(
+    contractId: string,
+    page: number,
+    pageSize: number,
+  ): Promise<PaginatedResponse<OperatorLogEntry>> {
+    const offset = (page - 1) * pageSize;
+
+    const countResult = await query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM indexed_events
+       WHERE contract_id = $1 AND event_type IN ('op_add', 'op_rem')`,
+      [contractId],
+    );
+    const total = parseInt(countResult[0]?.count ?? "0", 10);
+
+    const rows = await query<{
+      ledger: number;
+      event_type: string;
+      payload: Record<string, unknown>;
+      created_at: Date;
+    }>(
+      `SELECT ledger, event_type, payload, created_at
+       FROM indexed_events
+       WHERE contract_id = $1 AND event_type IN ('op_add', 'op_rem')
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [contractId, pageSize, offset],
+    );
+
+    const data: OperatorLogEntry[] = rows.map((row) => {
+      const payload = row.payload;
+      const topics = (payload["topic"] ?? payload["topics"]) as unknown[] | undefined;
+      const callerAddress = Array.isArray(topics) && topics.length >= 2
+        ? extractAddressFromScVal(topics[1])
+        : "";
+      const operatorAddress = Array.isArray(topics) && topics.length >= 3
+        ? extractAddressFromScVal(topics[2])
+        : "";
+
+      let timestamp: string;
+      const ledgerClosedAt = payload["ledgerClosedAt"];
+      if (typeof ledgerClosedAt === "string") {
+        timestamp = ledgerClosedAt;
+      } else {
+        timestamp = row.created_at.toISOString();
+      }
+
+      return {
+        operatorAddress,
+        action: row.event_type === "op_add" ? "added" : "removed",
+        callerAddress,
+        ledger: row.ledger,
+        timestamp,
+      };
+    });
+
+    return { data, total, page, pageSize };
+  }
+}
+
+function extractAddressFromScVal(topic: unknown): string {
+  if (typeof topic === "string") {
+    try {
+      return String(scValToNative(xdr.ScVal.fromXDR(topic, "base64")));
+    } catch {
+      return "";
+    }
+  }
+  return "";
 }
 
   // ── Issue #640 / #646: Combined search with optional fuzzy matching ──────────

@@ -999,6 +999,26 @@ export async function getVaultOperators(req: Request, res: Response, next: NextF
     next(err);
   }
 }
+
+/**
+ * GET /api/v1/vaults/:contractId/operators/log
+ *
+ * Returns a chronological history of operator additions and removals
+ * for a vault, sourced from indexed_events. Empty logs return [].
+ */
+export async function getOperatorLog(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const page = Math.max(1, parseInt(String(req.query["page"] ?? "1"), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query["pageSize"] ?? "20"), 10) || 20));
+
+    const result = await vaultService.getOperatorLog(contractId, page, pageSize);
+    setCacheHeaders(res);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
 /**
  * GET /api/v1/vaults/maturing-soon?days=30
  *
