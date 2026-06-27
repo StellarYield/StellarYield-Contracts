@@ -30,14 +30,16 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       state,
       sort,
       order,
+      q,
     } = req.query as unknown as {
       page: number;
       pageSize: number;
       state?: string;
       sort: "created_at" | "total_assets";
       order: "asc" | "desc";
+      q?: string;
     };
-    const result = await vaultService.listVaults({ page, pageSize, state, sort, order });
+    const result = await vaultService.listVaults({ page, pageSize, state, sort, order, q });
     setCacheHeaders(res);
     res.json(result);
   } catch (err) {

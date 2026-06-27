@@ -173,6 +173,169 @@ describe("Vaults Controller", () => {
     });
   });
 
+  describe("listVaults with search query", () => {
+    it("returns vaults matching search query", async () => {
+      const mockVaults = [
+        {
+          id: 1,
+          contractId: "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B",
+          name: "Bond Vault",
+          state: "Active",
+          totalAssets: "1000",
+          totalSupply: "100",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mocks.listVaults.mockResolvedValue({
+        data: mockVaults,
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+
+      const mockReq = {
+        query: {
+          page: 1,
+          pageSize: 20,
+          q: "bond",
+          sort: "created_at",
+          order: "desc",
+        },
+      };
+
+      await listVaults(mockReq as any, mockRes as any, mockNext);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: mockVaults,
+          total: 1,
+        })
+      );
+    });
+
+    it("passes search query to VaultService.listVaults correctly", async () => {
+      mocks.listVaults.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        pageSize: 20,
+      });
+
+      const mockReq = {
+        query: {
+          page: 1,
+          pageSize: 20,
+          q: "bond",
+          sort: "created_at",
+          order: "desc",
+        },
+      };
+
+      await listVaults(mockReq as any, mockRes as any, mockNext);
+
+      expect(mocks.listVaults).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: "bond",
+        })
+      );
+    });
+
+    it("returns all vaults when q is empty string", async () => {
+      const mockVaults = [
+        {
+          id: 1,
+          contractId: "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B",
+          name: "Vault A",
+          state: "Active",
+          totalAssets: "1000",
+          totalSupply: "100",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        {
+          id: 2,
+          contractId: "CABC2SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3C",
+          name: "Vault B",
+          state: "Active",
+          totalAssets: "500",
+          totalSupply: "50",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mocks.listVaults.mockResolvedValue({
+        data: mockVaults,
+        total: 2,
+        page: 1,
+        pageSize: 20,
+      });
+
+      const mockReq = {
+        query: {
+          page: 1,
+          pageSize: 20,
+          q: "",
+          sort: "created_at",
+          order: "desc",
+        },
+      };
+
+      await listVaults(mockReq as any, mockRes as any, mockNext);
+
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: mockVaults,
+          total: 2,
+        })
+      );
+    });
+
+    it("works with both state filter and search query", async () => {
+      const mockVaults = [
+        {
+          id: 1,
+          contractId: "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B",
+          name: "Bond Vault",
+          state: "Active",
+          totalAssets: "1000",
+          totalSupply: "100",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      mocks.listVaults.mockResolvedValue({
+        data: mockVaults,
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+
+      const mockReq = {
+        query: {
+          page: 1,
+          pageSize: 20,
+          state: "Active",
+          q: "bond",
+          sort: "created_at",
+          order: "desc",
+        },
+      };
+
+      await listVaults(mockReq as any, mockRes as any, mockNext);
+
+      expect(mocks.listVaults).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: "Active",
+          q: "bond",
+        })
+      );
+    });
+  });
+
   describe("README documentation", () => {
     it("includes Cancelled state documentation", async () => {
       const fs = await import("fs");

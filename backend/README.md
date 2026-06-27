@@ -98,6 +98,7 @@ connects to the `postgres` service.
 
 - `GET /health` - service and database health check.
 - `GET /api/v1/vaults` - list vaults.
+- `GET /api/v1/vaults?q=bond` - search vaults by name or symbol using full-text search.
 - `GET /api/v1/vaults/count` - return the total number of vaults.
 - `GET /api/v1/vaults/factory/:factoryId` - list vaults for a factory.
 - `GET /api/v1/vaults/:contractId` - get a vault by contract ID.
@@ -153,3 +154,51 @@ Example response:
   "pageSize": 20
 }
 ```
+
+## Full-Text Search
+
+The API supports PostgreSQL full-text search for efficient vault discovery by name or symbol. The search uses:
+
+- **GIN index** on a generated `tsvector` column for fast indexed queries
+- **Relevance ranking** via `ts_rank()` to return most relevant results first
+- **English language dictionary** for stemming and stop-word removal
+
+### Search Query Parameter
+
+Use the `q` parameter with `GET /api/v1/vaults` to search:
+
+```bash
+GET /api/v1/vaults?q=bond
+```
+
+This returns vaults containing "bond" in their name or symbol, ranked by relevance.
+
+### Search Behavior
+
+- **Empty or missing `q`**: Returns all vaults with standard sorting
+- **With `q`**: Filters by search match and ranks by relevance (`ts_rank`)
+- **Combines with filters**: Works alongside `state`, `page`, `pageSize`, etc.
+
+### Examples
+
+Search for "bond" vaults:
+```bash
+curl "http://localhost:3000/api/v1/vaults?q=bond"
+```
+
+Search active "treasury" vaults:
+```bash
+curl "http://localhost:3000/api/v1/vaults?q=treasury&state=Active"
+```
+
+Search with pagination:
+```bash
+curl "http://localhost:3000/api/v1/vaults?q=yield&page=1&pageSize=10"
+```
+
+### Implementation Details
+
+- Search column: `search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', COALESCE(name, '') || ' ' || COALESCE(symbol, ''))) STORED`
+- Index: `CREATE INDEX idx_vaults_search_vector ON vaults USING GIN (search_vector)`
+- Query: `WHERE search_vector @@ plainto_tsquery('english', $q)`
+- Ranking: `ORDER BY ts_rank(search_vector, plainto_tsquery('english', $q)) DESC`

@@ -14,6 +14,7 @@ interface ListVaultsOptions {
   state?: string;
   sort: "created_at" | "total_assets";
   order: "asc" | "desc";
+  q?: string;
 }
 
 interface VaultRow {
@@ -78,15 +79,38 @@ function mapVaultRow(row: VaultRow): Vault {
 
 export class VaultService {
   async listVaults(opts: ListVaultsOptions): Promise<PaginatedResponse<Vault>> {
-    const { page, pageSize, state, sort, order } = opts;
+    const { page, pageSize, state, sort, order, q } = opts;
     const offset = (page - 1) * pageSize;
     const sortColumn = sort === "total_assets" ? "total_assets" : "created_at";
     const sortDirection = order === "asc" ? "ASC" : "DESC";
 
-    // Build WHERE clause if state filter is provided
-    const whereClause = state ? "WHERE v.state = $3" : "";
+    // Build WHERE conditions
+    const whereConditions: string[] = [];
     const params: any[] = [pageSize, offset];
-    if (state) params.push(state);
+    let paramIndex = 3;
+
+    if (state) {
+      whereConditions.push(`v.state = $${paramIndex}`);
+      params.push(state);
+      paramIndex++;
+    }
+
+    if (q && q.trim()) {
+      whereConditions.push(`v.search_vector @@ plainto_tsquery('english', $${paramIndex})`);
+      params.push(q.trim());
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+
+    // When searching, rank by relevance; otherwise use standard sort
+    let orderByClause: string;
+    if (q && q.trim()) {
+      orderByClause = `ORDER BY ts_rank(v.search_vector, plainto_tsquery('english', $${paramIndex})) DESC, v.${sortColumn} ${sortDirection}`;
+      params.push(q.trim());
+    } else {
+      orderByClause = `ORDER BY v.${sortColumn} ${sortDirection}`;
+    }
 
     // Query vaults with pagination.
     // COALESCE(v.total_assets, '0') guarantees every vault item in the response
@@ -104,17 +128,36 @@ export class VaultService {
               ), 0) AS depositor_count
        FROM vaults v
        ${whereClause}
-       ORDER BY v.${sortColumn} ${sortDirection}
+       ${orderByClause}
        LIMIT $1 OFFSET $2`,
       params,
     );
+
+    // Build count query with same WHERE clause
+    const countParams: any[] = [];
+    let countParamIndex = 1;
+    const countWhereConditions: string[] = [];
+
+    if (state) {
+      countWhereConditions.push(`v.state = $${countParamIndex}`);
+      countParams.push(state);
+      countParamIndex++;
+    }
+
+    if (q && q.trim()) {
+      countWhereConditions.push(`v.search_vector @@ plainto_tsquery('english', $${countParamIndex})`);
+      countParams.push(q.trim());
+      countParamIndex++;
+    }
+
+    const countWhereClause = countWhereConditions.length > 0 ? `WHERE ${countWhereConditions.join(" AND ")}` : "";
 
     // Get total count
     const countResult = await query<{ count: string }>(
       `SELECT COUNT(*) as count
        FROM vaults v
-       ${state ? "WHERE v.state = $1" : ""}`,
-      state ? [state] : [],
+       ${countWhereClause}`,
+      countParams,
     );
     const total = parseInt(countResult[0]?.count ?? "0", 10);
 
