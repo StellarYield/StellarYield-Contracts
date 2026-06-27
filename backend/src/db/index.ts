@@ -1,4 +1,5 @@
 import pg from "pg";
+import { performance } from "node:perf_hooks";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -16,7 +17,17 @@ export async function query<T = Record<string, unknown>>(
   sql: string,
   params?: unknown[],
 ): Promise<T[]> {
+  const start = performance.now();
   const result = await pool.query(sql, params);
+  const durationMs = performance.now() - start;
+
+  if (logger.level === "debug" || logger.level === "trace") {
+    const firstLine = config.nodeEnv === "production"
+      ? sql.slice(0, 80)
+      : sql;
+    logger.debug({ sql: firstLine, durationMs: Math.round(durationMs * 100) / 100, rowCount: result.rowCount }, "query");
+  }
+
   return result.rows;
 }
 

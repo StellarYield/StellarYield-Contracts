@@ -1,5 +1,9 @@
 import type { Epoch } from "../types/index.js";
 import { query } from "../db/index.js";
+import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
+
+const EPOCHS_CACHE_TTL = 30;
+const PENDING_YIELD_CACHE_TTL = 10;
 
 export class YieldService {
   private formatYieldPerShare(yieldAmount: string, totalShares: string): string {
@@ -16,6 +20,10 @@ export class YieldService {
   }
 
   async getVaultEpochs(contractId: string): Promise<Epoch[]> {
+    const cacheKey = `epochs:${contractId}`;
+    const cached = await cacheGet<Epoch[]>(cacheKey);
+    if (cached) return cached;
+
     const rows = await query<{
       id: number;
       vault_id: number;
@@ -32,7 +40,7 @@ export class YieldService {
       [contractId],
     );
 
-    return rows.map((row) => ({
+    const epochs = rows.map((row) => ({
       id: row.id,
       vaultId: row.vault_id,
       epoch: row.epoch,
@@ -40,12 +48,19 @@ export class YieldService {
       totalShares: row.total_shares,
       distributedAt: row.distributed_at,
     }));
+
+    await cacheSet(cacheKey, epochs, EPOCHS_CACHE_TTL);
+    return epochs;
   }
 
   async getUserPendingYield(
     contractId: string,
     userAddress: string,
   ): Promise<{ pendingYield: string; epochs: number[]; claimedEpochs: number[] }> {
+    const cacheKey = `pending-yield:${contractId}:${userAddress}`;
+    const cached = await cacheGet<{ pendingYield: string; epochs: number[]; claimedEpochs: number[] }>(cacheKey);
+    if (cached) return cached;
+
     const positionRows = await query<{
       shares: string;
       last_claimed_epoch: number;
@@ -96,11 +111,14 @@ export class YieldService {
       }
     }
 
-    return {
+    const result = {
       pendingYield: pendingYield.toString(),
       epochs: pendingEpochs,
       claimedEpochs,
     };
+
+    await cacheSet(cacheKey, result, PENDING_YIELD_CACHE_TTL);
+    return result;
   }
 
   async getYieldSummary(contractId: string): Promise<{
@@ -167,6 +185,7 @@ export class YieldService {
        ON CONFLICT (vault_id, epoch) DO NOTHING`,
       [vaultId, epoch, yieldAmount, totalShares],
     );
+    await cacheDel(`epochs:*`);
   }
 
   async getYieldPerShareHistory(

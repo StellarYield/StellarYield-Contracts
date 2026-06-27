@@ -94,8 +94,17 @@ export async function getVault(req: Request, res: Response, next: NextFunction) 
       res.status(304).end();
       return;
     }
+    const ifModifiedSince = req.headers["if-modified-since"];
+    if (ifModifiedSince) {
+      const since = new Date(ifModifiedSince);
+      if (!isNaN(since.getTime()) && vault.updatedAt <= since) {
+        res.status(304).end();
+        return;
+      }
+    }
     setCacheHeaders(res);
     res.set("ETag", etag);
+    res.set("Last-Modified", vault.updatedAt.toUTCString());
     res.json(vault);
   } catch (err) {
     next(err);

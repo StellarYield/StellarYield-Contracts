@@ -12,6 +12,7 @@ import { VaultService } from "./vault.js";
 import { UserService } from "./user.js";
 import { NotificationService } from "./notifications.js";
 import { indexerEventsProcessedTotal, indexerLastLedger } from "./metrics.js";
+import { cacheDel } from "../cache/redis.js";
 
 // ── Upstream helpers ───────────────────────────────────────────────────────────
 
@@ -713,6 +714,7 @@ export class Indexer {
          AND uvp.user_address = $3`,
       [epoch, contractId, userAddress],
     );
+    await cacheDel(`pending-yield:${contractId}:${userAddress}`);
     logger.info({ contractId, userAddress, epoch }, "Processed yield_claimed event");
   }
 
