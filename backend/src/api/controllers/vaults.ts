@@ -28,6 +28,8 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       page,
       pageSize,
       state,
+      category,
+      cursor,
       sort,
       order,
       q,
@@ -35,11 +37,13 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       page: number;
       pageSize: number;
       state?: string;
+      category?: string;
+      cursor?: string;
       sort: "created_at" | "total_assets";
       order: "asc" | "desc";
       q?: string;
     };
-    const result = await vaultService.listVaults({ page, pageSize, state, sort, order, q });
+    const result = await vaultService.listVaults({ page, pageSize, state, category, cursor, sort, order });
     setCacheHeaders(res);
     res.json(result);
   } catch (err) {
@@ -52,6 +56,16 @@ export async function getVaultCount(_req: Request, res: Response, next: NextFunc
     const total = await vaultService.countVaults();
     setCacheHeaders(res);
     res.json({ total });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listCategories(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const categories = await vaultService.listCategories();
+    setCacheHeaders(res);
+    res.json(categories);
   } catch (err) {
     next(err);
   }

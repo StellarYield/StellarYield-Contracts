@@ -12,6 +12,8 @@ interface ListVaultsOptions {
   page: number;
   pageSize: number;
   state?: string;
+  category?: string;
+  cursor?: string;
   sort: "created_at" | "total_assets";
   order: "asc" | "desc";
   q?: string;
@@ -37,6 +39,7 @@ interface VaultRow {
   rwa_name: string | null;
   rwa_symbol: string | null;
   rwa_document_uri: string | null;
+  rwa_category: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -72,6 +75,7 @@ function mapVaultRow(row: VaultRow): Vault {
     rwaName: row.rwa_name,
     rwaSymbol: row.rwa_symbol,
     rwaDocumentUri: row.rwa_document_uri,
+    rwaCategory: row.rwa_category,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -79,89 +83,137 @@ function mapVaultRow(row: VaultRow): Vault {
 
 export class VaultService {
   async listVaults(opts: ListVaultsOptions): Promise<PaginatedResponse<Vault>> {
-    const { page, pageSize, state, sort, order, q } = opts;
-    const offset = (page - 1) * pageSize;
+    const { page, pageSize, state, category, cursor, sort, order } = opts;
     const sortColumn = sort === "total_assets" ? "total_assets" : "created_at";
     const sortDirection = order === "asc" ? "ASC" : "DESC";
+    const isDesc = sortDirection === "DESC";
 
-    // Build WHERE conditions
-    const whereConditions: string[] = [];
-    const params: any[] = [pageSize, offset];
-    let paramIndex = 3;
+    // Decode cursor if provided
+    let cursorId: number | null = null;
+    let cursorCreatedAt: Date | null = null;
+    if (cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+        cursorId = typeof decoded.id === "number" ? decoded.id : null;
+        cursorCreatedAt = decoded.created_at ? new Date(decoded.created_at) : null;
+      } catch {
+        cursorId = null;
+        cursorCreatedAt = null;
+      }
+    }
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+    let paramIdx = 0;
 
     if (state) {
-      whereConditions.push(`v.state = $${paramIndex}`);
+      paramIdx++;
+      conditions.push(`v.state = $${paramIdx}`);
       params.push(state);
-      paramIndex++;
     }
 
-    if (q && q.trim()) {
-      whereConditions.push(`v.search_vector @@ plainto_tsquery('english', $${paramIndex})`);
-      params.push(q.trim());
-      paramIndex++;
+    if (category) {
+      paramIdx++;
+      conditions.push(`v.rwa_category = $${paramIdx}`);
+      params.push(category);
     }
 
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+    if (cursorId !== null && cursorCreatedAt !== null) {
+      paramIdx++;
+      const cursorTs = cursorCreatedAt.toISOString();
+      if (isDesc) {
+        conditions.push(
+          `(v.created_at, v.id) < ($${paramIdx}::timestamptz, $${paramIdx + 1})`,
+        );
+      } else {
+        conditions.push(
+          `(v.created_at, v.id) > ($${paramIdx}::timestamptz, $${paramIdx + 1})`,
+        );
+      }
+      params.push(cursorTs, cursorId);
+      paramIdx++;
+    }
 
-    // When searching, rank by relevance; otherwise use standard sort
-    let orderByClause: string;
-    if (q && q.trim()) {
-      orderByClause = `ORDER BY ts_rank(v.search_vector, plainto_tsquery('english', $${paramIndex})) DESC, v.${sortColumn} ${sortDirection}`;
-      params.push(q.trim());
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // Fetch one extra row to determine if there's a next page
+    const limit = cursor ? pageSize + 1 : pageSize;
+    const limitIdx = paramIdx + 1;
+    params.push(limit);
+
+    let sql: string;
+    if (cursor) {
+      sql = `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
+               v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+               v.created_at, v.updated_at,
+               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
+               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+               COALESCE((
+                 SELECT COUNT(*)::int
+                 FROM user_vault_positions uvp
+                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
+               ), 0) AS depositor_count
+        FROM vaults v
+        ${whereClause}
+        ORDER BY v.${sortColumn} ${sortDirection}, v.id ${sortDirection}
+        LIMIT $${limitIdx}`;
     } else {
-      orderByClause = `ORDER BY v.${sortColumn} ${sortDirection}`;
+      const offset = (page - 1) * pageSize;
+      params.push(offset);
+      sql = `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
+               v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+               v.created_at, v.updated_at,
+               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
+               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+               COALESCE((
+                 SELECT COUNT(*)::int
+                 FROM user_vault_positions uvp
+                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
+               ), 0) AS depositor_count
+        FROM vaults v
+        ${whereClause}
+        ORDER BY v.${sortColumn} ${sortDirection}
+        LIMIT $${limitIdx} OFFSET $${limitIdx + 1}`;
     }
 
-    // Query vaults with pagination.
-    // COALESCE(v.total_assets, '0') guarantees every vault item in the response
-    // carries a non-null totalAssets string, satisfying issue #499.
-    const vaults = await query<VaultRow>(
-      `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
-              v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
-              v.created_at, v.updated_at,
-              v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
-              v.rwa_name, v.rwa_symbol, v.rwa_document_uri,
-              COALESCE((
-                SELECT COUNT(*)::int
-                FROM user_vault_positions uvp
-                WHERE uvp.vault_id = v.id AND uvp.shares > 0
-              ), 0) AS depositor_count
-       FROM vaults v
-       ${whereClause}
-       ${orderByClause}
-       LIMIT $1 OFFSET $2`,
-      params,
-    );
+    const vaults = await query<VaultRow>(sql, params);
 
-    // Build count query with same WHERE clause
-    const countParams: any[] = [];
-    let countParamIndex = 1;
-    const countWhereConditions: string[] = [];
-
-    if (state) {
-      countWhereConditions.push(`v.state = $${countParamIndex}`);
-      countParams.push(state);
-      countParamIndex++;
+    // Determine nextCursor if cursor-based pagination
+    let nextCursor: string | null = null;
+    if (cursor && vaults.length > pageSize) {
+      vaults.pop(); // remove the extra row
+      const last = vaults[vaults.length - 1];
+      nextCursor = Buffer.from(
+        JSON.stringify({ id: last.id, created_at: last.created_at.toISOString() }),
+      ).toString("base64url");
+    } else if (cursor) {
+      nextCursor = null;
     }
 
-    if (q && q.trim()) {
-      countWhereConditions.push(`v.search_vector @@ plainto_tsquery('english', $${countParamIndex})`);
-      countParams.push(q.trim());
-      countParamIndex++;
+    // Get total count (only when not using cursor, to avoid expensive counts)
+    let total = 0;
+    if (!cursor) {
+      const countConditions: string[] = [];
+      const countParams: any[] = [];
+      let countIdx = 0;
+      if (state) {
+        countIdx++;
+        countConditions.push(`v.state = $${countIdx}`);
+        countParams.push(state);
+      }
+      if (category) {
+        countIdx++;
+        countConditions.push(`v.rwa_category = $${countIdx}`);
+        countParams.push(category);
+      }
+      const countWhere = countConditions.length > 0 ? `WHERE ${countConditions.join(" AND ")}` : "";
+      const countResult = await query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM vaults v ${countWhere}`,
+        countParams,
+      );
+      total = parseInt(countResult[0]?.count ?? "0", 10);
     }
 
-    const countWhereClause = countWhereConditions.length > 0 ? `WHERE ${countWhereConditions.join(" AND ")}` : "";
-
-    // Get total count
-    const countResult = await query<{ count: string }>(
-      `SELECT COUNT(*) as count
-       FROM vaults v
-       ${countWhereClause}`,
-      countParams,
-    );
-    const total = parseInt(countResult[0]?.count ?? "0", 10);
-
-    // Map database rows to Vault type
     const data: Vault[] = vaults.map(mapVaultRow);
 
     return {
@@ -169,6 +221,7 @@ export class VaultService {
       total,
       page,
       pageSize,
+      nextCursor,
     };
   }
 
@@ -179,13 +232,20 @@ export class VaultService {
     return parseInt(countResult[0]?.count ?? "0", 10);
   }
 
+  async listCategories(): Promise<string[]> {
+    const rows = await query<{ rwa_category: string | null }>(
+      "SELECT DISTINCT rwa_category FROM vaults WHERE rwa_category IS NOT NULL ORDER BY rwa_category ASC",
+    );
+    return rows.map((r) => r.rwa_category!);
+  }
+
   async listVaultsByFactory(factoryId: string): Promise<Vault[]> {
     const rows = await query<VaultRow>(
       `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
               v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
-              v.rwa_name, v.rwa_symbol, v.rwa_document_uri,
+              v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -206,7 +266,7 @@ export class VaultService {
               v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
-              v.rwa_name, v.rwa_symbol, v.rwa_document_uri,
+              v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -364,6 +424,7 @@ export class VaultService {
       rwaName = null,
       rwaSymbol = null,
       rwaDocumentUri = null,
+      rwaCategory = null,
     } = vault;
 
     logger.info(
@@ -376,10 +437,10 @@ export class VaultService {
          contract_id, factory_id, asset, name, symbol, state,
          total_assets, total_supply,
          funding_target, funding_deadline, min_deposit, max_deposit_per_user,
-         rwa_name, rwa_symbol, rwa_document_uri,
+         rwa_name, rwa_symbol, rwa_document_uri, rwa_category,
          created_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
        ON CONFLICT (contract_id)
        DO UPDATE SET
          state = EXCLUDED.state,
@@ -392,10 +453,11 @@ export class VaultService {
          rwa_name = COALESCE(EXCLUDED.rwa_name, vaults.rwa_name),
          rwa_symbol = COALESCE(EXCLUDED.rwa_symbol, vaults.rwa_symbol),
          rwa_document_uri = COALESCE(EXCLUDED.rwa_document_uri, vaults.rwa_document_uri),
+         rwa_category = COALESCE(EXCLUDED.rwa_category, vaults.rwa_category),
          updated_at = NOW()`,
       [contractId, factoryId, asset, name, symbol, state, totalAssets, totalSupply,
        fundingTarget, fundingDeadline, minDeposit, maxDepositPerUser,
-       rwaName, rwaSymbol, rwaDocumentUri],
+       rwaName, rwaSymbol, rwaDocumentUri, rwaCategory],
     );
 
     logger.info({ contractId }, "Vault upserted successfully");

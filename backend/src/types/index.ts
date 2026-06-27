@@ -26,6 +26,7 @@ export interface Vault {
   rwaName: string | null;
   rwaSymbol: string | null;
   rwaDocumentUri: string | null;
+  rwaCategory: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -112,6 +113,7 @@ export interface PaginatedResponse<T> {
   total: number;
   page: number;
   pageSize: number;
+  nextCursor?: string | null;
 }
 
 export interface YieldHistoryEntry {

@@ -50,6 +50,33 @@ export class UserService {
     );
   }
 
+  async getTotalPendingYield(address: string): Promise<string> {
+    const positions = await query<{
+      contract_id: string;
+    }>(
+      `SELECT v.contract_id
+       FROM user_vault_positions uvp
+       JOIN vaults v ON uvp.vault_id = v.id
+       WHERE uvp.user_address = $1 AND uvp.shares > 0`,
+      [address],
+    );
+
+    if (positions.length === 0) return "0";
+
+    let totalPendingYield = BigInt(0);
+    const yieldService = new YieldService();
+
+    for (const row of positions) {
+      const yieldData = await yieldService.getUserPendingYield(
+        row.contract_id,
+        address,
+      );
+      totalPendingYield += BigInt(yieldData.pendingYield);
+    }
+
+    return totalPendingYield.toString();
+  }
+
   async getUserPortfolio(address: string): Promise<UserPortfolioResponse> {
     const positions = await query<{
       id: number;
