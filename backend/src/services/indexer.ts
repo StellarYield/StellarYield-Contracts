@@ -9,6 +9,7 @@ import {
   readRwaDocumentUri,
 } from "./stellar.js";
 import { VaultService } from "./vault.js";
+import { UserService } from "./user.js";
 import { NotificationService } from "./notifications.js";
 import { indexerEventsProcessedTotal, indexerLastLedger } from "./metrics.js";
 
@@ -121,6 +122,7 @@ export class Indexer {
   private readonly vaultFactoryContractId: string;
   private watchedContractIds: Set<string>;
   private vaultService: VaultService;
+  private userService: UserService;
   private notificationService?: NotificationService;
 
   constructor(notificationService?: NotificationService) {
@@ -131,6 +133,7 @@ export class Indexer {
       this.watchedContractIds.add(this.vaultFactoryContractId);
     }
     this.vaultService = new VaultService();
+    this.userService = new UserService();
     this.notificationService = notificationService;
 
     if (!this.vaultFactoryContractId) {
@@ -458,6 +461,17 @@ export class Indexer {
     if (earlyCancelled) {
       await this.handleEarlyRedemptionCancelled(event.contractId ?? "", earlyCancelled);
       await this.recordEvent(event, "early_redemption_cancelled");
+      return;
+    }
+
+    const kycUpdate = parseKycVerifiedEvent(event);
+    if (kycUpdate) {
+      await this.userService.upsertUser(kycUpdate.user, kycUpdate.verified);
+      await this.recordEvent(event, "kyc_set");
+      logger.info(
+        { user: kycUpdate.user, verified: kycUpdate.verified },
+        "Processed kyc_set event",
+      );
       return;
     }
   }
@@ -1372,6 +1386,55 @@ export function parseEarlyRedemptionRequestedEvent(rawEvent: unknown): ParsedEar
     const queuePosition = Number(arr[2] ?? 0);
 
     return { user, requestId, shares, queuePosition };
+  } catch {
+    return null;
+  }
+}
+
+// ── Issue #611: parseKycVerifiedEvent ─────────────────────────────────────────
+
+export interface ParsedKycVerifiedEvent {
+  user: string;
+  verified: boolean;
+}
+
+/**
+ * Parses a `kyc_set` on-chain event emitted when an operator updates a user's
+ * KYC status.
+ *
+ * Expected event shape:
+ *   topics[0]: symbol "kyc_set"
+ *   topics[1]: account address of the user
+ *   value:     bool — true = verified, false = revoked
+ */
+export function parseKycVerifiedEvent(rawEvent: unknown): ParsedKycVerifiedEvent | null {
+  try {
+    if (!rawEvent || typeof rawEvent !== "object") return null;
+    const ev = rawEvent as Record<string, unknown>;
+    const topics = (ev["topic"] ?? ev["topics"]) as unknown[] | undefined;
+    const value = ev["value"] ?? ev["data"];
+
+    if (!Array.isArray(topics) || topics.length < 2 || value == null) return null;
+
+    const parsedTopics = topics.map((t) =>
+      typeof t === "string" ? xdr.ScVal.fromXDR(t, "base64") : (t as xdr.ScVal),
+    );
+    const parsedValue = typeof value === "string"
+      ? xdr.ScVal.fromXDR(value, "base64")
+      : value;
+
+    let eventName: string;
+    try {
+      eventName = String(scValToNative(parsedTopics[0]) ?? "");
+    } catch {
+      return null;
+    }
+    if (eventName !== "kyc_set") return null;
+
+    const user = String(scValToNative(parsedTopics[1]) ?? "");
+    const verified = Boolean(scValToNative(parsedValue as xdr.ScVal));
+
+    return { user, verified };
   } catch {
     return null;
   }

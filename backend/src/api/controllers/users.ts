@@ -99,3 +99,22 @@ export async function getUserYieldHistory(
     next(err);
   }
 }
+
+export async function getKycBatch(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { addresses, vaultId } = req.body as { addresses: string[]; vaultId: string };
+    const results = await Promise.all(
+      addresses.map(async (address) => {
+        try {
+          const verified = await readKycVerified(vaultId, address);
+          return [address, verified] as const;
+        } catch {
+          return [address, false] as const;
+        }
+      }),
+    );
+    res.json(Object.fromEntries(results));
+  } catch (err) {
+    next(err);
+  }
+}

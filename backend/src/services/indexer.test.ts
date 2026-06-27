@@ -6,6 +6,11 @@ vi.mock("../logger.js", () => ({
 }));
 vi.mock("./stellar.js", () => ({ getSorobanRpc: vi.fn() }));
 vi.mock("./vault.js", () => ({ VaultService: vi.fn().mockImplementation(() => ({})) }));
+vi.mock("./user.js", () => ({
+  UserService: vi.fn().mockImplementation(() => ({
+    upsertUser: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
 vi.mock("./notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
 
 import { rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
@@ -396,6 +401,7 @@ import {
   parseYieldClaimedEvent,
   parseYieldClaimedPartialEvent,
   parseEarlyRedemptionRequestedEvent,
+  parseKycVerifiedEvent,
 } from "./indexer.js";
 
 describe("parseYieldClaimedEvent", () => {
@@ -457,5 +463,39 @@ describe("parseEarlyRedemptionRequestedEvent", () => {
   it("returns null for malformed events", () => {
     expect(parseEarlyRedemptionRequestedEvent(null)).toBeNull();
     expect(parseEarlyRedemptionRequestedEvent({})).toBeNull();
+  });
+});
+
+// ── Issue #611: parseKycVerifiedEvent ─────────────────────────────────────────
+
+describe("parseKycVerifiedEvent", () => {
+  it("parses a kyc_set event with verified=true", () => {
+    const topics = [nativeToScVal("kyc_set"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(true);
+    const result = parseKycVerifiedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.user).toBe(ACCOUNT);
+    expect(result?.verified).toBe(true);
+  });
+
+  it("parses a kyc_set event with verified=false", () => {
+    const topics = [nativeToScVal("kyc_set"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(false);
+    const result = parseKycVerifiedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.user).toBe(ACCOUNT);
+    expect(result?.verified).toBe(false);
+  });
+
+  it("returns null for an unrecognised topic", () => {
+    const topics = [nativeToScVal("deposit"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(true);
+    expect(parseKycVerifiedEvent({ topics, data })).toBeNull();
+  });
+
+  it("returns null for malformed events", () => {
+    expect(parseKycVerifiedEvent(null)).toBeNull();
+    expect(parseKycVerifiedEvent({})).toBeNull();
+    expect(parseKycVerifiedEvent({ topics: [], data: null })).toBeNull();
   });
 });
