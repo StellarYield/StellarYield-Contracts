@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS vaults (
   early_redemption_fee_bps INT DEFAULT 0,
   expected_apy    INT,
   maturity_date   TIMESTAMPTZ,
+  rwa_category    TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );

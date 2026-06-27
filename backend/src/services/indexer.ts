@@ -566,6 +566,7 @@ export class Indexer {
       asset: string;
       name: string;
       symbol: string;
+      rwaCategory: string | null;
       fundingTarget: string | null;
       fundingDeadline: Date | null;
       minDeposit: string | null;
@@ -597,6 +598,7 @@ export class Indexer {
       rwaName,
       rwaSymbol,
       rwaDocumentUri,
+      rwaCategory: vaultCreated.rwaCategory,
     });
 
     this.watchedContractIds.add(vaultCreated.contractId);
@@ -1100,6 +1102,7 @@ export function parseVaultCreatedEvent(rawEvent: any): {
   asset: string;
   name: string;
   symbol: string;
+  rwaCategory: string | null;
   fundingTarget: string | null;
   fundingDeadline: Date | null;
   minDeposit: string | null;
@@ -1149,7 +1152,18 @@ export function parseVaultCreatedEvent(rawEvent: any): {
     const rawMaxDeposit = nativeData?.max_deposit_per_user ?? nativeData?.maxDepositPerUser ?? null;
     const maxDepositPerUser = rawMaxDeposit != null ? String(rawMaxDeposit) : null;
 
-    return { contractId, asset, name, symbol, fundingTarget, fundingDeadline, minDeposit, maxDepositPerUser };
+    // Extract RWA category from the first element of the data tuple (vault_type).
+    // The VaultType enum is either a string or an object with a single key (the variant name).
+    const rawCategory = nativeData?.rwa_category ?? nativeData?.vault_type
+      ?? (Array.isArray(nativeData) ? nativeData[0] : null);
+    let rwaCategory: string | null = null;
+    if (typeof rawCategory === "string") {
+      rwaCategory = rawCategory;
+    } else if (rawCategory && typeof rawCategory === "object" && !Array.isArray(rawCategory)) {
+      rwaCategory = Object.keys(rawCategory)[0] ?? null;
+    }
+
+    return { contractId, asset, name, symbol, rwaCategory, fundingTarget, fundingDeadline, minDeposit, maxDepositPerUser };
   } catch (error) {
     logger.warn({ error }, "Error parsing vault_created event");
     return null;

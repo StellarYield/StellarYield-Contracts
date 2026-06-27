@@ -100,6 +100,30 @@ export async function deleteApiKey(req: Request, res: Response, next: NextFuncti
   }
 }
 
+export async function getApiKeys(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await query<{
+      id: number;
+      label: string | null;
+      role: string;
+      created_at: Date;
+    }>(
+      "SELECT id, label, role, created_at FROM api_keys ORDER BY created_at DESC",
+    );
+
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        label: row.label,
+        role: row.role,
+        createdAt: row.created_at,
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getAdminEvents(req: Request, res: Response, next: NextFunction) {
   try {
     const { contractId, eventType } = req.query as Record<string, string | undefined>;
