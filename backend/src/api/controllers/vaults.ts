@@ -665,6 +665,109 @@ export async function getEpochBreakdown(req: Request, res: Response, next: NextF
   }
 }
 
+/**
+ * GET /api/v1/vaults/search?q=&category=&state=&sort=&order=&page=&pageSize=
+ *
+ * Combined search endpoint that applies text search, category filter, state
+ * filter, and sort independently (AND logic). All params validated with Zod.
+ * Returns HTTP 400 for invalid combinations.
+ *
+ * #640
+ */
+export async function searchVaults(req: Request, res: Response, next: NextFunction) {
+  try {
+    const {
+      q,
+      category,
+      state,
+      page,
+      pageSize,
+      sort,
+      order,
+    } = req.query as unknown as {
+      q?: string;
+      category?: string;
+      state?: string;
+      page: number;
+      pageSize: number;
+      sort: "created_at" | "total_assets";
+      order: "asc" | "desc";
+    };
+    const result = await vaultService.searchVaults({ q, category, state, page, pageSize, sort, order });
+    setCacheHeaders(res);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/vaults/name-check?name=<value>
+ *
+ * Returns { "available": true | false } indicating whether the vault name is
+ * unique (case-insensitive). Returns HTTP 400 if name is missing or under 3
+ * characters.
+ *
+ * #641
+ */
+export async function checkVaultName(req: Request, res: Response, next: NextFunction) {
+  try {
+    const name = req.query["name"];
+    if (typeof name !== "string" || name.length < 3) {
+      res.status(400).json({ error: "BadRequest", message: "name query parameter is required and must be at least 3 characters" });
+      return;
+    }
+
+    const available = await vaultService.checkVaultName(name);
+    setCacheHeaders(res);
+    res.json({ available });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/vaults/trending
+ *
+ * Returns the top 10 vaults ordered by sum of deposited amounts in the last
+ * 24 hours. Includes contractId, name, recentDepositVolume (sum as string).
+ * Returns [] if no deposits occurred recently.
+ *
+ * #642
+ */
+export async function getTrendingVaults(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const trending = await vaultService.getTrendingVaults();
+    setCacheHeaders(res);
+    res.json(trending);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/v1/vaults/new?days=7
+ *
+ * Returns vaults created within the given number of days (1-30, default 7),
+ * ordered by created_at DESC. Returns the same vault shape as GET /api/v1/vaults.
+ *
+ * #643
+ */
+export async function getNewVaults(req: Request, res: Response, next: NextFunction) {
+  try {
+    const daysParam = req.query["days"];
+    const days = typeof daysParam === "string" && /^\d+$/.test(daysParam)
+      ? Math.min(30, Math.max(1, parseInt(daysParam, 10)))
+      : 7;
+
+    const vaults = await vaultService.getNewVaults(days);
+    setCacheHeaders(res);
+    res.json(vaults);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getCompoundProjection(req: Request, res: Response, next: NextFunction) {
   try {
     const sharesParam = req.query.shares;

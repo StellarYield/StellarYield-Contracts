@@ -7,7 +7,6 @@ import {
   getVault,
   getVaultLiveState,
   getVaultLiveTotalAssets,
-  getVaultPositions,
   getRedemptionQueue,
   getVaultSnapshot,
   getVaultTopHolders,
@@ -50,6 +49,20 @@ const vaultHoldersQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).default(20).transform((value) => Math.min(value, 100)),
   sort: z.enum(["shares", "deposited"]).default("shares"),
+});
+
+const searchVaultsQuerySchema = z.object({
+  q: z.string().optional(),
+  category: z.string().optional(),
+  state: z.string().optional(),
+  sort: z.enum(["created_at", "total_assets"]).default("created_at"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).default(20).transform((value) => Math.min(value, 100)),
+});
+
+const newVaultsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(30).default(7),
 });
 
 export const vaultsRouter = Router();

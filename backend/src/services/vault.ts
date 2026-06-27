@@ -651,6 +651,140 @@ export class VaultService {
     }));
   }
 
+  // ── Issue #640: Combined search ──────────────────────────────────────────────
+  async searchVaults(opts: {
+    q?: string;
+    category?: string;
+    state?: string;
+    page: number;
+    pageSize: number;
+    sort: string;
+    order: string;
+  }): Promise<PaginatedResponse<Vault>> {
+    const { q, category, state, page, pageSize, sort, order } = opts;
+    const offset = (page - 1) * pageSize;
+    const sortColumn = sort === "total_assets" ? "total_assets" : "created_at";
+    const sortDirection = order === "asc" ? "ASC" : "DESC";
+
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (state) {
+      conditions.push(`v.state = $${params.length + 1}`);
+      params.push(state);
+    }
+    if (q) {
+      conditions.push(`(v.name ILIKE $${params.length + 1} OR v.symbol ILIKE $${params.length + 1} OR v.rwa_name ILIKE $${params.length + 1})`);
+      params.push(`%${q}%`);
+    }
+    if (category) {
+      conditions.push(`v.rwa_name ILIKE $${params.length + 1}`);
+      params.push(category);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const vaults = await query<VaultRow>(
+      `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
+              v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+              v.created_at, v.updated_at,
+              v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
+              v.rwa_name, v.rwa_symbol, v.rwa_document_uri,
+              COALESCE((
+                SELECT COUNT(*)::int
+                FROM user_vault_positions uvp
+                WHERE uvp.vault_id = v.id AND uvp.shares > 0
+              ), 0) AS depositor_count
+       FROM vaults v
+       ${whereClause}
+       ORDER BY v.${sortColumn} ${sortDirection}
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, offset],
+    );
+
+    const countResult = await query<{ count: string }>(
+      `SELECT COUNT(*) as count
+       FROM vaults v
+       ${whereClause}`,
+      params,
+    );
+    const total = parseInt(countResult[0]?.count ?? "0", 10);
+
+    return {
+      data: vaults.map(mapVaultRow),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  // ── Issue #641: Name availability check ───────────────────────────────────────
+  async checkVaultName(name: string): Promise<boolean> {
+    const rows = await query<{ id: number }>(
+      "SELECT id FROM vaults WHERE LOWER(name) = LOWER($1) LIMIT 1",
+      [name],
+    );
+    return rows.length === 0;
+  }
+
+  // ── Issue #642: Trending vaults ─────────────────────────────────────────────
+  async getTrendingVaults(): Promise<{
+    contractId: string;
+    name: string | null;
+    recentDepositVolume: string;
+  }[]> {
+    const rows = await query<{
+      contract_id: string;
+      name: string | null;
+      total_deposited: string;
+    }>(
+      `SELECT v.contract_id, v.name,
+              COALESCE(SUM(
+                CASE
+                  WHEN ie.payload #>> '{value,vec,0,i128,lo}' IS NOT NULL
+                  THEN (ie.payload #>> '{value,vec,0,i128,lo}')::numeric
+                  ELSE 0
+                END
+              ), 0)::text AS total_deposited
+       FROM indexed_events ie
+       JOIN vaults v ON ie.contract_id = v.contract_id
+       WHERE ie.event_type = 'deposit'
+         AND ie.created_at > NOW() - INTERVAL '24 hours'
+       GROUP BY v.contract_id, v.name
+       ORDER BY total_deposited DESC
+       LIMIT 10`,
+    );
+
+    return rows.map((r) => ({
+      contractId: r.contract_id,
+      name: r.name,
+      recentDepositVolume: r.total_deposited,
+    }));
+  }
+
+  // ── Issue #643: New vaults ──────────────────────────────────────────────────
+  async getNewVaults(days: number): Promise<Vault[]> {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const rows = await query<VaultRow>(
+      `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
+              v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
+              v.created_at, v.updated_at,
+              v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
+              v.rwa_name, v.rwa_symbol, v.rwa_document_uri,
+              COALESCE((
+                SELECT COUNT(*)::int
+                FROM user_vault_positions uvp
+                WHERE uvp.vault_id = v.id AND uvp.shares > 0
+              ), 0) AS depositor_count
+       FROM vaults v
+       WHERE v.created_at > $1
+       ORDER BY v.created_at DESC`,
+      [cutoff],
+    );
+
+    return rows.map(mapVaultRow);
+  }
+
   async getCompoundProjection(
     contractId: string,
     shares: string,

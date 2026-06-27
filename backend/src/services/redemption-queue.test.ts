@@ -7,7 +7,7 @@ vi.mock("../../logger.js", () => ({
 vi.mock("../../services/stellar.js", () => ({ getSorobanRpc: vi.fn() }));
 vi.mock("../../services/notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
 
-import { xdr, nativeToScVal } from "@stellar/stellar-sdk";
+import { xdr } from "@stellar/stellar-sdk";
 import { VaultService } from "../../services/vault.js";
 import { Indexer, parseRequestEarlyRedemptionEvent } from "../../services/indexer.js";
 

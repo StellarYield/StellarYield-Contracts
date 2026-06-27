@@ -1,42 +1,39 @@
-# Pull Request: Standardize Public Getters and Improve Documentation
+# Pull Request: Add vault search, name-check, trending, and new vaults endpoints
 
-This PR resolves several issues related to public getters and documentation clarifications in the `SingleRWAVault` contract. The goal is to provide a more consistent and well-documented interface for integrators and frontends.
+This PR adds four new API endpoints for vault discovery and search.
+
+Closes #640
+Closes #641
+Closes #642
+Closes #643
 
 ## Changes
 
-### 1. Add public getter for `operator_fee_bps` (#336)
-- Added `OpFee` to the storage layer.
-- Included `operator_fee_bps` in `InitParams` and initialized it in the `__constructor`.
-- Implemented a public `operator_fee_bps(e: &Env) -> u32` getter.
-- Documented the `cooperator` role, permissions (off-chain approvals, callbacks), and the trust boundary for integrators.
-- Updated test helpers and constructor tests to include the new parameter.
+### 1. `GET /api/v1/vaults/search` (#640)
+- Combined search endpoint accepting `q`, `category`, `state`, `sort`, `order`, `page`, `pageSize`.
+- Filters are applied independently (AND logic) with full Zod validation.
+- Text search (`q`) matches against `name`, `symbol`, and `rwa_name` (case-insensitive ILIKE).
+- Category filter matches against `rwa_name`.
+- Returns paginated vault list in the same shape as `GET /api/v1/vaults`.
 
-### 2. Add public getter for `is_pause` (#338)
-- Added `is_pause` and `is_paused` as aliases for the existing `paused()` getter to improve discoverability.
-- Updated documentation for `maturity_date` and `time_to_maturity` to:
-    - Clarify that timestamp units are in Unix seconds (ledger timestamp).
-    - Note that the admin can extend maturity via `set_maturity_date`.
-    - Provide guidance for clients calculating time-to-maturity.
+### 2. `GET /api/v1/vaults/name-check` (#641)
+- Accepts `name` query parameter, returns `{ "available": true | false }`.
+- Case-insensitive check: `WHERE LOWER(name) = LOWER($1)`.
+- Returns HTTP 400 if name is missing or under 3 characters.
 
-### 3. Improve `max_deposit_per_user` documentation (#333)
-- Updated docstrings for `min_deposit` and `max_deposit_per_user`.
-- Clarified that these limits are enforced during both `Funding` and `Active` states.
-- Explicitly stated that return units are consistent with `decimals()` (underlying asset units).
+### 3. `GET /api/v1/vaults/trending` (#642)
+- Returns top 10 vaults ordered by sum of deposited amounts in the last 24 hours.
+- Includes `contractId`, `name`, `recentDepositVolume` (sum as string).
+- Returns `[]` if no deposits occurred recently.
 
-### 4. Improve `funding_target` documentation (#331)
-- Updated `funding_target` docstring to clarify the relationship between asset decimals and share decimals.
-- Provided guidance for client-side formatting, noting that asset decimals (typically 6 for USDC) should be used.
+### 4. `GET /api/v1/vaults/new` (#643)
+- Returns vaults created within the given number of days (1–30, default 7).
+- Accepts `days` query param to adjust the window.
+- Returns the same vault shape as `GET /api/v1/vaults`.
 
 ## Verification
 
-- Ran `cargo test` in `soroban-contracts/contracts/single_rwa_vault` to ensure all tests pass, including the updated constructor tests.
-- Verified that all new public functions are correctly exposed in the contract implementation.
-- Fixed `InitParams` initializations across the entire test suite to include the new `operator_fee_bps` field.
-- Adjusted `require_valid_address` to allow the contract's own address, supporting established "always-true" KYC bypass patterns used in tests.
-- Updated `test_lifecycle` overflow tests with larger funding targets to prevent `FundingTargetExceeded` errors.
-
-## Checklist
-- [x] Standardized naming for boolean getters (`is_pause`).
-- [x] Documented trust boundaries for cooperator role.
-- [x] Clarified decimal handling for client-side formatting.
-- [x] All tests passing.
+- `npm run lint` — clean (0 errors, 0 warnings)
+- `npm run build` — success
+- `npm run test` — all unit tests pass (2 pre-existing E2E failures require database)
+- New routes registered before `/:contractId` to avoid Express route conflicts
