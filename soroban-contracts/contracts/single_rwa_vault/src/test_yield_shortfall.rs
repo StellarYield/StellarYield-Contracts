@@ -326,7 +326,7 @@ fn test_resolve_zero_shortfall() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #52)")] // InsufficientShortfall
+#[should_panic(expected = "Error(Contract, #2)")] // InsufficientShortfall
 fn test_resolve_amount_exceeds_shortfall() {
     let ctx = activated_ctx(20_000);
     dist(&ctx, 20_000);

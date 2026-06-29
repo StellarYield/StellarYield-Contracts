@@ -113,6 +113,9 @@ fn inject_vault(e: &Env, factory_id: &Address, active: bool) -> Address {
         symbol: String::from_str(e, "TV"),
         active,
         created_at: e.ledger().timestamp(),
+        operator_fee_bps: 0,
+        maturity_date: 0,
+        expected_apy: 0,
     };
 
     // Write inside the factory contract context so storage keys resolve
@@ -154,6 +157,9 @@ fn test_get_vault_info_includes_underlying_asset() {
         symbol: String::from_str(&e, "AT"),
         active: true,
         created_at: e.ledger().timestamp(),
+        operator_fee_bps: 0,
+        maturity_date: 0,
+        expected_apy: 0,
     };
 
     e.as_contract(&factory_id, || {
@@ -845,6 +851,9 @@ fn test_mixed_vault_types_registry_filtering() {
         symbol: String::from_str(&e, "AGG"),
         active: true,
         created_at: e.ledger().timestamp(),
+        operator_fee_bps: 0,
+        maturity_date: 0,
+        expected_apy: 0,
     };
     e.as_contract(&factory_id, || {
         put_vault_info(&e, &aggregator_vault, aggregator_info);
@@ -1172,4 +1181,22 @@ fn test_list_recent_vaults_returns_newest_first() {
     assert_eq!(all_recent.get(1).unwrap(), v4);
     assert_eq!(all_recent.get(2).unwrap(), v3);
     assert_eq!(all_recent.get(3).unwrap(), v2);
+}
+
+#[soroban_sdk::contract]
+struct MockDecimalsToken;
+
+#[soroban_sdk::contractimpl]
+impl MockDecimalsToken {
+    pub fn decimals(_env: soroban_sdk::Env) -> u32 {
+        9
+    }
+}
+
+#[test]
+fn test_decimals_query_retrieves_mock_decimals() {
+    let e = Env::default();
+    let token_address = e.register(MockDecimalsToken {}, ());
+    let token_client = soroban_sdk::token::Client::new(&e, &token_address);
+    assert_eq!(token_client.decimals(), 9);
 }

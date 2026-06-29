@@ -907,13 +907,17 @@ impl VaultFactory {
         ));
         let salt = e.crypto().sha256(&salt_bytes);
 
+        // Retrieve actual token decimals of the underlying asset
+        let token_client = soroban_sdk::token::Client::new(e, &vault_asset);
+        let decimals = token_client.decimals();
+
         // Build the InitParams struct for the vault constructor.
         // Using a struct keeps us under Soroban's 10-arg limit per function.
         let init_params = SingleRwaVaultInitParams {
             asset: vault_asset.clone(),
             share_name: name.clone(),
             share_symbol: symbol.clone(),
-            share_decimals: 6u32, // USDC convention
+            share_decimals: decimals,
             admin: admin.clone(),
             zkme_verifier: zkme.clone(),
             cooperator: coop.clone(),
