@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAdminStats, getAdminIndexer, getAdminEvents, getVaultAudit, backfillIndexer, deleteApiKey, getApiKeys, getWebhookDeliveries } from "../controllers/admin.js";
+import { getAdminStats, getAdminIndexer, getAdminEvents, getVaultAudit, backfillIndexer, deleteApiKey, getApiKeys, getWebhookDeliveries, getArchivedVaults, getTotalSupplyConsistency, getDbStats } from "../controllers/admin.js";
 import { requireApiKey } from "../middleware/auth.js";
 
 export const adminRouter = Router();
@@ -10,15 +10,10 @@ adminRouter.get("/stats", getAdminStats);
 adminRouter.get("/indexer", getAdminIndexer);
 adminRouter.post("/indexer/backfill", backfillIndexer);
 adminRouter.get("/events", getAdminEvents);
-// Per-vault audit trail: GET /api/v1/admin/vaults/:contractId/audit
 adminRouter.get("/vaults/:contractId/audit", getVaultAudit);
-// List archived vaults: GET /api/v1/admin/vaults/archived (#675)
 adminRouter.get("/vaults/archived", getArchivedVaults);
-// Total-supply consistency check: GET /api/v1/admin/consistency/total-supply (#673)
 adminRouter.get("/consistency/total-supply", getTotalSupplyConsistency);
-// List API keys: GET /api/v1/admin/api-keys
 adminRouter.get("/api-keys", getApiKeys);
-// Delete API key: DELETE /api/v1/admin/api-keys/:id
 adminRouter.delete("/api-keys/:id", deleteApiKey);
-// Webhook delivery attempts: GET /api/v1/admin/webhooks/:id/deliveries
 adminRouter.get("/webhooks/:id/deliveries", getWebhookDeliveries);
+adminRouter.get("/db/stats", getDbStats);
