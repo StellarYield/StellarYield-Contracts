@@ -227,3 +227,47 @@ export async function readEpochData(
     timestamp: BigInt(raw.timestamp ?? raw[2] ?? 0n),
   };
 }
+
+/**
+ * Read the paused state of the vault.
+ * Returns true if the vault is paused, false if it is active.
+ *
+ * Closes #685
+ */
+export async function readPaused(contractId: string): Promise<boolean> {
+  const value = await simulateRead<boolean>(contractId, "is_paused");
+  return Boolean(value);
+}
+
+/**
+ * Read the cooperator address for the vault.
+ * Returns a Stellar address string.
+ *
+ * Closes #686
+ */
+export async function readCooperator(contractId: string): Promise<string> {
+  const raw = await simulateRead<string | Record<string, unknown>>(contractId, "cooperator");
+  return typeof raw === "string" ? raw : String(Object.values(raw)[0] ?? "");
+}
+
+/**
+ * Read the minimum deposit amount for the vault.
+ * Returns 0n if no minimum is set, or the minimum amount as a bigint.
+ *
+ * Closes #687
+ */
+export async function readMinDeposit(contractId: string): Promise<bigint> {
+  const value = await simulateRead<bigint>(contractId, "min_deposit");
+  return BigInt(value ?? 0n);
+}
+
+/**
+ * Read the operator approval threshold for multi-sig operations.
+ * Returns the current threshold as a number.
+ *
+ * Closes #684
+ */
+export async function readOperatorThreshold(contractId: string): Promise<number> {
+  const value = await simulateRead<number>(contractId, "operator_threshold");
+  return Number(value ?? 0);
+}

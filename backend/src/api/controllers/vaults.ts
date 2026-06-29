@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { createHash } from "crypto";
 import { z } from "zod";
 import { VaultService } from "../../services/vault.js";
-import { readTotalAssets, readVaultState } from "../../services/stellar.js";
+import { readTotalAssets, readVaultState, readPaused } from "../../services/stellar.js";
 import { query } from "../../db/index.js";
 
 const vaultService = new VaultService();
@@ -113,8 +113,10 @@ export async function getVault(req: Request, res: Response, next: NextFunction) 
 
 export async function getVaultLiveState(req: Request, res: Response) {
   try {
-    const state = await readVaultState(String(req.params["contractId"]));
-    res.json({ state });
+    const contractId = String(req.params["contractId"]);
+    const state = await readVaultState(contractId);
+    const paused = await readPaused(contractId);
+    res.json({ state, paused });
   } catch (_err) {
     res.status(500).json({
       error: "RpcError",
