@@ -93,6 +93,11 @@ const envSchema = z.object({
     .default("500")
     .transform((v) => parseInt(v, 10))
     .pipe(z.number().int().min(1)),
+  EVENTS_RETENTION_DAYS: z
+    .string()
+    .default("90")
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(1)),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -147,4 +152,6 @@ export const config = {
     public: parsed.data.RATE_LIMIT_PUBLIC,
     auth: parsed.data.RATE_LIMIT_AUTH,
   },
+
+  eventsRetentionDays: parsed.data.EVENTS_RETENTION_DAYS,
 } as const;
