@@ -124,13 +124,6 @@ export async function getApiKeys(_req: Request, res: Response, next: NextFunctio
   }
 }
 
-/**
- * GET /api/v1/admin/webhooks/:id/deliveries
- *
- * Returns delivery attempts for a specific webhook, ordered by most recent first.
- * Paginated with `page` and `pageSize` (max 50).
- * 404 if the webhook ID does not exist.
- */
 export async function getWebhookDeliveries(req: Request, res: Response, next: NextFunction) {
   try {
     const webhookId = parseInt(req.params["id"] as string, 10);
@@ -222,18 +215,6 @@ export async function getAdminEvents(req: Request, res: Response, next: NextFunc
   }
 }
 
-/**
- * GET /api/v1/admin/vaults/:contractId/audit
- *
- * Returns the indexed event history for a specific vault contract,
- * providing a full audit trail of all on-chain activity (deposits,
- * withdrawals, yield distributions, state transitions, etc.).
- *
- * Query params:
- *   - limit   (1–200, default 50)
- *   - offset  (default 0)
- *   - eventType  (optional filter, e.g. "deposit", "withdraw")
- */
 export async function getVaultAudit(req: Request, res: Response, next: NextFunction) {
   try {
     const parsed = contractAddressSchema.safeParse(req.params["contractId"]);
@@ -262,7 +243,6 @@ export async function getVaultAudit(req: Request, res: Response, next: NextFunct
       params,
     );
 
-    // Total count for pagination metadata
     const countParams: any[] = [contractId];
     const countEventTypeFilter = eventType ? `AND event_type = $${countParams.push(eventType)}` : "";
     const countRows = await query<{ count: string }>(
@@ -280,14 +260,6 @@ export async function getVaultAudit(req: Request, res: Response, next: NextFunct
   }
 }
 
-/**
- * GET /api/v1/admin/vaults/archived
- *
- * Returns all vaults that have been archived (soft-deleted), ordered by
- * most recently archived first (#675).
- *
- * Requires: API key with admin role.
- */
 export async function getArchivedVaults(_req: Request, res: Response, next: NextFunction) {
   try {
     const { VaultService } = await import("../../services/vault.js");
@@ -299,25 +271,6 @@ export async function getArchivedVaults(_req: Request, res: Response, next: Next
   }
 }
 
-/**
- * GET /api/v1/admin/consistency/total-supply
- *
- * Checks consistency between database total_supply and on-chain total supply
- * for a specific vault (#673).
- *
- * Query params:
- *   - contractId (required)
- *
- * Returns:
- *   - dbTotalSupply: string (from database)
- *   - chainTotalSupply: string (from on-chain contract call)
- *   - delta: string (chainTotalSupply - dbTotalSupply)
- *   - consistent: boolean (true only when delta === "0")
- *
- * All numeric values are returned as strings to avoid JSON precision loss.
- *
- * Requires: API key with admin role.
- */
 export async function getTotalSupplyConsistency(req: Request, res: Response, next: NextFunction) {
   try {
     const contractId = req.query["contractId"] as string | undefined;
@@ -357,6 +310,33 @@ export async function getTotalSupplyConsistency(req: Request, res: Response, nex
       chainTotalSupply: chainTotalSupply.toString(),
       delta: delta.toString(),
       consistent,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDbStats(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await query<{
+      relname: string;
+      n_live_tup: string;
+      total_bytes: string;
+    }>(
+      `SELECT
+         relname,
+         n_live_tup::text,
+         pg_total_relation_size(relid)::text AS total_bytes
+       FROM pg_stat_user_tables
+       ORDER BY pg_total_relation_size(relid) DESC`,
+    );
+
+    res.json({
+      tables: rows.map((r) => ({
+        name: r.relname,
+        rowEstimate: parseInt(r.n_live_tup, 10),
+        totalSizeBytes: parseInt(r.total_bytes, 10),
+      })),
     });
   } catch (err) {
     next(err);
