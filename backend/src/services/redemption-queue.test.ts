@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../../db/index.js", () => ({ query: vi.fn() }));
-vi.mock("../../logger.js", () => ({
+vi.mock("../db/index.js", () => ({ query: vi.fn() }));
+vi.mock("../logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock("../../services/stellar.js", () => ({ getSorobanRpc: vi.fn() }));
-vi.mock("../../services/notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
+vi.mock("./stellar.js", () => ({ getSorobanRpc: vi.fn() }));
+vi.mock("./notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
 
 import { xdr } from "@stellar/stellar-sdk";
-import { VaultService } from "../../services/vault.js";
-import { Indexer, parseRequestEarlyRedemptionEvent } from "../../services/indexer.js";
+import { VaultService } from "./vault.js";
+import { Indexer, parseRequestEarlyRedemptionEvent } from "./indexer.js";
 
 const VAULT_CONTRACT = "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B";
 const ACCOUNT = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
@@ -25,7 +25,7 @@ describe("VaultService - getRedemptionQueue", () => {
   });
 
   it("returns an empty array when vault has no unprocessed requests", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     query.mockResolvedValue([]);
 
     const queue = await service.getRedemptionQueue(VAULT_CONTRACT);
@@ -37,7 +37,7 @@ describe("VaultService - getRedemptionQueue", () => {
   });
 
   it("returns unprocessed requests ordered by request_time ASC", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const now = new Date();
     const earlier = new Date(now.getTime() - 60000);
     const latest = new Date(now.getTime() + 60000);
@@ -73,7 +73,7 @@ describe("VaultService - getRedemptionQueue", () => {
   });
 
   it("excludes processed requests from the queue", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     query.mockResolvedValue([
       {
         id: 1,
@@ -93,7 +93,7 @@ describe("VaultService - getRedemptionQueue", () => {
   });
 
   it("returns correctly mapped field names (userAddress not user_address)", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     query.mockResolvedValue([
       {
         id: 42,
@@ -118,14 +118,11 @@ describe("parseRequestEarlyRedemptionEvent", () => {
     const mockEvent = {
       topic: [
         xdr.ScVal.scvSymbol("erq_req"),
-        xdr.ScVal.scvAddress(xdr.Address.typeAccount(new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 42)))),
+        xdr.ScVal.scvAddress(new xdr.ScAddress(xdr.ScAddressType.scAddressTypeAccount(), new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 42)))),
       ],
       value: xdr.ScVal.scvVec([
         xdr.ScVal.scvU32(1),
-        xdr.ScVal.scvU128(xdr.Uint128Parts.fromXDRObject({
-          lo: xdr.Uint64.fromString("1000"),
-          hi: xdr.Uint64.fromString("0"),
-        })),
+        xdr.ScVal.scvU128(new xdr.UInt128Parts({ lo: xdr.Uint64.fromString("1000"), hi: xdr.Uint64.fromString("0") })),
         xdr.ScVal.scvU64(xdr.Uint64.fromString("1609459200")),
       ]),
     };
@@ -154,7 +151,7 @@ describe("parseRequestEarlyRedemptionEvent", () => {
     const mockEvent = {
       topic: [
         xdr.ScVal.scvSymbol("deposit"),
-        xdr.ScVal.scvAddress(xdr.Address.typeAccount(new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 42)))),
+        xdr.ScVal.scvAddress(new xdr.ScAddress(xdr.ScAddressType.scAddressTypeAccount(), new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 42)))),
       ],
       value: xdr.ScVal.scvVoid(),
     };
@@ -180,14 +177,14 @@ describe("Indexer - request_early_redemption handler", () => {
   });
 
   it("inserts new redemption request when event is processed", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     
-    // First call: lookup vault
-    // Second call: insert redemption request
+    // processEvent first checks for duplicates, then vault, then inserts
     query
+      .mockResolvedValueOnce([]) // check existing event (no duplicate)
       .mockResolvedValueOnce([{ id: 10 }]) // vault lookup
       .mockResolvedValueOnce([]) // insert redemption request
-      .mockResolvedValueOnce([]) // check existing event
+      .mockResolvedValueOnce([]) // queue position count
       .mockResolvedValueOnce([{ id: 0 }]); // indexed_events insert
 
     const mockEvent = {
@@ -198,14 +195,11 @@ describe("Indexer - request_early_redemption handler", () => {
       txHash: "hash123",
       topic: [
         xdr.ScVal.scvSymbol("request_early_redemption"),
-        xdr.ScVal.scvAddress(xdr.Address.typeAccount(new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 99)))),
+        xdr.ScVal.scvAddress(new xdr.ScAddress(xdr.ScAddressType.scAddressTypeAccount(), new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 99)))),
       ],
       value: xdr.ScVal.scvVec([
         xdr.ScVal.scvU32(1),
-        xdr.ScVal.scvU128(xdr.Uint128Parts.fromXDRObject({
-          lo: xdr.Uint64.fromString("500"),
-          hi: xdr.Uint64.fromString("0"),
-        })),
+        xdr.ScVal.scvU128(new xdr.UInt128Parts({ lo: xdr.Uint64.fromString("500"), hi: xdr.Uint64.fromString("0") })),
         xdr.ScVal.scvU64(xdr.Uint64.fromString("1609459200")),
       ]),
     };
@@ -219,8 +213,8 @@ describe("Indexer - request_early_redemption handler", () => {
   });
 
   it("skips insertion when vault not found", async () => {
-    const { query } = await import("../../db/index.js");
-    const { logger } = await import("../../logger.js");
+    const { query } = await import("../db/index.js");
+    const { logger } = await import("../logger.js");
 
     // Vault not found
     query.mockResolvedValueOnce([]);
@@ -233,14 +227,11 @@ describe("Indexer - request_early_redemption handler", () => {
       txHash: "hash456",
       topic: [
         xdr.ScVal.scvSymbol("request_early_redemption"),
-        xdr.ScVal.scvAddress(xdr.Address.typeAccount(new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 88)))),
+        xdr.ScVal.scvAddress(new xdr.ScAddress(xdr.ScAddressType.scAddressTypeAccount(), new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 88)))),
       ],
       value: xdr.ScVal.scvVec([
         xdr.ScVal.scvU32(2),
-        xdr.ScVal.scvU128(xdr.Uint128Parts.fromXDRObject({
-          lo: xdr.Uint64.fromString("100"),
-          hi: xdr.Uint64.fromString("0"),
-        })),
+        xdr.ScVal.scvU128(new xdr.UInt128Parts({ lo: xdr.Uint64.fromString("100"), hi: xdr.Uint64.fromString("0") })),
         xdr.ScVal.scvU64(xdr.Uint64.fromString("1609459200")),
       ]),
     };
@@ -251,14 +242,15 @@ describe("Indexer - request_early_redemption handler", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("handles duplicate events idempotently (ON CONFLICT DO NOTHING)", async () => {
-    const { query } = await import("../../db/index.js");
+  it("handles duplicate events idempotently (ON CONFLICT DO UPDATE)", async () => {
+    const { query } = await import("../db/index.js");
 
-    // First call: vault lookup
+    // processEvent checks for duplicate first, then vault, then inserts
     query
+      .mockResolvedValueOnce([]) // check existing event (no duplicate)
       .mockResolvedValueOnce([{ id: 10 }]) // vault lookup
       .mockResolvedValueOnce([]) // insert (should do nothing on duplicate)
-      .mockResolvedValueOnce([]) // check existing event (empty, so not skipped at start)
+      .mockResolvedValueOnce([]) // queue position count
       .mockResolvedValueOnce([{ id: 0 }]); // indexed_events insert
 
     const mockEvent = {
@@ -269,14 +261,11 @@ describe("Indexer - request_early_redemption handler", () => {
       txHash: "hash789",
       topic: [
         xdr.ScVal.scvSymbol("request_early_redemption"),
-        xdr.ScVal.scvAddress(xdr.Address.typeAccount(new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 77)))),
+        xdr.ScVal.scvAddress(new xdr.ScAddress(xdr.ScAddressType.scAddressTypeAccount(), new xdr.PublicKey.publicKeyTypeEd25519(Buffer.alloc(32, 77)))),
       ],
       value: xdr.ScVal.scvVec([
         xdr.ScVal.scvU32(3),
-        xdr.ScVal.scvU128(xdr.Uint128Parts.fromXDRObject({
-          lo: xdr.Uint64.fromString("250"),
-          hi: xdr.Uint64.fromString("0"),
-        })),
+        xdr.ScVal.scvU128(new xdr.UInt128Parts({ lo: xdr.Uint64.fromString("250"), hi: xdr.Uint64.fromString("0") })),
         xdr.ScVal.scvU64(xdr.Uint64.fromString("1609459200")),
       ]),
     };
@@ -287,7 +276,7 @@ describe("Indexer - request_early_redemption handler", () => {
     const calls = (query as any).mock.calls;
     const insertCall = calls.find((c: any) => c[0].includes("ON CONFLICT"));
     expect(insertCall).toBeDefined();
-    expect(insertCall[0]).toContain("DO NOTHING");
+    expect(insertCall[0]).toContain("DO UPDATE");
   });
 });
 
@@ -302,7 +291,7 @@ describe("Redemption Queue - edge cases", () => {
   });
 
   it("handles very large share amounts", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const largeAmount = "99999999999999999999999999.99";
     
     query.mockResolvedValue([
@@ -319,7 +308,7 @@ describe("Redemption Queue - edge cases", () => {
   });
 
   it("handles multiple requests from same user in same vault", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const baseTime = new Date();
     
     query.mockResolvedValue([
@@ -344,7 +333,7 @@ describe("Redemption Queue - edge cases", () => {
   });
 
   it("correctly filters by vault contract ID", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const otherVault = "COTHER123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     
     query.mockResolvedValue([]);
@@ -369,7 +358,7 @@ describe("Redemption Queue - happy path scenarios", () => {
   });
 
   it("single unprocessed request appears in queue", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const now = new Date();
     
     query.mockResolvedValue([
@@ -390,7 +379,7 @@ describe("Redemption Queue - happy path scenarios", () => {
   });
 
   it("multiple requests are ordered by request_time ASC", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const early = new Date("2024-01-01");
     const mid = new Date("2024-01-02");
     const late = new Date("2024-01-03");
@@ -407,7 +396,7 @@ describe("Redemption Queue - happy path scenarios", () => {
   });
 
   it("returns all fields for each request", async () => {
-    const { query } = await import("../../db/index.js");
+    const { query } = await import("../db/index.js");
     const now = new Date();
     
     query.mockResolvedValue([

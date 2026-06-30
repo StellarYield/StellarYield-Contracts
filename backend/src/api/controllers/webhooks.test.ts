@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../../db/index.js", () => ({ query: vi.fn() }));
+vi.mock("../../services/notifications.js", () => ({
+  validateWebhookUrl: vi.fn().mockResolvedValue(undefined),
+  NotificationService: vi.fn().mockImplementation(() => ({})),
+}));
 
 async function getTestContext() {
   const { query } = await import("../../db/index.js");
@@ -42,6 +46,7 @@ describe("Webhook Controller", () => {
         url: "https://example.com/hook",
         events: ["deposit"],
         active: true,
+        consecutiveFailures: 0,
         createdAt: row.created_at,
       });
     });

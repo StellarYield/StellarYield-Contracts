@@ -1028,44 +1028,6 @@ export class Indexer {
     );
   }
 
-  private async handleOperatorAdded(
-    contractId: string,
-    ev: { operator: string; timestamp: bigint },
-  ): Promise<void> {
-    const vaultRow = await query<{ id: number }>(
-      "SELECT id FROM vaults WHERE contract_id = $1",
-      [contractId],
-    );
-    if (vaultRow.length === 0) return;
-    const vaultId = vaultRow[0].id;
-    const assignedAt = new Date(Number(ev.timestamp) * 1000);
-    await query(
-      `INSERT INTO vault_operators (vault_id, address, active, assigned_at, updated_at)
-       VALUES ($1, $2, TRUE, $3, NOW())
-       ON CONFLICT (vault_id, address) DO UPDATE SET active = TRUE, updated_at = NOW()`,
-      [vaultId, ev.operator, assignedAt],
-    );
-    logger.info({ contractId, operator: ev.operator }, "Processed op_add event");
-  }
-
-  private async handleOperatorRemoved(
-    contractId: string,
-    ev: { operator: string },
-  ): Promise<void> {
-    const vaultRow = await query<{ id: number }>(
-      "SELECT id FROM vaults WHERE contract_id = $1",
-      [contractId],
-    );
-    if (vaultRow.length === 0) return;
-    const vaultId = vaultRow[0].id;
-    await query(
-      `UPDATE vault_operators SET active = FALSE, updated_at = NOW()
-       WHERE vault_id = $1 AND address = $2`,
-      [vaultId, ev.operator],
-    );
-    logger.info({ contractId, operator: ev.operator }, "Processed op_rem event");
-  }
-
   private async handleZkmeVerifierUpdated(
     contractId: string,
     ev: { newVerifier: string },

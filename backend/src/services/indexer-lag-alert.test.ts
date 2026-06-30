@@ -35,13 +35,13 @@ describe("Indexer lag alert (#672)", () => {
     getEvents: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mockServer = {
       getLatestLedger: vi.fn(),
       getEvents: vi.fn().mockResolvedValue({ events: [], latestLedger: 1000 }),
     };
-    const { getSorobanRpc } = require("./stellar.js");
+    const { getSorobanRpc } = await import("./stellar.js");
     (getSorobanRpc as any).mockReturnValue(mockServer);
     indexer = new Indexer();
     indexer["lastLedger"] = 900;
@@ -75,11 +75,11 @@ describe("Indexer lag alert (#672)", () => {
 
   it("logs error on every tick when lagging", async () => {
     mockServer.getLatestLedger.mockResolvedValue({ sequence: 1050 });
-    indexer["lastLedger"] = 900;
 
-    await indexer.tick();
-    await indexer.tick();
-    await indexer.tick();
+    for (let i = 0; i < 3; i++) {
+      indexer["lastLedger"] = 900;
+      await indexer.tick();
+    }
 
     expect(logger.error).toHaveBeenCalledTimes(3);
   });

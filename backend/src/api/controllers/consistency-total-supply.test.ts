@@ -45,8 +45,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
     const { VaultService } = await import("../../services/vault.js");
     const { readTotalSupply } = await import("../../services/stellar.js");
 
-    const mockVaultService = new VaultService();
-    vi.mocked(mockVaultService.getVault).mockResolvedValue({
+    const mockGetVault = vi.fn().mockResolvedValue({
       id: 1,
       contractId: CONTRACT_ID,
       factoryId: null,
@@ -72,6 +71,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    vi.mocked(VaultService).mockReturnValue({ getVault: mockGetVault });
 
     vi.mocked(readTotalSupply).mockResolvedValue(5000n);
 
@@ -91,8 +91,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
     const { VaultService } = await import("../../services/vault.js");
     const { readTotalSupply } = await import("../../services/stellar.js");
 
-    const mockVaultService = new VaultService();
-    vi.mocked(mockVaultService.getVault).mockResolvedValue({
+    const mockGetVault2 = vi.fn().mockResolvedValue({
       id: 1,
       contractId: CONTRACT_ID,
       factoryId: null,
@@ -118,6 +117,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    vi.mocked(VaultService).mockReturnValue({ getVault: mockGetVault2 });
 
     vi.mocked(readTotalSupply).mockResolvedValue(5000n);
 
@@ -137,8 +137,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
     const { VaultService } = await import("../../services/vault.js");
     const { readTotalSupply } = await import("../../services/stellar.js");
 
-    const mockVaultService = new VaultService();
-    vi.mocked(mockVaultService.getVault).mockResolvedValue({
+    const mockGetVault3 = vi.fn().mockResolvedValue({
       id: 1,
       contractId: CONTRACT_ID,
       factoryId: null,
@@ -165,6 +164,8 @@ describe("getTotalSupplyConsistency (#673)", () => {
       updatedAt: new Date(),
     });
 
+    vi.mocked(VaultService).mockReturnValue({ getVault: mockGetVault3 });
+
     vi.mocked(readTotalSupply).mockResolvedValue(5000n);
 
     await getTotalSupplyConsistency(mockReq as Request, mockRes as Response, mockNext);
@@ -183,8 +184,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
     const { VaultService } = await import("../../services/vault.js");
     const { readTotalSupply } = await import("../../services/stellar.js");
 
-    const mockVaultService = new VaultService();
-    vi.mocked(mockVaultService.getVault).mockResolvedValue({
+    const mockGetVault4 = vi.fn().mockResolvedValue({
       id: 1,
       contractId: CONTRACT_ID,
       factoryId: null,
@@ -210,6 +210,8 @@ describe("getTotalSupplyConsistency (#673)", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+
+    vi.mocked(VaultService).mockReturnValue({ getVault: mockGetVault4 });
 
     vi.mocked(readTotalSupply).mockResolvedValue(5100n);
 
@@ -236,8 +238,8 @@ describe("getTotalSupplyConsistency (#673)", () => {
     mockReq.query = { contractId: CONTRACT_ID };
 
     const { VaultService } = await import("../../services/vault.js");
-    const mockVaultService = new VaultService();
-    vi.mocked(mockVaultService.getVault).mockResolvedValue(null);
+    const mockGetVaultNull = vi.fn().mockResolvedValue(null);
+    vi.mocked(VaultService).mockReturnValue({ getVault: mockGetVaultNull });
 
     await getTotalSupplyConsistency(mockReq as Request, mockRes as Response, mockNext);
 
@@ -254,8 +256,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
     const { VaultService } = await import("../../services/vault.js");
     const { readTotalSupply } = await import("../../services/stellar.js");
 
-    const mockVaultService = new VaultService();
-    vi.mocked(mockVaultService.getVault).mockResolvedValue({
+    const mockGetVault5 = vi.fn().mockResolvedValue({
       id: 1,
       contractId: CONTRACT_ID,
       factoryId: null,
@@ -282,6 +283,7 @@ describe("getTotalSupplyConsistency (#673)", () => {
       updatedAt: new Date(),
     });
 
+    vi.mocked(VaultService).mockReturnValue({ getVault: mockGetVault5 });
     vi.mocked(readTotalSupply).mockRejectedValue(new Error("RPC timeout"));
 
     await getTotalSupplyConsistency(mockReq as Request, mockRes as Response, mockNext);

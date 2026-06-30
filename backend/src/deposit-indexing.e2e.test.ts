@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./db/index.js", () => ({ query: vi.fn().mockResolvedValue([]) }));
 vi.mock("./logger.js", () => ({
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), child: vi.fn().mockReturnThis() },
 }));
 vi.mock("./services/stellar.js", () => ({ getSorobanRpc: vi.fn() }));
 vi.mock("./services/vault.js", () => ({

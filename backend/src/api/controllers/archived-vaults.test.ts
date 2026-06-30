@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { Request, Response, NextFunction } from "express";
 import { getArchivedVaults } from "./admin.js";
-import * as vault from "../../services/vault.js";
 
 vi.mock("../../services/vault.js", () => ({
   VaultService: vi.fn().mockImplementation(() => ({
@@ -82,8 +81,9 @@ describe("getArchivedVaults (#675)", () => {
       },
     ];
 
-    const mockVaultService = new vault.VaultService();
-    vi.mocked(mockVaultService.listArchivedVaults).mockResolvedValue(mockVaults);
+    const { VaultService } = await import("../../services/vault.js");
+    const mockListArchivedVaults = vi.fn().mockResolvedValue(mockVaults);
+    vi.mocked(VaultService).mockReturnValue({ listArchivedVaults: mockListArchivedVaults });
 
     await getArchivedVaults(mockReq as Request, mockRes as Response, mockNext);
 
@@ -91,8 +91,9 @@ describe("getArchivedVaults (#675)", () => {
   });
 
   it("returns empty array when no archived vaults exist", async () => {
-    const mockVaultService = new vault.VaultService();
-    vi.mocked(mockVaultService.listArchivedVaults).mockResolvedValue([]);
+    const { VaultService } = await import("../../services/vault.js");
+    const mockListArchivedVaults = vi.fn().mockResolvedValue([]);
+    vi.mocked(VaultService).mockReturnValue({ listArchivedVaults: mockListArchivedVaults });
 
     await getArchivedVaults(mockReq as Request, mockRes as Response, mockNext);
 
@@ -101,8 +102,9 @@ describe("getArchivedVaults (#675)", () => {
 
   it("calls next on error", async () => {
     const error = new Error("Database error");
-    const mockVaultService = new vault.VaultService();
-    vi.mocked(mockVaultService.listArchivedVaults).mockRejectedValue(error);
+    const { VaultService } = await import("../../services/vault.js");
+    const mockListArchivedVaults = vi.fn().mockRejectedValue(error);
+    vi.mocked(VaultService).mockReturnValue({ listArchivedVaults: mockListArchivedVaults });
 
     await getArchivedVaults(mockReq as Request, mockRes as Response, mockNext);
 
