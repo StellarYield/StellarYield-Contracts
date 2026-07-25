@@ -14,6 +14,10 @@
     "db:migrate": "node dist/db/migrate.js",
     "db:seed": "tsx src/db/seed.ts",
     "generate-key": "tsx src/scripts/generate-api-key.ts",
+    "rebuild-positions": "tsx src/scripts/rebuild-positions.ts",
+    "export-data": "tsx src/scripts/export-data.ts",
+    "check-indexer": "tsx src/scripts/check-indexer.ts",
+    "rotate-api-key": "tsx src/scripts/rotate-api-key.ts",
     "indexer": "node dist/indexer/index.js",
     "operator-expiry-task": "node dist/tasks/operatorExpiry.js"
   },
