@@ -14,6 +14,8 @@ import { adminRouter } from "./api/routes/admin.js";
 import { webhooksRouter } from "./api/routes/webhooks.js";
 import { errorHandler } from "./api/middleware/errors.js";
 import { requestId } from "./api/middleware/requestId.js";
+import { internalAuth } from "./api/middleware/internalAuth.js";
+import { internalRouter } from "./api/routes/internal.js";
 import { publicLimiter, authLimiter } from "./api/middleware/rateLimit.js";
 import { httpRequestsTotal, getMetrics } from "./services/metrics.js";
 import { setupOpenApiRoutes } from "./services/openapi.js";
@@ -26,7 +28,7 @@ export function createApp(): Express {
 
   app.use(helmet());
   app.use(pinoHttp({ logger }));
-  app.use(express.json());
+  app.use(express.json({ limit: config.requestBodyLimit }));
 
   const origins = config.allowedOrigins;
   if (origins.length > 0) {
@@ -53,6 +55,7 @@ export function createApp(): Express {
   app.use("/api/v1/yields", publicLimiter, yieldsRouter);
   app.use("/api/v1/admin", authLimiter, adminRouter);
   app.use("/api/v1/webhooks", authLimiter, webhooksRouter);
+  app.use("/internal", authLimiter, internalAuth, internalRouter);
   app.all(
     "/graphql",
     publicLimiter,

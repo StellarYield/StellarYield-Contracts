@@ -4,7 +4,7 @@ import { requireApiKey } from "../middleware/auth.js";
 
 export const adminRouter = Router();
 
-adminRouter.use(requireApiKey({ role: "admin" }));
+adminRouter.use(requireApiKey({ minRole: "readonly" }));
 
 adminRouter.get("/stats", getAdminStats);
 adminRouter.get("/indexer", getAdminIndexer);

@@ -145,6 +145,91 @@ describe("requireApiKey middleware (#693)", () => {
     });
   });
 
+  describe("minRole: readonly enforcement (#750)", () => {
+    it("allows a readonly key to call a GET route", async () => {
+      const { query, requireApiKey } = await getTestContext();
+      query.mockResolvedValue([{ id: 1, role: "readonly", label: null }]);
+      const { req, res, next } = makeReqRes("Bearer readonly-key");
+      req.method = "GET";
+
+      await requireApiKey({ minRole: "readonly" })(req, res, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it("rejects a readonly key on a POST route with 403", async () => {
+      const { query, requireApiKey } = await getTestContext();
+      query.mockResolvedValue([{ id: 1, role: "readonly", label: null }]);
+      const { req, res, next } = makeReqRes("Bearer readonly-key");
+      req.method = "POST";
+
+      await requireApiKey({ minRole: "readonly" })(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Forbidden",
+        message: "Insufficient permissions",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("allows an admin key to call a POST route under minRole: readonly", async () => {
+      const { query, requireApiKey } = await getTestContext();
+      query.mockResolvedValue([{ id: 1, role: "admin", label: null }]);
+      const { req, res, next } = makeReqRes("Bearer admin-key");
+      req.method = "POST";
+
+      await requireApiKey({ minRole: "readonly" })(req, res, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("key expiry (#751)", () => {
+    it("returns 401 when the API key has expired", async () => {
+      const { query, requireApiKey } = await getTestContext();
+      query.mockResolvedValue([
+        { id: 1, role: "admin", label: null, expiresAt: new Date(Date.now() - 1000) },
+      ]);
+      const { req, res, next } = makeReqRes("Bearer expired-key");
+
+      await requireApiKey()(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Unauthorized",
+        message: "API key has expired",
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it("allows a key with a future expiry date", async () => {
+      const { query, requireApiKey } = await getTestContext();
+      query.mockResolvedValue([
+        { id: 1, role: "admin", label: null, expiresAt: new Date(Date.now() + 1000 * 60 * 60) },
+      ]);
+      const { req, res, next } = makeReqRes("Bearer valid-key");
+
+      await requireApiKey()(req, res, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it("allows a key with no expiry (expiresAt: null)", async () => {
+      const { query, requireApiKey } = await getTestContext();
+      query.mockResolvedValue([{ id: 1, role: "admin", label: null, expiresAt: null }]);
+      const { req, res, next } = makeReqRes("Bearer valid-key");
+
+      await requireApiKey()(req, res, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+  });
+
   describe("key hashing", () => {
     it("looks the key up by its SHA-256 hash, never the plaintext", async () => {
       const { query, requireApiKey } = await getTestContext();
