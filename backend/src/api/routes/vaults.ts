@@ -35,19 +35,29 @@ import {
 } from "../controllers/vaults.js";
 import { validateParams, validateQuery } from "../middleware/validate.js";
 import { requireApiKey } from "../middleware/auth.js";
+import { parseVaultSort } from "../../services/vault.js";
 
 const contractAddressSchema = z.string().length(56).regex(/^C[A-Z2-7]{55}$/);
 
-const listVaultsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).default(20).transform((value) => Math.min(value, 100)),
-  state: z.string().optional(),
-  category: z.string().optional(),
-  cursor: z.string().optional(),
-  sort: z.enum(["created_at", "total_assets"]).default("created_at"),
-  order: z.enum(["asc", "desc"]).default("desc"),
-  q: z.string().optional(),
-});
+const listVaultsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).default(20).transform((value) => Math.min(value, 100)),
+    state: z.string().optional(),
+    category: z.string().optional(),
+    cursor: z.string().optional(),
+    // Comma-separated `field[:direction]` list, e.g. `state:asc,total_assets:desc` (#855).
+    // A bare field name (`?sort=total_assets`) still takes its direction from `order`.
+    sort: z.string().default("created_at"),
+    order: z.enum(["asc", "desc"]).default("desc"),
+    q: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const parsed = parseVaultSort(value.sort, value.order);
+    if (!parsed.ok) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sort"], message: parsed.message });
+    }
+  });
 
 const vaultParamsSchema = z.object({
   contractId: contractAddressSchema,

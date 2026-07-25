@@ -12,14 +12,112 @@ const TTL_BY_STATE: Record<string, number> = {
 };
 const DEFAULT_TTL = 30;
 
+/**
+ * Columns the vault list endpoint may be sorted by (#855).
+ *
+ * Sort fields are interpolated straight into the ORDER BY clause, so every
+ * incoming value must be matched against this allowlist before it reaches SQL.
+ */
+export const VAULT_SORT_FIELDS = [
+  "created_at",
+  "updated_at",
+  "total_assets",
+  "total_supply",
+  "state",
+  "name",
+] as const;
+
+export type VaultSortField = (typeof VAULT_SORT_FIELDS)[number];
+
+export type SortDirection = "asc" | "desc";
+
+export interface VaultSortSpec {
+  field: VaultSortField;
+  direction: SortDirection;
+}
+
+/** Maximum number of comma-separated sort fields accepted by the vault list endpoint (#855). */
+export const MAX_VAULT_SORT_FIELDS = 3;
+
+export type VaultSortParseResult =
+  | { ok: true; specs: VaultSortSpec[] }
+  | { ok: false; message: string };
+
+function isVaultSortField(value: string): value is VaultSortField {
+  return (VAULT_SORT_FIELDS as readonly string[]).includes(value);
+}
+
+/**
+ * Parse the `sort` query parameter into an ordered list of sort specs (#855).
+ *
+ * Accepts a comma-separated list of `field[:direction]` pairs, e.g.
+ * `state:asc,total_assets:desc`. A pair with no explicit direction falls back to
+ * `defaultOrder`, which keeps the legacy `?sort=total_assets&order=asc` form
+ * working. Returns a failure result rather than throwing, so the route layer can
+ * surface the reason as an HTTP 400.
+ */
+export function parseVaultSort(
+  sort: string | undefined,
+  defaultOrder: SortDirection = "desc",
+): VaultSortParseResult {
+  const raw = (sort ?? "").trim();
+  if (raw === "") {
+    return { ok: true, specs: [{ field: "created_at", direction: defaultOrder }] };
+  }
+
+  const segments = raw.split(",").map((segment) => segment.trim());
+  if (segments.some((segment) => segment === "")) {
+    return { ok: false, message: "sort must not contain empty fields" };
+  }
+  if (segments.length > MAX_VAULT_SORT_FIELDS) {
+    return {
+      ok: false,
+      message: `sort accepts at most ${MAX_VAULT_SORT_FIELDS} fields, received ${segments.length}`,
+    };
+  }
+
+  const specs: VaultSortSpec[] = [];
+  const seen = new Set<string>();
+
+  for (const segment of segments) {
+    const [field, direction, ...rest] = segment.split(":");
+    if (rest.length > 0) {
+      return {
+        ok: false,
+        message: `Invalid sort entry "${segment}", expected "field" or "field:asc|desc"`,
+      };
+    }
+    if (!isVaultSortField(field)) {
+      return {
+        ok: false,
+        message: `Unknown sort field "${field}". Allowed fields: ${VAULT_SORT_FIELDS.join(", ")}`,
+      };
+    }
+    if (direction !== undefined && direction !== "asc" && direction !== "desc") {
+      return {
+        ok: false,
+        message: `Invalid sort direction "${direction}" for field "${field}", expected "asc" or "desc"`,
+      };
+    }
+    if (seen.has(field)) {
+      return { ok: false, message: `Duplicate sort field "${field}"` };
+    }
+    seen.add(field);
+    specs.push({ field, direction: direction ?? defaultOrder });
+  }
+
+  return { ok: true, specs };
+}
+
 interface ListVaultsOptions {
   page: number;
   pageSize: number;
   state?: string;
   category?: string;
   cursor?: string;
-  sort: "created_at" | "total_assets";
-  order: "asc" | "desc";
+  /** Comma-separated `field[:direction]` list — see {@link parseVaultSort} (#855). */
+  sort?: string;
+  order?: SortDirection;
   q?: string; // forwarded from controller; listVaults currently delegates text search to /search
 }
 
@@ -126,9 +224,21 @@ export class VaultService {
     const cached = await cacheGet<PaginatedResponse<Vault>>(cacheKey);
     if (cached) return cached;
 
-    const { page, pageSize, state, category, cursor, sort, order } = opts;
-    const sortColumn = sort === "total_assets" ? "total_assets" : "created_at";
-    const sortDirection = order === "asc" ? "ASC" : "DESC";
+    const { page, pageSize, state, category, cursor, order } = opts;
+
+    // Multi-field sorting (#855). The route layer validates `sort` and returns a
+    // 400 for bad input; re-parsing here keeps unvalidated callers out of SQL.
+    const sortResult = parseVaultSort(opts.sort, order ?? "desc");
+    if (!sortResult.ok) {
+      throw new Error(`Invalid sort parameter: ${sortResult.message}`);
+    }
+    const orderByClause = sortResult.specs
+      .map((spec) => `v.${spec.field} ${spec.direction === "asc" ? "ASC" : "DESC"}`)
+      .join(", ");
+
+    // Cursor pagination keys off (created_at, id), so the tiebreaker and the
+    // cursor comparison both follow the primary sort field's direction.
+    const sortDirection = sortResult.specs[0].direction === "asc" ? "ASC" : "DESC";
     const isDesc = sortDirection === "DESC";
 
     // Decode cursor if provided
@@ -201,7 +311,7 @@ export class VaultService {
                ), 0) AS depositor_count
         FROM vaults v
         ${whereClause}
-        ORDER BY v.${sortColumn} ${sortDirection}, v.id ${sortDirection}
+        ORDER BY ${orderByClause}, v.id ${sortDirection}
         LIMIT $${limitIdx}`;
     } else {
       const offset = (page - 1) * pageSize;
@@ -218,7 +328,7 @@ export class VaultService {
                ), 0) AS depositor_count
         FROM vaults v
         ${whereClause}
-        ORDER BY v.${sortColumn} ${sortDirection}
+        ORDER BY ${orderByClause}
         LIMIT $${limitIdx} OFFSET $${limitIdx + 1}`;
     }
 
