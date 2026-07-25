@@ -139,8 +139,32 @@ function registerPaths(): void {
         page: z.coerce.number().optional(),
         pageSize: z.coerce.number().optional(),
         state: z.string().optional(),
-        sort: z.enum(["created_at", "total_assets"]).optional(),
+        sort: z
+          .string()
+          .optional()
+          .describe(
+            "Comma-separated list of up to 3 `field[:direction]` pairs, e.g. " +
+              "`state:asc,total_assets:desc`. Allowed fields: created_at, updated_at, " +
+              "total_assets, total_supply, state, name. A field with no explicit " +
+              "direction inherits `order`.",
+          ),
         order: z.enum(["asc", "desc"]).optional(),
+        createdFrom: z
+          .string()
+          .optional()
+          .describe("Inclusive lower bound on creation date (ISO 8601 date or date-time)."),
+        createdTo: z
+          .string()
+          .optional()
+          .describe("Inclusive upper bound on creation date (ISO 8601 date or date-time)."),
+        minTotalAssets: z
+          .string()
+          .optional()
+          .describe("Inclusive lower bound on total assets, as a non-negative integer string."),
+        maxTotalAssets: z
+          .string()
+          .optional()
+          .describe("Inclusive upper bound on total assets, as a non-negative integer string."),
       }),
     },
     responses: {
