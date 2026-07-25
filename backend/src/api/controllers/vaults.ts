@@ -33,6 +33,8 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       cursor,
       sort,
       order,
+      createdFrom,
+      createdTo,
       q,
     } = req.query as unknown as {
       page: number;
@@ -42,9 +44,22 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       cursor?: string;
       sort?: string;
       order?: "asc" | "desc";
+      createdFrom?: string;
+      createdTo?: string;
       q?: string;
     };
-    const result = await vaultService.listVaults({ page, pageSize, state, category, cursor, sort, order, q });
+    const result = await vaultService.listVaults({
+      page,
+      pageSize,
+      state,
+      category,
+      cursor,
+      sort,
+      order,
+      createdFrom,
+      createdTo,
+      q,
+    });
     setCacheHeaders(res);
     res.json(result);
   } catch (err) {

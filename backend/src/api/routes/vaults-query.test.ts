@@ -108,3 +108,83 @@ describe("GET /api/v1/vaults sort validation (#855)", () => {
     expect(forwardedOptions()).toMatchObject({ sort: "created_at", order: "desc" });
   });
 });
+
+describe("GET /api/v1/vaults creation date range validation (#856)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listVaults.mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 20 });
+  });
+
+  it("accepts a calendar date range and forwards both bounds", async () => {
+    const res = await request.get(
+      "/api/v1/vaults?createdFrom=2025-01-01&createdTo=2025-06-30",
+    );
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions()).toMatchObject({
+      createdFrom: "2025-01-01",
+      createdTo: "2025-06-30",
+    });
+  });
+
+  it("accepts a full ISO date-time range", async () => {
+    const res = await request.get(
+      "/api/v1/vaults?createdFrom=2025-01-01T00:00:00Z&createdTo=2025-06-30T23:59:59Z",
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts createdFrom on its own as an open-ended filter", async () => {
+    const res = await request.get("/api/v1/vaults?createdFrom=2025-01-01");
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions().createdFrom).toBe("2025-01-01");
+    expect(forwardedOptions().createdTo).toBeUndefined();
+  });
+
+  it("accepts createdTo on its own as an open-ended filter", async () => {
+    const res = await request.get("/api/v1/vaults?createdTo=2025-06-30");
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions().createdTo).toBe("2025-06-30");
+    expect(forwardedOptions().createdFrom).toBeUndefined();
+  });
+
+  it("returns 400 for a malformed date", async () => {
+    const res = await request.get("/api/v1/vaults?createdFrom=not-a-date");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(mocks.listVaults).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a non-ISO date layout", async () => {
+    const res = await request.get("/api/v1/vaults?createdFrom=01/02/2025");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for an ISO-shaped but impossible date", async () => {
+    const res = await request.get("/api/v1/vaults?createdTo=2025-02-30");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when createdFrom is after createdTo", async () => {
+    const res = await request.get(
+      "/api/v1/vaults?createdFrom=2025-06-30&createdTo=2025-01-01",
+    );
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body.issues)).toContain("must not be after");
+  });
+
+  it("allows createdFrom equal to createdTo", async () => {
+    const res = await request.get(
+      "/api/v1/vaults?createdFrom=2025-01-01&createdTo=2025-01-01",
+    );
+
+    expect(res.status).toBe(200);
+  });
+});

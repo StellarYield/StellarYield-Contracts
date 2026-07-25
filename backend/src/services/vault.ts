@@ -118,7 +118,51 @@ interface ListVaultsOptions {
   /** Comma-separated `field[:direction]` list — see {@link parseVaultSort} (#855). */
   sort?: string;
   order?: SortDirection;
+  /** Inclusive lower bound on `created_at`, as an ISO 8601 date or date-time (#856). */
+  createdFrom?: string;
+  /** Inclusive upper bound on `created_at`, as an ISO 8601 date or date-time (#856). */
+  createdTo?: string;
   q?: string; // forwarded from controller; listVaults currently delegates text search to /search
+}
+
+/** Row-selection filters shared by the vault list query and its COUNT companion. */
+interface VaultListFilters {
+  state?: string;
+  category?: string;
+  createdFrom?: string;
+  createdTo?: string;
+}
+
+/**
+ * Build the WHERE fragments common to the vault list query and the COUNT that
+ * produces `total`, so both always select the same set of rows.
+ *
+ * Placeholders are numbered from `startIdx + 1`; `nextIdx` reports the highest
+ * placeholder used so the caller can keep numbering from there. Every bound is
+ * a bound parameter — nothing here is interpolated from user input.
+ */
+function buildVaultListFilters(
+  filters: VaultListFilters,
+  startIdx = 0,
+): { conditions: string[]; params: any[]; nextIdx: number } {
+  const conditions: string[] = [];
+  const params: any[] = [];
+  let idx = startIdx;
+
+  const add = (toCondition: (placeholder: string) => string, value: unknown): void => {
+    idx++;
+    conditions.push(toCondition(`$${idx}`));
+    params.push(value);
+  };
+
+  if (filters.state) add((p) => `v.state = ${p}`, filters.state);
+  if (filters.category) add((p) => `v.rwa_category = ${p}`, filters.category);
+
+  // Creation date range (#856). Either bound may be omitted for an open-ended range.
+  if (filters.createdFrom) add((p) => `v.created_at >= ${p}::timestamptz`, filters.createdFrom);
+  if (filters.createdTo) add((p) => `v.created_at <= ${p}::timestamptz`, filters.createdTo);
+
+  return { conditions, params, nextIdx: idx };
 }
 
 interface VaultRow {
@@ -255,21 +299,16 @@ export class VaultService {
       }
     }
 
-    const conditions: string[] = [];
-    const params: any[] = [];
-    let paramIdx = 0;
-
-    if (state) {
-      paramIdx++;
-      conditions.push(`v.state = $${paramIdx}`);
-      params.push(state);
-    }
-
-    if (category) {
-      paramIdx++;
-      conditions.push(`v.rwa_category = $${paramIdx}`);
-      params.push(category);
-    }
+    const filters: VaultListFilters = {
+      state,
+      category,
+      createdFrom: opts.createdFrom,
+      createdTo: opts.createdTo,
+    };
+    const filtered = buildVaultListFilters(filters);
+    const conditions = filtered.conditions;
+    const params = filtered.params;
+    let paramIdx = filtered.nextIdx;
 
     // Filter out archived vaults from standard list queries (#674)
     conditions.push(`v.archived = FALSE`);
@@ -349,19 +388,8 @@ export class VaultService {
     // Get total count (only when not using cursor, to avoid expensive counts)
     let total = 0;
     if (!cursor) {
-      const countConditions: string[] = [];
-      const countParams: any[] = [];
-      let countIdx = 0;
-      if (state) {
-        countIdx++;
-        countConditions.push(`v.state = $${countIdx}`);
-        countParams.push(state);
-      }
-      if (category) {
-        countIdx++;
-        countConditions.push(`v.rwa_category = $${countIdx}`);
-        countParams.push(category);
-      }
+      const { conditions: countConditions, params: countParams } =
+        buildVaultListFilters(filters);
       const countWhere = countConditions.length > 0 ? `WHERE ${countConditions.join(" AND ")}` : "";
       const countResult = await query<{ count: string }>(
         `SELECT COUNT(*) as count FROM vaults v ${countWhere}`,
