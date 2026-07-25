@@ -35,6 +35,8 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       order,
       createdFrom,
       createdTo,
+      minTotalAssets,
+      maxTotalAssets,
       q,
     } = req.query as unknown as {
       page: number;
@@ -46,6 +48,8 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       order?: "asc" | "desc";
       createdFrom?: string;
       createdTo?: string;
+      minTotalAssets?: string;
+      maxTotalAssets?: string;
       q?: string;
     };
     const result = await vaultService.listVaults({
@@ -58,6 +62,8 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       order,
       createdFrom,
       createdTo,
+      minTotalAssets,
+      maxTotalAssets,
       q,
     });
     setCacheHeaders(res);

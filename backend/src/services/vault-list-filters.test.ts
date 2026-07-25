@@ -121,3 +121,101 @@ describe("VaultService.listVaults creation date range (#856)", () => {
     expect(listCall().sql).toContain("v.archived = FALSE");
   });
 });
+
+describe("VaultService.listVaults total assets range (#857)", () => {
+  let service: VaultService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new VaultService();
+    vi.mocked(db.query).mockResolvedValue([]);
+  });
+
+  it("applies both bounds when a full range is supplied", async () => {
+    await service.listVaults({
+      page: 1,
+      pageSize: 20,
+      minTotalAssets: "1000000",
+      maxTotalAssets: "5000000",
+    });
+
+    const { sql, params } = listCall();
+    expect(sql).toContain("v.total_assets >= $1::numeric");
+    expect(sql).toContain("v.total_assets <= $2::numeric");
+    expect(params).toEqual(expect.arrayContaining(["1000000", "5000000"]));
+  });
+
+  it("applies an open-ended lower bound when only minTotalAssets is supplied", async () => {
+    await service.listVaults({ page: 1, pageSize: 20, minTotalAssets: "1000000" });
+
+    const { sql } = listCall();
+    expect(sql).toContain("v.total_assets >= $1::numeric");
+    expect(sql).not.toContain("v.total_assets <=");
+  });
+
+  it("applies an open-ended upper bound when only maxTotalAssets is supplied", async () => {
+    await service.listVaults({ page: 1, pageSize: 20, maxTotalAssets: "5000000" });
+
+    const { sql } = listCall();
+    expect(sql).toContain("v.total_assets <= $1::numeric");
+    expect(sql).not.toContain("v.total_assets >=");
+  });
+
+  it("adds no TVL predicate when neither bound is supplied", async () => {
+    await service.listVaults({ page: 1, pageSize: 20 });
+
+    const { sql } = listCall();
+    expect(sql).not.toContain("v.total_assets >=");
+    expect(sql).not.toContain("v.total_assets <=");
+  });
+
+  it("treats a zero lower bound as a real filter rather than an absent one", async () => {
+    await service.listVaults({ page: 1, pageSize: 20, minTotalAssets: "0" });
+
+    const { sql, params } = listCall();
+    expect(sql).toContain("v.total_assets >= $1::numeric");
+    expect(params).toEqual(expect.arrayContaining(["0"]));
+  });
+
+  it("keeps amounts beyond Number.MAX_SAFE_INTEGER as exact strings", async () => {
+    const huge = "170141183460469231731687303715884105727";
+
+    await service.listVaults({ page: 1, pageSize: 20, maxTotalAssets: huge });
+
+    const { params } = listCall();
+    expect(params).toEqual(expect.arrayContaining([huge]));
+  });
+
+  it("numbers placeholders correctly when combined with date and state filters", async () => {
+    await service.listVaults({
+      page: 1,
+      pageSize: 20,
+      state: "Active",
+      createdFrom: "2025-01-01",
+      minTotalAssets: "1000000",
+      maxTotalAssets: "5000000",
+    });
+
+    const { sql, params } = listCall();
+    expect(sql).toContain("v.state = $1");
+    expect(sql).toContain("v.created_at >= $2::timestamptz");
+    expect(sql).toContain("v.total_assets >= $3::numeric");
+    expect(sql).toContain("v.total_assets <= $4::numeric");
+    expect(params.slice(0, 4)).toEqual(["Active", "2025-01-01", "1000000", "5000000"]);
+  });
+
+  it("applies the same TVL range to the COUNT query so total matches", async () => {
+    await service.listVaults({
+      page: 1,
+      pageSize: 20,
+      minTotalAssets: "1000000",
+      maxTotalAssets: "5000000",
+    });
+
+    const { sql, params } = countCall();
+    expect(sql).toContain("COUNT(*)");
+    expect(sql).toContain("v.total_assets >= $1::numeric");
+    expect(sql).toContain("v.total_assets <= $2::numeric");
+    expect(params).toEqual(["1000000", "5000000"]);
+  });
+});

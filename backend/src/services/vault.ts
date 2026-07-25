@@ -122,6 +122,10 @@ interface ListVaultsOptions {
   createdFrom?: string;
   /** Inclusive upper bound on `created_at`, as an ISO 8601 date or date-time (#856). */
   createdTo?: string;
+  /** Inclusive lower bound on `total_assets`, as a non-negative integer string (#857). */
+  minTotalAssets?: string;
+  /** Inclusive upper bound on `total_assets`, as a non-negative integer string (#857). */
+  maxTotalAssets?: string;
   q?: string; // forwarded from controller; listVaults currently delegates text search to /search
 }
 
@@ -131,6 +135,8 @@ interface VaultListFilters {
   category?: string;
   createdFrom?: string;
   createdTo?: string;
+  minTotalAssets?: string;
+  maxTotalAssets?: string;
 }
 
 /**
@@ -161,6 +167,11 @@ function buildVaultListFilters(
   // Creation date range (#856). Either bound may be omitted for an open-ended range.
   if (filters.createdFrom) add((p) => `v.created_at >= ${p}::timestamptz`, filters.createdFrom);
   if (filters.createdTo) add((p) => `v.created_at <= ${p}::timestamptz`, filters.createdTo);
+
+  // Total assets (TVL) range (#857). Bound as strings and cast to NUMERIC so
+  // values beyond Number.MAX_SAFE_INTEGER keep full precision.
+  if (filters.minTotalAssets) add((p) => `v.total_assets >= ${p}::numeric`, filters.minTotalAssets);
+  if (filters.maxTotalAssets) add((p) => `v.total_assets <= ${p}::numeric`, filters.maxTotalAssets);
 
   return { conditions, params, nextIdx: idx };
 }
@@ -304,6 +315,8 @@ export class VaultService {
       category,
       createdFrom: opts.createdFrom,
       createdTo: opts.createdTo,
+      minTotalAssets: opts.minTotalAssets,
+      maxTotalAssets: opts.maxTotalAssets,
     };
     const filtered = buildVaultListFilters(filters);
     const conditions = filtered.conditions;

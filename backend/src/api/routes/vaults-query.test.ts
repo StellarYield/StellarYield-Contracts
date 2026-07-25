@@ -188,3 +188,80 @@ describe("GET /api/v1/vaults creation date range validation (#856)", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("GET /api/v1/vaults total assets range validation (#857)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.listVaults.mockResolvedValue({ data: [], total: 0, page: 1, pageSize: 20 });
+  });
+
+  it("accepts a TVL range and forwards both bounds as strings", async () => {
+    const res = await request.get(
+      "/api/v1/vaults?minTotalAssets=1000000&maxTotalAssets=5000000",
+    );
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions()).toMatchObject({
+      minTotalAssets: "1000000",
+      maxTotalAssets: "5000000",
+    });
+  });
+
+  it("accepts minTotalAssets on its own as an open-ended filter", async () => {
+    const res = await request.get("/api/v1/vaults?minTotalAssets=1000000");
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions().maxTotalAssets).toBeUndefined();
+  });
+
+  it("accepts a bound beyond Number.MAX_SAFE_INTEGER without losing precision", async () => {
+    const huge = "170141183460469231731687303715884105727";
+    const res = await request.get(`/api/v1/vaults?maxTotalAssets=${huge}`);
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions().maxTotalAssets).toBe(huge);
+  });
+
+  it("accepts zero as a lower bound", async () => {
+    const res = await request.get("/api/v1/vaults?minTotalAssets=0");
+
+    expect(res.status).toBe(200);
+    expect(forwardedOptions().minTotalAssets).toBe("0");
+  });
+
+  it("returns 400 for a non-numeric value", async () => {
+    const res = await request.get("/api/v1/vaults?minTotalAssets=abc");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(mocks.listVaults).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for a negative value", async () => {
+    const res = await request.get("/api/v1/vaults?minTotalAssets=-1");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 for a fractional value", async () => {
+    const res = await request.get("/api/v1/vaults?maxTotalAssets=1000.5");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when minTotalAssets exceeds maxTotalAssets", async () => {
+    const res = await request.get(
+      "/api/v1/vaults?minTotalAssets=5000000&maxTotalAssets=1000000",
+    );
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body.issues)).toContain("must not be greater than");
+  });
+
+  it("compares the bounds numerically, not lexicographically", async () => {
+    // "9" > "10" as strings, but 9 < 10 as numbers, so this must be accepted.
+    const res = await request.get("/api/v1/vaults?minTotalAssets=9&maxTotalAssets=10");
+
+    expect(res.status).toBe(200);
+  });
+});

@@ -72,6 +72,12 @@ const isoDateSchema = z.string().refine(isValidIsoDate, {
   message: "must be an ISO 8601 date (YYYY-MM-DD) or date-time",
 });
 
+// Token amounts exceed Number.MAX_SAFE_INTEGER, so BigInt-safe strings are kept
+// as strings all the way to the ::numeric cast rather than coerced to a number.
+const nonNegativeAmountSchema = z
+  .string()
+  .regex(/^\d+$/, "must be a non-negative integer");
+
 const listVaultsQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
@@ -86,6 +92,9 @@ const listVaultsQuerySchema = z
     // Creation date range; either bound may stand alone for an open-ended filter (#856).
     createdFrom: isoDateSchema.optional(),
     createdTo: isoDateSchema.optional(),
+    // Total assets (TVL) range; either bound may stand alone (#857).
+    minTotalAssets: nonNegativeAmountSchema.optional(),
+    maxTotalAssets: nonNegativeAmountSchema.optional(),
     q: z.string().optional(),
   })
   .superRefine((value, ctx) => {
@@ -103,6 +112,18 @@ const listVaultsQuerySchema = z
         code: z.ZodIssueCode.custom,
         path: ["createdFrom"],
         message: "createdFrom must not be after createdTo",
+      });
+    }
+
+    if (
+      value.minTotalAssets !== undefined &&
+      value.maxTotalAssets !== undefined &&
+      BigInt(value.minTotalAssets) > BigInt(value.maxTotalAssets)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["minTotalAssets"],
+        message: "minTotalAssets must not be greater than maxTotalAssets",
       });
     }
   });
