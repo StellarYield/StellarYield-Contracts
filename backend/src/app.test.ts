@@ -28,3 +28,14 @@ describe("Security headers (helmet) - #524", () => {
     expect(res.headers["x-frame-options"]).toMatch(/SAMEORIGIN|DENY/);
   });
 });
+
+describe("GraphQL schema export - #773", () => {
+  it("GET /api/graphql/schema returns parseable SDL", async () => {
+    const { default: supertest } = await import("supertest");
+    const { buildSchema } = await import("graphql");
+    const res = await supertest(app).get("/api/graphql/schema");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/application\/graphql/);
+    expect(() => buildSchema(res.text)).not.toThrow();
+  });
+});

@@ -15,8 +15,16 @@ export const schema = buildSchema(`
     distributedAt: String
   }
 
+  type ApiKey {
+    id: ID!
+    label: String
+    role: String!
+    createdAt: String!
+  }
+
   type Query {
     user(address: String!): User
     epochs(contractId: String!): [Epoch!]!
+    apiKeys: [ApiKey!]!
   }
 `);

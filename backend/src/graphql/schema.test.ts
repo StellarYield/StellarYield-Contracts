@@ -37,6 +37,12 @@ vi.mock("../services/yield.js", () => ({
   })),
 }));
 
+vi.mock("../db/index.js", () => ({
+  query: vi.fn(async () => [
+    { id: 1, label: "admin key", role: "admin", created_at: new Date("2026-01-01T00:00:00.000Z") },
+  ]),
+}));
+
 const { root } = await import("./resolvers.js");
 
 describe("graphql schema", () => {
@@ -70,5 +76,28 @@ describe("graphql schema", () => {
     expect(result.data).toEqual({
       epochs: [{ epoch: 1, yieldAmount: "1000000000000000000", yieldPerShare: "0.500000000000000000" }],
     });
+  });
+});
+
+describe("GraphQL API key auth - #772", () => {
+  it("returns data for apiKeys with an admin role in context", async () => {
+    const result = await graphql({
+      schema,
+      source: `{ apiKeys { id role } }`,
+      rootValue: root,
+      contextValue: { role: "admin" },
+    });
+    expect(result.errors).toBeUndefined();
+    expect(result.data).toEqual({ apiKeys: [{ id: "1", role: "admin" }] });
+  });
+
+  it("throws Forbidden for apiKeys without a valid role", async () => {
+    const result = await graphql({
+      schema,
+      source: `{ apiKeys { id role } }`,
+      rootValue: root,
+      contextValue: { role: null },
+    });
+    expect(result.errors?.[0]?.message).toBe("Forbidden");
   });
 });

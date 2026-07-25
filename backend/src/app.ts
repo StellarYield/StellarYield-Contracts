@@ -3,6 +3,7 @@ import express, { type Express } from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import { createHandler } from "graphql-http/lib/use/express";
+import { printSchema } from "graphql";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
 import { healthRouter } from "./api/routes/health.js";
@@ -18,6 +19,7 @@ import { httpRequestsTotal, getMetrics } from "./services/metrics.js";
 import { setupOpenApiRoutes } from "./services/openapi.js";
 import { schema } from "./graphql/schema.js";
 import { root } from "./graphql/resolvers.js";
+import { createGraphQLContext } from "./graphql/context.js";
 
 export function createApp(): Express {
   const app = express();
@@ -54,8 +56,18 @@ export function createApp(): Express {
   app.all(
     "/graphql",
     publicLimiter,
-    createHandler({ schema, rootValue: root }),
+    createHandler({ schema, rootValue: root, context: createGraphQLContext }),
   );
+  // SDL export for client codegen tools (e.g. graphql-codegen); cached since the
+  // schema only changes on server restart (#773).
+  let cachedSchemaSdl: string | null = null;
+  app.get("/api/graphql/schema", publicLimiter, (_req, res) => {
+    if (cachedSchemaSdl === null) {
+      cachedSchemaSdl = printSchema(schema);
+    }
+    res.set("Content-Type", "application/graphql");
+    res.send(cachedSchemaSdl);
+  });
   app.get("/metrics", async (_req, res) => {
     res.set("Content-Type", "text/plain");
     res.send(await getMetrics());
