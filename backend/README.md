@@ -132,6 +132,39 @@ Require `X-API-Key` header with admin key.
 - `GET /api/v1/admin/vaults/:contractId/audit` - audit log.
 - `GET /api/v1/admin/events` - indexed events.
 
+## Versioning
+
+The StellarYield API uses URL versioning to manage changes and maintain backward compatibility.
+
+### Current Version
+
+The current API version is `v1`, exposed at `/api/v1/`.
+
+### Backward Compatibility
+
+All endpoints in `v1` maintain backward compatibility across minor releases. The following are guaranteed not to break:
+- Existing request parameters and types
+- Existing response fields (new fields may be added)
+- HTTP status codes for valid requests
+
+### Breaking Changes
+
+A breaking change is defined as:
+- Removing or renaming an existing endpoint
+- Removing or renaming a response field
+- Changing the type of a request parameter or response field
+- Changing the meaning or behavior of an existing parameter
+
+Breaking changes are communicated through major version releases (e.g., `v2`, `v3`).
+
+### URL Structure
+
+Future major versions will be available at:
+- `v1` - Current version
+- `v2` - Next major version (when released)
+
+Each version is independent and can be used simultaneously, allowing consumers to migrate at their own pace.
+
 ## Documentation
 
 - [Webhook Documentation](docs/webhooks.md) - Webhook payload schemas and verification
