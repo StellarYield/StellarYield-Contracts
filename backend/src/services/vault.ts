@@ -99,6 +99,28 @@ function mapVaultRow(row: VaultRow): Vault {
 }
 
 export class VaultService {
+  /**
+   * List non-archived vaults with optional filtering, sorting, and pagination.
+   * Results are cached (TTL depends on `state`, see `TTL_BY_STATE`) keyed by
+   * the full options object.
+   *
+   * Supports two mutually-driven pagination modes: page/offset (default) and
+   * cursor-based (when `opts.cursor` is set, `total` is not computed — cursor
+   * pagination is meant for cheap infinite-scroll, not page counts).
+   *
+   * @param opts.page - 1-indexed page number, used when `cursor` is not set.
+   * @param opts.pageSize - Number of vaults per page/batch.
+   * @param opts.state - Optional exact-match filter on vault state (e.g. "Active").
+   * @param opts.category - Optional exact-match filter on `rwa_category`.
+   * @param opts.cursor - Optional base64url-encoded `{ id, created_at }` cursor from a
+   *   previous response's `nextCursor`. When present, switches to cursor-based pagination.
+   * @param opts.sort - Column to sort by: "created_at" or "total_assets".
+   * @param opts.order - Sort direction: "asc" or "desc".
+   * @param opts.q - Forwarded from the controller but unused here; text search is
+   *   handled by `searchVaults` instead.
+   * @returns A page of vaults plus `total` (0 when cursor-paginated), `page`,
+   *   `pageSize`, and `nextCursor` (null when there is no further page).
+   */
   async listVaults(opts: ListVaultsOptions): Promise<PaginatedResponse<Vault>> {
     const cacheKey = `vaults:list:${JSON.stringify(opts)}`;
     const cached = await cacheGet<PaginatedResponse<Vault>>(cacheKey);
@@ -247,6 +269,11 @@ export class VaultService {
     return result;
   }
 
+  /**
+   * Count non-archived vaults.
+   *
+   * @returns The total number of vaults where `archived = FALSE`.
+   */
   async countVaults(): Promise<number> {
     const countResult = await query<{ count: string }>(
       "SELECT COUNT(*) as count FROM vaults WHERE archived = FALSE",
@@ -308,6 +335,16 @@ export class VaultService {
     return rows.map(mapVaultRow);
   }
 
+  /**
+   * Fetch a single vault by its on-chain contract address, including a live
+   * depositor count. Results are cached under `vault:{contractId}` with a
+   * TTL that depends on the vault's state (see `TTL_BY_STATE`).
+   *
+   * @param contractId - The vault's Stellar contract address (e.g. `CBQHN...`).
+   * @returns The matching `Vault`, or `null` if no vault exists with that
+   *   `contractId` (archived vaults are still returned — this method does not
+   *   filter on `archived`).
+   */
   async getVault(contractId: string): Promise<Vault | null> {
     const cacheKey = `vault:${contractId}`;
     const cached = await cacheGet<Vault>(cacheKey);
@@ -338,6 +375,16 @@ export class VaultService {
     return vault;
   }
 
+  /**
+   * List every user's share position in a vault, most shares first.
+   * Unlike `listVaultHolders`, this is not paginated and includes positions
+   * with zero shares (e.g. users who have fully withdrawn).
+   *
+   * @param contractId - The vault's Stellar contract address.
+   * @returns All `UserVaultPosition` rows for the vault, sorted by `shares`
+   *   descending. Returns an empty array if the vault does not exist or has
+   *   no recorded positions.
+   */
   async getVaultPositions(contractId: string): Promise<UserVaultPosition[]> {
     const rows = await query<{
       id: number;
@@ -463,6 +510,52 @@ export class VaultService {
     }));
   }
 
+  /**
+   * Insert a new vault or update an existing one (matched by `contractId`),
+   * then invalidate its cache entries. Called by the indexer when it observes
+   * `vault_created` (insert) or a subsequent state/asset-changing event
+   * (partial update).
+   *
+   * On conflict, `state`, `totalAssets`, and `totalSupply` are always
+   * overwritten with the given values, while the RWA/funding metadata fields
+   * (`fundingTarget`, `fundingDeadline`, `minDeposit`, `maxDepositPerUser`,
+   * `rwaName`, `rwaSymbol`, `rwaDocumentUri`, `rwaCategory`) are only
+   * overwritten when the incoming value is non-null — passing a partial
+   * update will not clear previously stored metadata for fields you omit.
+   * Any field not listed above (e.g. `name`, `symbol`, `asset`, `factoryId`)
+   * is only ever set on insert and defaults as noted below.
+   *
+   * @param vault.contractId - Required. The vault's Stellar contract address;
+   *   the conflict key for the upsert.
+   * @param vault.factoryId - Defaults to `null` on insert.
+   * @param vault.asset - Defaults to `""` on insert.
+   * @param vault.name - Defaults to `null` on insert.
+   * @param vault.symbol - Defaults to `null` on insert.
+   * @param vault.state - Vault lifecycle state; defaults to `"Funding"` on
+   *   insert and is always overwritten on update.
+   * @param vault.totalAssets - Defaults to `"0"` on insert and is always
+   *   overwritten on update.
+   * @param vault.totalSupply - Defaults to `"0"` on insert and is always
+   *   overwritten on update.
+   * @param vault.fundingTarget - Only applied if non-null; existing value is
+   *   preserved otherwise.
+   * @param vault.fundingDeadline - Only applied if non-null; existing value
+   *   is preserved otherwise.
+   * @param vault.minDeposit - Only applied if non-null; existing value is
+   *   preserved otherwise.
+   * @param vault.maxDepositPerUser - Only applied if non-null; existing value
+   *   is preserved otherwise.
+   * @param vault.rwaName - Only applied if non-null; existing value is
+   *   preserved otherwise.
+   * @param vault.rwaSymbol - Only applied if non-null; existing value is
+   *   preserved otherwise.
+   * @param vault.rwaDocumentUri - Only applied if non-null; existing value is
+   *   preserved otherwise.
+   * @param vault.rwaCategory - Only applied if non-null; existing value is
+   *   preserved otherwise.
+   * @returns Resolves once the row is written and the `vault:{contractId}`
+   *   and `vaults:list:*` cache entries have been invalidated.
+   */
   async upsertVault(vault: Partial<Vault> & { contractId: string }): Promise<void> {
     const {
       contractId,
