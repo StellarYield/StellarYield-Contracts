@@ -5,6 +5,14 @@ import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
 const EPOCHS_CACHE_TTL = 30;
 const PENDING_YIELD_CACHE_TTL = 10;
 
+/** Yield amount range filters for the epoch list endpoint (#858). */
+export interface EpochFilterOptions {
+  /** Inclusive lower bound on `yield_amount`, as a non-negative integer string. */
+  minYield?: string;
+  /** Inclusive upper bound on `yield_amount`, as a non-negative integer string. */
+  maxYield?: string;
+}
+
 export class YieldService {
   private formatYieldPerShare(yieldAmount: string, totalShares: string): string {
     const yieldBig = BigInt(yieldAmount);
@@ -19,8 +27,28 @@ export class YieldService {
     return `${integer}.${fraction}`;
   }
 
-  async getVaultEpochs(contractId: string): Promise<Epoch[]> {
-    const cacheKey = `epochs:${contractId}`;
+  async getVaultEpochs(contractId: string, filters: EpochFilterOptions = {}): Promise<Epoch[]> {
+    const { minYield, maxYield } = filters;
+
+    // Yield range (#858). Bounds are bound parameters cast to NUMERIC, so large
+    // amounts keep full precision. Either bound may be omitted for an open-ended
+    // filter. The params array stays [contractId] when neither is supplied.
+    const conditions: string[] = [];
+    const params: unknown[] = [contractId];
+    if (minYield !== undefined) {
+      params.push(minYield);
+      conditions.push(`e.yield_amount >= $${params.length}::numeric`);
+    }
+    if (maxYield !== undefined) {
+      params.push(maxYield);
+      conditions.push(`e.yield_amount <= $${params.length}::numeric`);
+    }
+    const yieldFilterSql = conditions.length > 0 ? ` AND ${conditions.join(" AND ")}` : "";
+
+    // The filters are part of the cache key so a filtered result is never served
+    // for a differently-filtered (or unfiltered) request. Invalidation uses the
+    // `epochs:*` wildcard, which still matches these keys.
+    const cacheKey = `epochs:${contractId}:${minYield ?? ""}:${maxYield ?? ""}`;
     const cached = await cacheGet<Epoch[]>(cacheKey);
     if (cached) return cached;
 
@@ -45,9 +73,9 @@ export class YieldService {
          ORDER BY created_at DESC
          LIMIT 1
        ) ie ON TRUE
-       WHERE v.contract_id = $1
+       WHERE v.contract_id = $1${yieldFilterSql}
        ORDER BY e.epoch ASC`,
-      [contractId],
+      params,
     );
 
     const epochs = rows.map((row) => ({

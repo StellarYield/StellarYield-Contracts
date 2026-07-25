@@ -10,9 +10,32 @@ import { getYieldsStream } from "../controllers/yields-stream.js";
 import { validateQuery } from "../middleware/validate.js";
 import { sseLimitPerIp } from "../middleware/sseLimitPerIp.js";
 
-const epochQuerySchema = z.object({
-  epoch: z.coerce.number().int().positive().optional(),
-});
+// Yield amounts exceed Number.MAX_SAFE_INTEGER, so BigInt-safe strings are kept
+// as strings all the way to the ::numeric cast rather than coerced to a number.
+const nonNegativeAmountSchema = z
+  .string()
+  .regex(/^\d+$/, "must be a non-negative integer");
+
+const epochQuerySchema = z
+  .object({
+    epoch: z.coerce.number().int().positive().optional(),
+    // Yield amount range; either bound may stand alone (#858).
+    minYield: nonNegativeAmountSchema.optional(),
+    maxYield: nonNegativeAmountSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.minYield !== undefined &&
+      value.maxYield !== undefined &&
+      BigInt(value.minYield) > BigInt(value.maxYield)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["minYield"],
+        message: "minYield must not be greater than maxYield",
+      });
+    }
+  });
 
 const yieldHistoryQuerySchema = z.object({
   from: z.string().datetime().optional(),

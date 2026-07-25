@@ -18,7 +18,15 @@ function formatYieldPerShare(yieldAmount: string, totalShares: string): string {
 
 export async function getVaultEpochs(req: Request, res: Response, next: NextFunction) {
   try {
-    const epochs = await yieldService.getVaultEpochs(String(req.params["contractId"]));
+    // Yield range filters, already validated by the route schema (#858).
+    const { minYield, maxYield } = (req.query ?? {}) as unknown as {
+      minYield?: string;
+      maxYield?: string;
+    };
+    const epochs = await yieldService.getVaultEpochs(String(req.params["contractId"]), {
+      minYield,
+      maxYield,
+    });
     res.json(
       epochs.map((e) => ({
         ...e,
