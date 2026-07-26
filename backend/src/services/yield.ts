@@ -27,6 +27,10 @@ export class YieldService {
     return `${integer}.${fraction}`;
   }
 
+  /**
+   * Fetch all epochs for a vault, with optional yield-amount range filters.
+   * Results are cached for {@link EPOCHS_CACHE_TTL} seconds.
+   */
   async getVaultEpochs(contractId: string, filters: EpochFilterOptions = {}): Promise<Epoch[]> {
     const { minYield, maxYield } = filters;
 
@@ -263,6 +267,13 @@ export class YieldService {
     return Math.round(rate * 100) / 100;
   }
 
+  /**
+   * Compute the user's unclaimed yield across all epochs for a vault.
+   *
+   * @remarks BigInt arithmetic is used throughout to avoid precision loss:
+   * for each unclaimed epoch, `pendingYield += (yieldAmount * userShares) / totalShares`.
+   * Results are cached for {@link PENDING_YIELD_CACHE_TTL} seconds.
+   */
   async getUserPendingYield(
     contractId: string,
     userAddress: string,
@@ -331,6 +342,10 @@ export class YieldService {
     return result;
   }
 
+  /**
+   * Aggregate yield metrics for a vault: total epochs, total yield distributed,
+   * average yield per epoch, and estimated APY.
+   */
   async getYieldSummary(contractId: string): Promise<{
     totalEpochs: string;
     totalYieldDistributed: string;
@@ -383,6 +398,10 @@ export class YieldService {
     };
   }
 
+  /**
+   * Persist a yield distribution epoch. Idempotent on (vault_id, epoch)
+   * conflict. Invalidates the epoch cache.
+   */
   async recordEpoch(
     vaultId: number,
     epoch: number,
