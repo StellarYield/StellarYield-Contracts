@@ -135,6 +135,8 @@ Require `X-API-Key` header with admin key.
 ## Documentation
 
 - [Webhook Documentation](docs/webhooks.md) - Webhook payload schemas and verification
+- [Indexer Architecture](docs/indexer.md) - Polling loop, event dispatch, dedup, and backfill
+- [Indexer Event Reference](docs/events.md) - Every event parser, its DB effect, and its webhook
 
 ## Vault States
 
