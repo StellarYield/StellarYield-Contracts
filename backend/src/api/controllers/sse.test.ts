@@ -108,6 +108,53 @@ describe("SSE Infrastructure and Endpoints (#758, #759, #760, #757)", () => {
       expect(fakeRes.write).not.toHaveBeenCalled();
     });
 
+  });
+
+  describe("SSE reconnection with Last-Event-ID (#761)", () => {
+    const validC1 = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    it("assigns a monotonically increasing id to each vault event", () => {
+      const fakeReq: any = createFakeReq();
+      const fakeRes: any = createFakeRes();
+      sseManager.addVaultClient(fakeReq, fakeRes);
+
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "1" } });
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "2" } });
+
+      expect(fakeRes.write).toHaveBeenNthCalledWith(1, expect.stringMatching(/^id: 1\ndata: /));
+      expect(fakeRes.write).toHaveBeenNthCalledWith(2, expect.stringMatching(/^id: 2\ndata: /));
+    });
+
+    it("replays only events after Last-Event-ID on reconnect", () => {
+      // Events broadcast while no client is connected still land in the replay buffer.
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "1" } });
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "2" } });
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "3" } });
+
+      const fakeReq: any = createFakeReq({}, { "last-event-id": "1" });
+      const fakeRes: any = createFakeRes();
+      sseManager.addVaultClient(fakeReq, fakeRes, new Set([validC1]));
+
+      expect(fakeRes.write).toHaveBeenCalledTimes(2);
+      expect(fakeRes.write).toHaveBeenNthCalledWith(1, expect.stringMatching(/^id: 2\ndata: /));
+      expect(fakeRes.write).toHaveBeenNthCalledWith(2, expect.stringMatching(/^id: 3\ndata: /));
+    });
+
+    it("replays nothing for a client with no Last-Event-ID (only future events)", () => {
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "1" } });
+
+      const fakeReq: any = createFakeReq();
+      const fakeRes: any = createFakeRes();
+      sseManager.addVaultClient(fakeReq, fakeRes, new Set([validC1]));
+
+      expect(fakeRes.write).not.toHaveBeenCalled();
+
+      sseManager.broadcastVaultEvent({ contractId: validC1, type: "deposit", payload: { assets: "2" } });
+      expect(fakeRes.write).toHaveBeenCalledWith(expect.stringMatching(/^id: 2\ndata: /));
+    });
+  });
+
+  describe("SseManager indexer progress broadcast (#757)", () => {
     it("broadcasts indexer progress events to indexer clients", () => {
       const fakeReq: any = createFakeReq();
       const fakeRes: any = createFakeRes();

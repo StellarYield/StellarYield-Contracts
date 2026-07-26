@@ -1,10 +1,23 @@
 import type { Request, Response } from "express";
 import { config } from "../config.js";
+import { cacheGet, cacheSet } from "../cache/redis.js";
 
 export interface VaultSseEvent {
   contractId: string;
   type: string;
   payload: Record<string, unknown>;
+}
+
+interface BufferedVaultEvent extends VaultSseEvent {
+  id: number;
+}
+
+// Last event ID is persisted with a long TTL rather than forever, since it's
+// only needed to survive restarts/redeploys, not as permanent storage (#761).
+const LAST_EVENT_ID_TTL_SECONDS = 60 * 60 * 24 * 30;
+
+function lastEventIdKey(contractId: string): string {
+  return `sse:vault:${contractId}:lastEventId`;
 }
 
 export interface IndexerProgressSseEvent {
@@ -31,6 +44,11 @@ export class SseManager {
   private vaultClients = new Map<string, VaultClient>();
   private indexerClients = new Map<string, IndexerClient>();
   private nextClientId = 1;
+
+  // Per-vault monotonically increasing SSE event IDs and their replay buffers (#761).
+  private vaultEventCounters = new Map<string, number>();
+  private vaultEventBuffers = new Map<string, BufferedVaultEvent[]>();
+  private warmedContractIds = new Set<string>();
 
   /**
    * Get the current count of open SSE connections (#760).
@@ -69,6 +87,10 @@ export class SseManager {
 
     this.vaultClients.set(clientId, client);
 
+    // Replay events missed while disconnected, per the Last-Event-ID request
+    // header (#761). No header means the client is new — it only gets future events.
+    this.replayMissedVaultEvents(req, res, client.contractIds);
+
     // Clean up on disconnect (#760)
     const cleanup = () => {
       if (this.vaultClients.has(clientId)) {
@@ -80,6 +102,41 @@ export class SseManager {
 
     req.on?.("close", cleanup);
     res.on?.("close", cleanup);
+  }
+
+  /**
+   * Replay buffered vault events with an id greater than the client's
+   * Last-Event-ID header (#761). The buffer only holds the most recent
+   * `SSE_REPLAY_BUFFER` events per vault, so a gap longer than that is not
+   * fully recoverable.
+   */
+  private replayMissedVaultEvents(req: Request, res: Response, contractIds?: Set<string>): void {
+    const headerValue = req.headers?.["last-event-id"];
+    const raw = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+    if (!raw) return;
+
+    const sinceId = parseInt(raw, 10);
+    if (!Number.isFinite(sinceId)) return;
+
+    const relevantIds = contractIds ?? new Set(this.vaultEventBuffers.keys());
+    for (const contractId of relevantIds) {
+      const buffer = this.vaultEventBuffers.get(contractId);
+      if (!buffer) continue;
+      for (const event of buffer) {
+        if (event.id > sinceId) {
+          res.write(this.formatVaultEvent(event));
+        }
+      }
+    }
+  }
+
+  private formatVaultEvent(event: BufferedVaultEvent): string {
+    const dataString = JSON.stringify({
+      contractId: event.contractId,
+      type: event.type,
+      payload: event.payload,
+    });
+    return `id: ${event.id}\ndata: ${dataString}\n\n`;
   }
 
   /**
@@ -125,21 +182,48 @@ export class SseManager {
   }
 
   /**
-   * Broadcast a vault event to matching SSE subscribers (#758).
+   * Broadcast a vault event to matching SSE subscribers, assigning it a
+   * monotonically increasing per-vault `id` and buffering it for replay (#761).
    */
   broadcastVaultEvent(event: VaultSseEvent): void {
-    const dataString = JSON.stringify({
-      contractId: event.contractId,
-      type: event.type,
-      payload: event.payload,
-    });
-    const message = `data: ${dataString}\n\n`;
+    if (!this.warmedContractIds.has(event.contractId)) {
+      this.warmedContractIds.add(event.contractId);
+      void this.warmVaultCounter(event.contractId);
+    }
 
+    const nextId = (this.vaultEventCounters.get(event.contractId) ?? 0) + 1;
+    this.vaultEventCounters.set(event.contractId, nextId);
+
+    const buffered: BufferedVaultEvent = { ...event, id: nextId };
+    const buffer = this.vaultEventBuffers.get(event.contractId) ?? [];
+    buffer.push(buffered);
+    while (buffer.length > config.sseReplayBufferSize) buffer.shift();
+    this.vaultEventBuffers.set(event.contractId, buffer);
+
+    const message = this.formatVaultEvent(buffered);
     for (const client of this.vaultClients.values()) {
       if (client.contractIds && !client.contractIds.has(event.contractId)) {
         continue; // Skip if client filtered by contractIds and event contractId is not in set
       }
       client.res.write(message);
+    }
+
+    // Best-effort durability so the counter survives restarts (#761, #201).
+    void cacheSet(lastEventIdKey(event.contractId), nextId, LAST_EVENT_ID_TTL_SECONDS);
+  }
+
+  /**
+   * Catch the in-memory counter up to the last persisted value for a vault
+   * the first time it's seen in this process. Runs in the background — any
+   * events broadcast before it resolves may reuse IDs from a prior process
+   * life, which is an accepted tradeoff of not blocking event delivery on Redis.
+   */
+  private async warmVaultCounter(contractId: string): Promise<void> {
+    const persisted = await cacheGet<number>(lastEventIdKey(contractId));
+    if (persisted == null) return;
+    const current = this.vaultEventCounters.get(contractId) ?? 0;
+    if (persisted > current) {
+      this.vaultEventCounters.set(contractId, persisted);
     }
   }
 
@@ -172,6 +256,9 @@ export class SseManager {
     this.vaultClients.clear();
     this.indexerClients.clear();
     this.activeConnections = 0;
+    this.vaultEventCounters.clear();
+    this.vaultEventBuffers.clear();
+    this.warmedContractIds.clear();
   }
 }
 

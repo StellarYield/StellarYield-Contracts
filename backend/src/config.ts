@@ -125,6 +125,11 @@ const envSchema = z.object({
     .default("15000")
     .transform((v) => parseInt(v, 10))
     .pipe(z.number().int().min(1)),
+  SSE_REPLAY_BUFFER: z
+    .string()
+    .default("100")
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(1)),
   DB_POOL_ALERT_WAITING: z
     .string()
     .default("5")
@@ -219,6 +224,7 @@ export const config = {
     maxAge: parsed.data.CORS_MAX_AGE,
   },
   sseHeartbeatMs: parsed.data.SSE_HEARTBEAT_MS,
+  sseReplayBufferSize: parsed.data.SSE_REPLAY_BUFFER,
   dbPoolAlertWaiting: parsed.data.DB_POOL_ALERT_WAITING,
   rpcErrorRateAlertPct: parsed.data.RPC_ERROR_RATE_ALERT_PCT,
 } as const;
