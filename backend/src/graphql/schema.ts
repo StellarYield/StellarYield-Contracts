@@ -23,6 +23,7 @@ export const schema = buildSchema(`
   }
 
   type Query {
+    health: String
     user(address: String!): User
     epochs(contractId: String!): [Epoch!]!
     apiKeys: [ApiKey!]!

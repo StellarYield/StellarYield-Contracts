@@ -25,6 +25,7 @@ function computeYieldPerShare(yieldAmount: string, totalShares: string): string 
 }
 
 export const root = {
+  health: () => "ok",
   user: async ({ address }: { address: string }) => {
     const user = await userService.getUser(address);
     if (!user) return null;

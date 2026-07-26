@@ -58,3 +58,14 @@ describe("GraphQL schema export - #773", () => {
     expect(() => buildSchema(res.text)).not.toThrow();
   });
 });
+
+describe("Apollo GraphQL server - #765", () => {
+  it("POST /api/graphql with { query: \"{ health }\" } returns { data: { health: \"ok\" } }", async () => {
+    const { default: supertest } = await import("supertest");
+    const res = await supertest(app)
+      .post("/api/graphql")
+      .send({ query: "{ health }" });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ data: { health: "ok" } });
+  });
+});
