@@ -1,7 +1,9 @@
 import type { Request, Response, NextFunction } from "express";
 import { YieldService } from "../../services/yield.js";
+import { NotificationService } from "../../services/notifications.js";
 
 const yieldService = new YieldService();
+const notificationService = new NotificationService();
 
 function formatYieldPerShare(yieldAmount: string, totalShares: string): string {
   const yieldBig = BigInt(yieldAmount);
@@ -83,6 +85,57 @@ export async function getEpochDetail(req: Request, res: Response, next: NextFunc
     });
   } catch (err) {
     next(err);
+  }
+}
+
+// ── Epoch comparison (#820) ──────────────────────────────────────────────────
+export async function compareEpochs(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const epochA = Number(req.query.a);
+    const epochB = Number(req.query.b);
+
+    if (!Number.isInteger(epochA) || epochA <= 0 || !Number.isInteger(epochB) || epochB <= 0) {
+      res.status(400).json({ error: "BadRequest", message: "Both a and b must be positive integers" });
+      return;
+    }
+
+    const result = await yieldService.compareEpochs(contractId, epochA, epochB);
+    if (!result) {
+      res.status(404).json({ error: "NotFound", message: "One or both epochs not found" });
+      return;
+    }
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Next epoch projection (#821) ─────────────────────────────────────────────
+export async function getNextEpochProjection(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const projection = await yieldService.getNextEpochProjection(contractId);
+    res.json(projection);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Epoch closed webhook (#819) ──────────────────────────────────────────────
+export async function handleEpochClosed(
+  contractId: string,
+  epoch: number,
+): Promise<void> {
+  const result = await yieldService.closeEpochIfFullyClaimed(contractId, epoch);
+  if (result) {
+    await notificationService.notify("epoch.closed", {
+      contractId,
+      epoch,
+      yieldAmount: result.epochData.yieldAmount,
+      closedAt: result.epochData.closedAt,
+    });
   }
 }
 

@@ -11,6 +11,7 @@ import {
 } from "./stellar.js";
 import { VaultService } from "./vault.js";
 import { UserService } from "./user.js";
+import { YieldService } from "./yield.js";
 import { NotificationService } from "./notifications.js";
 import { indexerEventsProcessedTotal, indexerLastLedger } from "./metrics.js";
 import { cacheDel } from "../cache/redis.js";
@@ -990,6 +991,24 @@ export class Indexer {
     );
     await cacheDel(`pending-yield:${contractId}:${userAddress}`);
     logger.info({ contractId, userAddress, epoch }, "Processed yield_claimed event");
+
+    // Check if epoch is now fully claimed and fire webhook (#819)
+    try {
+      const yieldService = new YieldService();
+      const result = await yieldService.closeEpochIfFullyClaimed(contractId, epoch);
+      if (result) {
+        const notificationService = new NotificationService();
+        await notificationService.notify("epoch.closed", {
+          contractId,
+          epoch,
+          yieldAmount: result.epochData.yieldAmount,
+          closedAt: result.epochData.closedAt,
+        });
+        logger.info({ contractId, epoch }, "Fired epoch.closed webhook");
+      }
+    } catch (err) {
+      logger.warn({ contractId, epoch, err }, "Failed to check epoch close after yield claim");
+    }
   }
 
   private async handleEarlyRedemptionProcessed(

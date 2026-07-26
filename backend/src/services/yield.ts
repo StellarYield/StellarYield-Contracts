@@ -93,8 +93,9 @@ export class YieldService {
   }
 
   /**
-   * Fetch a single epoch's detail for a vault (#815).
+   * Fetch a single epoch's detail for a vault (#815, #818).
    * Returns null if the vault or the epoch does not exist for it.
+   * Includes totalClaimed/totalUnclaimed for liquidity planning.
    */
   async getEpochDetail(
     contractId: string,
@@ -106,6 +107,8 @@ export class YieldService {
     yieldPerShare: string;
     netYield: string;
     distributedAt: string | null;
+    totalClaimed: string;
+    totalUnclaimed: string;
   } | null> {
     const rows = await query<{
       epoch: number;
@@ -133,6 +136,11 @@ export class YieldService {
     const row = rows[0];
     if (!row) return null;
 
+    const claimStats = await this.getEpochClaimStats(contractId, epoch);
+    const totalYield = BigInt(row.yield_amount);
+    const claimed = BigInt(claimStats.claimedAmount);
+    const unclaimed = totalYield > claimed ? totalYield - claimed : BigInt(0);
+
     return {
       epoch: row.epoch,
       yieldAmount: row.yield_amount,
@@ -140,6 +148,8 @@ export class YieldService {
       yieldPerShare: this.formatYieldPerShare(row.yield_amount, row.total_shares),
       netYield: row.net_yield ?? row.yield_amount,
       distributedAt: row.distributed_at ? row.distributed_at.toISOString() : null,
+      totalClaimed: claimed.toString(),
+      totalUnclaimed: unclaimed.toString(),
     };
   }
 
@@ -454,6 +464,195 @@ export class YieldService {
     }));
 
     return { data, total };
+  }
+
+  // ── Epoch comparison (#820) ──────────────────────────────────────────────────
+  /**
+   * Compare two epochs side-by-side for a vault.
+   * Returns null if either epoch does not exist.
+   */
+  async compareEpochs(
+    contractId: string,
+    epochA: number,
+    epochB: number,
+  ): Promise<{
+    a: {
+      epoch: number;
+      yieldAmount: string;
+      totalShares: string;
+      yieldPerShare: string;
+      distributedAt: string | null;
+      participationRate: number;
+    };
+    b: {
+      epoch: number;
+      yieldAmount: string;
+      totalShares: string;
+      yieldPerShare: string;
+      distributedAt: string | null;
+      participationRate: number;
+    };
+    delta: {
+      yieldAmount: string;
+      yieldPerShare: string;
+    };
+  } | null> {
+    const [rowA, rowB] = await Promise.all([
+      this.getEpochDetail(contractId, epochA),
+      this.getEpochDetail(contractId, epochB),
+    ]);
+
+    if (!rowA || !rowB) return null;
+
+    const [claimA, claimB, holdersA, holdersB] = await Promise.all([
+      this.getEpochClaimStats(contractId, epochA),
+      this.getEpochClaimStats(contractId, epochB),
+      this.getEpochHolderCount(contractId, epochA),
+      this.getEpochHolderCount(contractId, epochB),
+    ]);
+
+    const participationA = this.calculateParticipationRate(claimA.uniqueClaimants, holdersA);
+    const participationB = this.calculateParticipationRate(claimB.uniqueClaimants, holdersB);
+
+    const deltaYield = BigInt(rowB.yieldAmount) - BigInt(rowA.yieldAmount);
+    const deltaYps = (() => {
+      const ypsA = this.parseYieldPerShare(rowA.yieldPerShare);
+      const ypsB = this.parseYieldPerShare(rowB.yieldPerShare);
+      return ypsB - ypsA;
+    })();
+
+    return {
+      a: {
+        epoch: rowA.epoch,
+        yieldAmount: rowA.yieldAmount,
+        totalShares: rowA.totalShares,
+        yieldPerShare: rowA.yieldPerShare,
+        distributedAt: rowA.distributedAt,
+        participationRate: participationA,
+      },
+      b: {
+        epoch: rowB.epoch,
+        yieldAmount: rowB.yieldAmount,
+        totalShares: rowB.totalShares,
+        yieldPerShare: rowB.yieldPerShare,
+        distributedAt: rowB.distributedAt,
+        participationRate: participationB,
+      },
+      delta: {
+        yieldAmount: deltaYield.toString(),
+        yieldPerShare: deltaYps.toString(),
+      },
+    };
+  }
+
+  /** Parse a "X.Y" yield-per-share string back to a BigInt of scaled units. */
+  private parseYieldPerShare(yps: string): bigint {
+    const [intPart, fracPart = ""] = yps.split(".");
+    const frac = fracPart.padEnd(18, "0").slice(0, 18);
+    return BigInt(intPart + frac);
+  }
+
+  // ── Next epoch projection (#821) ────────────────────────────────────────────
+  /**
+   * Estimate the next epoch's yield using a rolling average of the last 3 epochs.
+   * Returns null for all fields if fewer than 2 epochs exist.
+   */
+  async getNextEpochProjection(
+    contractId: string,
+  ): Promise<{
+    estimatedYieldAmount: string | null;
+    estimatedDistributionDate: string | null;
+    basedOnEpochs: number;
+  }> {
+    const rows = await query<{
+      epoch: number;
+      yield_amount: string;
+      distributed_at: Date | null;
+    }>(
+      `SELECT e.epoch, e.yield_amount, e.distributed_at
+       FROM epochs e
+       JOIN vaults v ON e.vault_id = v.id
+       WHERE v.contract_id = $1
+       ORDER BY e.epoch DESC
+       LIMIT 3`,
+      [contractId],
+    );
+
+    if (rows.length < 2) {
+      return { estimatedYieldAmount: null, estimatedDistributionDate: null, basedOnEpochs: 0 };
+    }
+
+    const epochs = rows.reverse();
+    const basedOnEpochs = epochs.length;
+
+    // Rolling average of yield amounts
+    const totalYield = epochs.reduce((sum, e) => sum + BigInt(e.yield_amount), BigInt(0));
+    const estimatedYieldAmount = (totalYield / BigInt(basedOnEpochs)).toString();
+
+    // Estimate next distribution date using average interval between epochs
+    let estimatedDistributionDate: string | null = null;
+    const distributedDates = epochs
+      .filter((e) => e.distributed_at !== null)
+      .map((e) => e.distributed_at!.getTime());
+
+    if (distributedDates.length >= 2) {
+      let totalInterval = 0;
+      for (let i = 1; i < distributedDates.length; i++) {
+        totalInterval += distributedDates[i] - distributedDates[i - 1];
+      }
+      const avgIntervalMs = totalInterval / (distributedDates.length - 1);
+      const lastDate = distributedDates[distributedDates.length - 1];
+      estimatedDistributionDate = new Date(lastDate + avgIntervalMs).toISOString();
+    }
+
+    return { estimatedYieldAmount, estimatedDistributionDate, basedOnEpochs };
+  }
+
+  // ── Epoch close webhook (#819) ─────────────────────────────────────────────
+  /**
+   * After a yield claim event, check if the epoch is now fully claimed.
+   * If so, set closed_at (idempotent) and return true so the caller can fire the webhook.
+   */
+  async closeEpochIfFullyClaimed(
+    contractId: string,
+    epoch: number,
+  ): Promise<{ closed: true; epochData: { yieldAmount: string; closedAt: string } } | null> {
+    // Check if already closed
+    const existing = await query<{ closed_at: Date | null }>(
+      `SELECT e.closed_at
+       FROM epochs e
+       JOIN vaults v ON e.vault_id = v.id
+       WHERE v.contract_id = $1 AND e.epoch = $2`,
+      [contractId, epoch],
+    );
+
+    if (existing[0]?.closed_at) return null;
+
+    const stats = await this.getEpochClaimStats(contractId, epoch);
+    const detail = await this.getEpochDetail(contractId, epoch);
+    if (!detail) return null;
+
+    if (BigInt(stats.claimedAmount) < BigInt(detail.yieldAmount)) return null;
+
+    // Set closed_at
+    await query(
+      `UPDATE epochs e
+       SET closed_at = NOW()
+       FROM vaults v
+       WHERE e.vault_id = v.id
+         AND v.contract_id = $1
+         AND e.epoch = $2
+         AND e.closed_at IS NULL`,
+      [contractId, epoch],
+    );
+
+    return {
+      closed: true,
+      epochData: {
+        yieldAmount: detail.yieldAmount,
+        closedAt: new Date().toISOString(),
+      },
+    };
   }
 
   // ── Epoch yield distribution timeline (#822) ────────────────────────────────
