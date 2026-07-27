@@ -61,6 +61,13 @@ interface WebhookRow {
 }
 
 export class NotificationService {
+  /**
+   * Dispatch an event notification to all active webhooks subscribed to it.
+   *
+   * @remarks Each webhook payload is HMAC-SHA256 signed with the webhook's
+   * secret (if configured) before delivery. Refer to {@link deliver} for the
+   * signing and SSRF-safe delivery logic.
+   */
   async notify(event: string, data: Record<string, unknown>): Promise<void> {
     const webhooks = await query<WebhookRow>(
       "SELECT id, url, events, secret, consecutive_failures FROM webhooks WHERE active = TRUE AND $1 = ANY(events)",
@@ -76,6 +83,40 @@ export class NotificationService {
         jobQueue.send("webhook-deliver", { webhookId: webhook.id, payload }),
       ),
     );
+  }
+
+  /**
+   * Return all active webhooks ordered by creation date (newest first).
+   */
+  async getWebhooks(): Promise<WebhookRow[]> {
+    return query<WebhookRow>(
+      "SELECT id, url, events, secret, consecutive_failures FROM webhooks WHERE active = TRUE ORDER BY created_at DESC",
+    );
+  }
+
+  /**
+   * Register a new webhook. Returns the created webhook row.
+   */
+  async createWebhook(url: string, events: string[], secret?: string): Promise<WebhookRow> {
+    const rows = await query<WebhookRow>(
+      `INSERT INTO webhooks (url, events, secret)
+       VALUES ($1, $2, $3)
+       RETURNING id, url, events, secret, consecutive_failures`,
+      [url, events, secret ?? null],
+    );
+    return rows[0];
+  }
+
+  /**
+   * Soft-delete a webhook by setting `active = FALSE`.
+   * Returns `true` if a row was deactivated, `false` if not found.
+   */
+  async deleteWebhook(id: number): Promise<boolean> {
+    const rows = await query<{ id: number }>(
+      "UPDATE webhooks SET active = FALSE WHERE id = $1 AND active = TRUE RETURNING id",
+      [id],
+    );
+    return rows.length > 0;
   }
 
   /**

@@ -17,6 +17,8 @@ import {
   parseEarlyRedemptionProcessedEvent,
   parseEarlyRedemptionCancelledEvent,
   parseZkmeVerifierUpdatedEvent,
+  parseAdminTransferredEvent,
+  parseDefaultsUpdatedEvent,
   parseKycSetEvent,
   parsePausedEvent,
   parseUnpausedEvent,
@@ -24,6 +26,7 @@ import {
 import {
   VAULT_CONTRACT,
   USER_ADDRESS,
+  OTHER_ADDRESS,
   makeDepositEvent,
   makeWithdrawEvent,
   makeYieldDistributedEvent,
@@ -41,6 +44,8 @@ import {
   makeEarlyRedemptionProcessedEvent,
   makeEarlyRedemptionCancelledEvent,
   makeZkmeVerifierUpdatedEvent,
+  makeAdminTransferredEvent,
+  makeDefaultsUpdatedEvent,
   makeKycSetEvent,
   makePausedEvent,
   makeUnpausedEvent,
@@ -136,6 +141,20 @@ describe("event fixture factory (#697)", () => {
   it("makeZkmeVerifierUpdatedEvent parses to the expected fields", () => {
     const parsed = parseZkmeVerifierUpdatedEvent(makeZkmeVerifierUpdatedEvent());
     expect(parsed?.caller).toBe(USER_ADDRESS);
+  });
+
+  it("makeAdminTransferredEvent parses to the expected fields", () => {
+    const parsed = parseAdminTransferredEvent(
+      makeAdminTransferredEvent({ oldAdmin: USER_ADDRESS, newAdmin: OTHER_ADDRESS }),
+    );
+    expect(parsed).toEqual({ oldAdmin: USER_ADDRESS, newAdmin: OTHER_ADDRESS });
+  });
+
+  it("makeDefaultsUpdatedEvent parses to the expected fields", () => {
+    const parsed = parseDefaultsUpdatedEvent(
+      makeDefaultsUpdatedEvent({ asset: "XLM", zkmeVerifier: USER_ADDRESS, cooperator: OTHER_ADDRESS }),
+    );
+    expect(parsed).toEqual({ asset: "XLM", zkmeVerifier: USER_ADDRESS, cooperator: OTHER_ADDRESS });
   });
 
   it("makeKycSetEvent parses to the expected fields", () => {

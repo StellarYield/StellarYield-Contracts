@@ -1,6 +1,7 @@
 import type { Epoch } from "../types/index.js";
 import { query } from "../db/index.js";
 import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
+import { config } from "../config.js";
 
 const EPOCHS_CACHE_TTL = 30;
 const PENDING_YIELD_CACHE_TTL = 10;
@@ -27,6 +28,10 @@ export class YieldService {
     return `${integer}.${fraction}`;
   }
 
+  /**
+   * Fetch all epochs for a vault, with optional yield-amount range filters.
+   * Results are cached for {@link EPOCHS_CACHE_TTL} seconds.
+   */
   async getVaultEpochs(contractId: string, filters: EpochFilterOptions = {}): Promise<Epoch[]> {
     const { minYield, maxYield } = filters;
 
@@ -273,6 +278,13 @@ export class YieldService {
     return Math.round(rate * 100) / 100;
   }
 
+  /**
+   * Compute the user's unclaimed yield across all epochs for a vault.
+   *
+   * @remarks BigInt arithmetic is used throughout to avoid precision loss:
+   * for each unclaimed epoch, `pendingYield += (yieldAmount * userShares) / totalShares`.
+   * Results are cached for {@link PENDING_YIELD_CACHE_TTL} seconds.
+   */
   async getUserPendingYield(
     contractId: string,
     userAddress: string,
@@ -300,11 +312,13 @@ export class YieldService {
       epoch: number;
       yield_amount: string;
       total_shares: string;
+      expires_at: Date | null;
     }>(
-      `SELECT e.epoch, e.yield_amount, e.total_shares
+      `SELECT e.epoch, e.yield_amount, e.total_shares, e.expires_at
        FROM epochs e
        JOIN vaults v ON e.vault_id = v.id
        WHERE v.contract_id = $1
+         AND (e.expires_at IS NULL OR e.expires_at > NOW())
        ORDER BY e.epoch ASC`,
       [contractId],
     );
@@ -341,6 +355,10 @@ export class YieldService {
     return result;
   }
 
+  /**
+   * Aggregate yield metrics for a vault: total epochs, total yield distributed,
+   * average yield per epoch, and estimated APY.
+   */
   async getYieldSummary(contractId: string): Promise<{
     totalEpochs: string;
     totalYieldDistributed: string;
@@ -393,19 +411,56 @@ export class YieldService {
     };
   }
 
+  /**
+   * Persist a yield distribution epoch. Idempotent on (vault_id, epoch)
+   * conflict. Invalidates the epoch cache.
+   */
   async recordEpoch(
     vaultId: number,
     epoch: number,
     yieldAmount: string,
     totalShares: string,
   ): Promise<void> {
+    const expiryDays = config.yieldClaimExpiryDays;
+    const expiresAt = expiryDays
+      ? new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000)
+      : null;
+
     await query(
-      `INSERT INTO epochs (vault_id, epoch, yield_amount, total_shares, distributed_at)
-       VALUES ($1, $2, $3, $4, NOW())
+      `INSERT INTO epochs (vault_id, epoch, yield_amount, total_shares, distributed_at, expires_at)
+       VALUES ($1, $2, $3, $4, NOW(), $5)
        ON CONFLICT (vault_id, epoch) DO NOTHING`,
-      [vaultId, epoch, yieldAmount, totalShares],
+      [vaultId, epoch, yieldAmount, totalShares, expiresAt],
     );
     await cacheDel(`epochs:*`);
+  }
+
+  async getEpochsBulk(
+    contractId: string,
+    from: number,
+    to: number,
+  ): Promise<Array<{ epoch: number; yieldAmount: string; totalShares: string; yieldPerShare: string; distributedAt: string | null }>> {
+    const rows = await query<{
+      epoch: number;
+      yield_amount: string;
+      total_shares: string;
+      distributed_at: Date | null;
+    }>(
+      `SELECT e.epoch, e.yield_amount, e.total_shares, e.distributed_at
+       FROM epochs e
+       JOIN vaults v ON e.vault_id = v.id
+       WHERE v.contract_id = $1 AND e.epoch >= $2 AND e.epoch <= $3
+       ORDER BY e.epoch ASC`,
+      [contractId, from, to],
+    );
+
+    return rows.map((row) => ({
+      epoch: row.epoch,
+      yieldAmount: row.yield_amount,
+      totalShares: row.total_shares,
+      yieldPerShare: this.formatYieldPerShare(row.yield_amount, row.total_shares),
+      distributedAt: row.distributed_at ? row.distributed_at.toISOString() : null,
+    }));
   }
 
   async getYieldPerShareHistory(

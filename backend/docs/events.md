@@ -24,6 +24,8 @@ notifications fire. Topic values are the `symbol` in `topics[0]` the parser matc
 | `erq_done` / `early_redemption_processed` | `parseEarlyRedemptionProcessedEvent` | Sets `redemption_requests.processed = TRUE` | none |
 | `erq_can` / `erq_can2` / `early_redemption_cancelled` | `parseEarlyRedemptionCancelledEvent` | Sets `redemption_requests.processed = TRUE` | none |
 | `zkme_upd` | `parseZkmeVerifierUpdatedEvent` | Updates `vaults.zkme_verifier_address` | none |
+| `adm_xfr` / `admin_transferred` | `parseAdminTransferredEvent` | Inserts `factory_admin_history` row | none |
+| `def_upd` / `defaults_updated` | `parseDefaultsUpdatedEvent` | None (recorded to `indexed_events.parsed_data` only) | none |
 | `kyc_set` | `parseKycSetEvent` | `UserService.upsertUser`, inserts an `indexed_events` row directly (bypasses `recordEvent`) | none |
 | `paused` / `v_pause` | `parsePausedEvent` | Sets `vaults.paused = TRUE` | none |
 | `unpaused` / `v_unpause` | `parseUnpausedEvent` | Sets `vaults.paused = FALSE` | none |

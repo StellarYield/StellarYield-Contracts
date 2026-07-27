@@ -125,6 +125,12 @@ const envSchema = z.object({
     .default("15000")
     .transform((v) => parseInt(v, 10))
     .pipe(z.number().int().min(1)),
+  YIELD_CLAIM_EXPIRY_DAYS: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : null))
+    .pipe(z.number().int().min(1).nullable().default(null)),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
   SSE_REPLAY_BUFFER: z
     .string()
     .default("100")
@@ -224,6 +230,8 @@ export const config = {
     maxAge: parsed.data.CORS_MAX_AGE,
   },
   sseHeartbeatMs: parsed.data.SSE_HEARTBEAT_MS,
+  yieldClaimExpiryDays: parsed.data.YIELD_CLAIM_EXPIRY_DAYS,
+  otelEndpoint: parsed.data.OTEL_EXPORTER_OTLP_ENDPOINT,
   sseReplayBufferSize: parsed.data.SSE_REPLAY_BUFFER,
   dbPoolAlertWaiting: parsed.data.DB_POOL_ALERT_WAITING,
   rpcErrorRateAlertPct: parsed.data.RPC_ERROR_RATE_ALERT_PCT,

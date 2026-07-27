@@ -520,6 +520,103 @@ function registerPaths(): void {
       404: { description: "Webhook not found", content: { "application/json": { schema: errorResponseSchema } } },
     },
   });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/factory/admin-history",
+    summary: "Get factory admin transfer history (requires API key)",
+    tags: ["Factory"],
+    responses: {
+      200: {
+        description: "Admin transfer history, most recent first",
+        content: {
+          "application/json": {
+            schema: z.array(
+              z.object({
+                oldAdmin: z.string(),
+                newAdmin: z.string(),
+                ledger: z.number(),
+                recordedAt: z.string(),
+              }),
+            ),
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/factory/vault-creation-rate",
+    summary: "Get vault creation rate over rolling windows",
+    tags: ["Factory"],
+    responses: {
+      200: {
+        description: "Vault counts created within each rolling window",
+        content: {
+          "application/json": {
+            schema: z.object({ last24h: z.number(), last7d: z.number(), last30d: z.number() }),
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/factory/defaults",
+    summary: "Get canonical default vault parameters",
+    tags: ["Factory"],
+    responses: {
+      200: {
+        description: "Most recently indexed default vault parameters",
+        content: {
+          "application/json": {
+            schema: z.object({
+              defaultAsset: z.string().nullable(),
+              defaultZkmeVerifier: z.string().nullable(),
+              defaultCooperator: z.string().nullable(),
+            }),
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/factory/events",
+    summary: "Get factory event log (requires API key)",
+    tags: ["Factory"],
+    request: {
+      query: z.object({
+        page: z.coerce.number().optional(),
+        pageSize: z.coerce.number().optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Paginated factory event log, most recent ledger first",
+        content: {
+          "application/json": {
+            schema: z.object({
+              data: z.array(
+                z.object({
+                  eventType: z.string(),
+                  ledger: z.number(),
+                  txHash: z.string(),
+                  createdAt: z.string(),
+                }),
+              ),
+              total: z.number(),
+              page: z.number(),
+              pageSize: z.number(),
+            }),
+          },
+        },
+      },
+    },
+  });
 }
 
 registerPaths();

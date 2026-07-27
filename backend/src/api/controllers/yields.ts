@@ -160,6 +160,35 @@ export async function getYieldSummary(req: Request, res: Response, next: NextFun
   }
 }
 
+export async function getBulkEpochs(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const from = Number(req.query["from"]);
+    const to = Number(req.query["to"]);
+
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0) {
+      res.status(400).json({ error: "BadRequest", message: "from and to must be non-negative integers" });
+      return;
+    }
+
+    const BULK_EPOCH_LIMIT = 500;
+    if (to - from > BULK_EPOCH_LIMIT) {
+      res.status(400).json({
+        error: "BadRequest",
+        message: `Range exceeds the maximum of ${BULK_EPOCH_LIMIT} epochs`,
+      });
+      return;
+    }
+
+    if (from > to) {
+      res.status(400).json({ error: "BadRequest", message: "from must be less than or equal to to" });
+      return;
+    }
+
+    const epochs = await yieldService.getEpochsBulk(contractId, from, to);
+    res.json(epochs);
+  }
+
 export async function getYieldTimeline(req: Request, res: Response, next: NextFunction) {
   try {
     const contractId = String(req.params["contractId"]);

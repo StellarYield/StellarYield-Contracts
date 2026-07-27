@@ -337,6 +337,38 @@ export function makeZkmeVerifierUpdatedEvent(
   };
 }
 
+export function makeAdminTransferredEvent(
+  overrides: Partial<BaseOverrides & {
+    oldAdmin: string;
+    newAdmin: string;
+  }> = {},
+) {
+  const oldAdmin = overrides.oldAdmin ?? USER_ADDRESS;
+  const newAdmin = overrides.newAdmin ?? OTHER_ADDRESS;
+  return {
+    ...baseEvent(overrides),
+    topic: [nativeToScVal("adm_xfr")],
+    value: nativeToScVal([oldAdmin, newAdmin]),
+  };
+}
+
+export function makeDefaultsUpdatedEvent(
+  overrides: Partial<BaseOverrides & {
+    asset: string;
+    zkmeVerifier: string;
+    cooperator: string;
+  }> = {},
+) {
+  const asset = overrides.asset ?? "XLM";
+  const zkmeVerifier = overrides.zkmeVerifier ?? USER_ADDRESS;
+  const cooperator = overrides.cooperator ?? OTHER_ADDRESS;
+  return {
+    ...baseEvent(overrides),
+    topic: [nativeToScVal("def_upd")],
+    value: nativeToScVal([asset, zkmeVerifier, cooperator]),
+  };
+}
+
 export function makeKycSetEvent(
   overrides: Partial<BaseOverrides & {
     user: string;

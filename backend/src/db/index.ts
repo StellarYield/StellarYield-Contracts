@@ -1,7 +1,10 @@
 import pg from "pg";
 import { performance } from "node:perf_hooks";
+import { trace, SpanStatusCode, context } from "@opentelemetry/api";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
+
+const tracer = trace.getTracer("stellaryield-db");
 
 const { Pool } = pg;
 
@@ -17,26 +20,34 @@ export async function query<T = Record<string, unknown>>(
   sql: string,
   params?: unknown[],
 ): Promise<T[]> {
+  const span = tracer.startSpan("db.query", {}, context.active());
+  span.setAttribute("db.statement", sql.slice(0, 80));
+
   const start = performance.now();
-  const result = await pool.query(sql, params);
-  const durationMs = performance.now() - start;
-  const roundedMs = Math.round(durationMs * 100) / 100;
+  try {
+    const result = await pool.query(sql, params);
+    const durationMs = performance.now() - start;
+    const roundedMs = Math.round(durationMs * 100) / 100;
 
-  if (durationMs > config.db.slowQueryMs) {
-    // Slow queries get higher-visibility logging so they are easy to filter.
-    // The full SQL is included regardless of environment to aid diagnosis (#658).
-    logger.warn(
-      { sql, paramsCount: params?.length ?? 0, durationMs: roundedMs, rowCount: result.rowCount },
-      "slow query",
-    );
-  } else if (logger.level === "debug" || logger.level === "trace") {
-    const firstLine = config.nodeEnv === "production"
-      ? sql.slice(0, 80)
-      : sql;
-    logger.debug({ sql: firstLine, durationMs: roundedMs, rowCount: result.rowCount }, "query");
+    span.setAttribute("db.response.rows", result.rowCount ?? 0);
+
+    if (durationMs > config.db.slowQueryMs) {
+      logger.warn(
+        { sql, paramsCount: params?.length ?? 0, durationMs: roundedMs, rowCount: result.rowCount },
+        "slow query",
+      );
+    } else if (logger.level === "debug" || logger.level === "trace") {
+      const firstLine = config.nodeEnv === "production" ? sql.slice(0, 80) : sql;
+      logger.debug({ sql: firstLine, durationMs: roundedMs, rowCount: result.rowCount }, "query");
+    }
+
+    return result.rows;
+  } catch (err) {
+    span.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
+    throw err;
+  } finally {
+    span.end();
   }
-
-  return result.rows;
 }
 
 async function validateConnection(): Promise<void> {
