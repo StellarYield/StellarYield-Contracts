@@ -198,6 +198,8 @@ export const VAULT_FIELD_MAP: Record<string, string> = {
   rwaSymbol: "v.rwa_symbol",
   rwaDocumentUri: "v.rwa_document_uri",
   rwaCategory: "v.rwa_category",
+  description: "v.description",
+  logoUri: "v.logo_uri",
   createdAt: "v.created_at",
   updatedAt: "v.updated_at",
   expectedApy: "v.expected_apy",
@@ -424,6 +426,8 @@ interface VaultRow {
   rwa_symbol: string | null;
   rwa_document_uri: string | null;
   rwa_category: string | null;
+  description: string | null;
+  logo_uri: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -472,6 +476,8 @@ function mapVaultRow(row: VaultRow): Vault {
     rwaSymbol: row.rwa_symbol,
     rwaDocumentUri: row.rwa_document_uri,
     rwaCategory: row.rwa_category,
+    description: row.description ?? null,
+    logoUri: row.logo_uri ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -589,6 +595,7 @@ export class VaultService {
                v.created_at, v.updated_at,
                v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
                v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+               v.description, v.logo_uri,
                COALESCE((
                  SELECT COUNT(*)::int
                  FROM user_vault_positions uvp
@@ -606,6 +613,7 @@ export class VaultService {
                v.created_at, v.updated_at,
                v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
                v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+               v.description, v.logo_uri,
                COALESCE((
                  SELECT COUNT(*)::int
                  FROM user_vault_positions uvp
@@ -757,6 +765,7 @@ export class VaultService {
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.zkme_verifier_address,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+              v.description, v.logo_uri,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -974,6 +983,8 @@ export class VaultService {
       rwaSymbol = null,
       rwaDocumentUri = null,
       rwaCategory = null,
+      description = null,
+      logoUri = null,
     } = vault;
 
     logger.info(
@@ -987,9 +998,10 @@ export class VaultService {
          total_assets, total_supply,
          funding_target, funding_deadline, min_deposit, max_deposit_per_user,
          rwa_name, rwa_symbol, rwa_document_uri, rwa_category,
+         description, logo_uri,
          created_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
        ON CONFLICT (contract_id)
        DO UPDATE SET
          state = EXCLUDED.state,
@@ -1003,10 +1015,12 @@ export class VaultService {
          rwa_symbol = COALESCE(EXCLUDED.rwa_symbol, vaults.rwa_symbol),
          rwa_document_uri = COALESCE(EXCLUDED.rwa_document_uri, vaults.rwa_document_uri),
          rwa_category = COALESCE(EXCLUDED.rwa_category, vaults.rwa_category),
+         description = COALESCE(EXCLUDED.description, vaults.description),
+         logo_uri = COALESCE(EXCLUDED.logo_uri, vaults.logo_uri),
          updated_at = NOW()`,
       [contractId, factoryId, asset, name, symbol, state, totalAssets, totalSupply,
        fundingTarget, fundingDeadline, minDeposit, maxDepositPerUser,
-       rwaName, rwaSymbol, rwaDocumentUri, rwaCategory],
+       rwaName, rwaSymbol, rwaDocumentUri, rwaCategory, description, logoUri],
     );
 
     logger.info({ contractId }, "Vault upserted successfully");

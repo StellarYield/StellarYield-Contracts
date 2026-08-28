@@ -28,6 +28,7 @@ import {
   getUserComplianceSummary,
   getRetentionPolicy,
   patchRetentionPolicy,
+  getQueryBenchmarksCompare,
 } from "../controllers/admin.js";
 import { requireApiKey } from "../middleware/auth.js";
 import { ipAllowlist } from "../middleware/ipAllowlist.js";
@@ -51,6 +52,8 @@ adminRouter.get("/webhooks/:id/deliveries", getWebhookDeliveries);
 // Issue #1006: bulk webhook enable/disable
 adminRouter.post("/webhooks/bulk/toggle", requireApiKey({ role: "admin" }), bulkToggleWebhooks);
 adminRouter.get("/db/stats", getDbStats);
+// Issue #964: query performance regression detection
+adminRouter.get("/db/query-benchmarks/compare", getQueryBenchmarksCompare);
 adminRouter.get("/fees", getAdminFees);
 adminRouter.get("/fees/dashboard", requireApiKey({ role: "admin" }), getAdminFeesDashboard);
 adminRouter.delete("/users/:address", requireApiKey({ role: "admin" }), deleteUser);

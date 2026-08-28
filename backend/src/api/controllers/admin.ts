@@ -1168,3 +1168,47 @@ export async function getFailedJobs(_req: Request, res: Response, next: NextFunc
 export function streamIndexerProgress(req: Request, res: Response): void {
   sseManager.addIndexerClient(req, res);
 }
+
+const queryBenchmarksSchema = z.object({
+  baseDeployId: z.string().min(1),
+  headDeployId: z.string().min(1),
+});
+
+/**
+ * Issue #964 — compare query benchmark durations between two deploys and flag
+ * queries that regressed by more than 20%.
+ *
+ * GET /api/v1/admin/db/query-benchmarks/compare?baseDeployId=<id>&headDeployId=<id>
+ */
+export async function getQueryBenchmarksCompare(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const parsed = queryBenchmarksSchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "BadRequest",
+        message: "baseDeployId and headDeployId are required query parameters",
+      });
+      return;
+    }
+
+    const { compareBenchmarks } = await import("../../services/queryBenchmarks.js");
+    const { baseDeployId, headDeployId } = parsed.data;
+    const comparisons = await compareBenchmarks(baseDeployId, headDeployId);
+    const regressions = comparisons.filter((c) => c.isRegression);
+
+    res.json({
+      baseDeployId,
+      headDeployId,
+      regressionThresholdPct: 20,
+      data: comparisons,
+      regressions,
+      totalRegressed: regressions.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+}

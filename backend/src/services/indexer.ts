@@ -767,6 +767,106 @@ export class Indexer {
       }
       return;
     }
+
+    const docUriUpdated = parseVaultDocumentUriUpdatedEvent(event);
+    if (docUriUpdated) {
+      await this.handleVaultDocumentUriUpdated(event.contractId ?? "", docUriUpdated);
+      await this.recordEvent(event, "vault_document_uri_updated", {
+        caller: docUriUpdated.caller,
+        oldUri: docUriUpdated.oldUri,
+        newUri: docUriUpdated.newUri,
+      });
+      return;
+    }
+
+    const descriptionUpdated = parseVaultDescriptionUpdatedEvent(event);
+    if (descriptionUpdated) {
+      await this.handleVaultDescriptionUpdated(event.contractId ?? "", descriptionUpdated);
+      await this.recordEvent(event, "vault_description_updated", {
+        caller: descriptionUpdated.caller,
+        description: descriptionUpdated.description,
+      });
+      return;
+    }
+
+    const logoUriUpdated = parseVaultLogoUriUpdatedEvent(event);
+    if (logoUriUpdated) {
+      await this.handleVaultLogoUriUpdated(event.contractId ?? "", logoUriUpdated);
+      await this.recordEvent(event, "vault_logo_uri_updated", {
+        caller: logoUriUpdated.caller,
+        logoUri: logoUriUpdated.logoUri,
+      });
+      return;
+    }
+  }
+
+  private async handleVaultDocumentUriUpdated(
+    contractId: string,
+    ev: ParsedVaultDocumentUriUpdatedEvent,
+  ): Promise<void> {
+    const vaultRows = await query<{ id: number }>(
+      "SELECT id FROM vaults WHERE contract_id = $1",
+      [contractId],
+    );
+    if (vaultRows.length === 0) {
+      logger.warn({ contractId }, "vault_document_uri_updated for unknown vault — skipping");
+      return;
+    }
+    const vaultId = vaultRows[0].id;
+
+    const prev = await query<{ rwa_document_uri: string | null }>(
+      "SELECT rwa_document_uri FROM vaults WHERE id = $1",
+      [vaultId],
+    );
+    const oldVals = prev[0] ?? {};
+
+    await query(
+      "UPDATE vaults SET rwa_document_uri = $1, updated_at = NOW() WHERE id = $2",
+      [ev.newUri, vaultId],
+    );
+
+    // Record the change so the metadata history trail stays complete (#969).
+    const oldUri = String(oldVals.rwa_document_uri ?? "");
+    if (oldUri !== ev.newUri) {
+      await query(
+        `INSERT INTO vault_metadata_history (vault_id, field, old_value, new_value, changed_by, recorded_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [vaultId, "rwa_document_uri", oldUri || null, ev.newUri, ev.caller],
+      );
+    }
+
+    await cacheDel(`vault:${contractId}`);
+    await cacheDel("vaults:list:*");
+    logger.info(
+      { contractId, oldUri, newUri: ev.newUri },
+      "Processed vault_document_uri_updated event",
+    );
+  }
+
+  private async handleVaultDescriptionUpdated(
+    contractId: string,
+    ev: ParsedVaultDescriptionUpdatedEvent,
+  ): Promise<void> {
+    await query(
+      "UPDATE vaults SET description = $1, updated_at = NOW() WHERE contract_id = $2",
+      [ev.description, contractId],
+    );
+    await cacheDel(`vault:${contractId}`);
+    await cacheDel("vaults:list:*");
+    logger.info({ contractId, description: ev.description }, "Processed vault_description_updated event");
+  }
+
+  private async handleVaultLogoUriUpdated(
+    contractId: string,
+    ev: ParsedVaultLogoUriUpdatedEvent,
+  ): Promise<void> {
+    await query(
+      "UPDATE vaults SET logo_uri = $1, updated_at = NOW() WHERE contract_id = $2",
+      [ev.logoUri, contractId],
+    );
+    await cacheDel(`vault:${contractId}`);
+    await cacheDel("vaults:list:*");
+    logger.info({ contractId, logoUri: ev.logoUri }, "Processed vault_logo_uri_updated event");
   }
 
   private async handleMetadataUpdated(
@@ -2669,6 +2769,164 @@ export function parseOperatorFeeUpdatedEvent(rawEvent: unknown): ParsedOperatorF
     const newFeeBps = Number(decodeBigInt(arr[1]));
 
     return { caller, oldFeeBps, newFeeBps };
+  } catch {
+    return null;
+  }
+}
+
+// ── #969: parseVaultDocumentUriUpdatedEvent ───────────────────────────────────
+
+export interface ParsedVaultDocumentUriUpdatedEvent {
+  caller: string;
+  oldUri: string;
+  newUri: string;
+}
+
+/**
+ * Parse the `vault_document_uri_updated` event (short symbol `doc_upd`).
+ *
+ * Expected shape:
+ *   topics[0]: symbol "vault_document_uri_updated" or "doc_upd"
+ *   topics[1]: caller (Address)
+ *   value:     (oldUri, newUri)
+ */
+export function parseVaultDocumentUriUpdatedEvent(
+  rawEvent: unknown,
+): ParsedVaultDocumentUriUpdatedEvent | null {
+  try {
+    if (!rawEvent || typeof rawEvent !== "object") return null;
+    const ev = rawEvent as Record<string, unknown>;
+    const topics = (ev["topic"] ?? ev["topics"]) as unknown[] | undefined;
+    const value = ev["value"] ?? ev["data"];
+
+    if (!Array.isArray(topics) || topics.length < 2 || value == null) return null;
+
+    const parsedTopics = topics.map((t) =>
+      typeof t === "string" ? xdr.ScVal.fromXDR(t, "base64") : (t as xdr.ScVal),
+    );
+    const parsedValue = typeof value === "string"
+      ? xdr.ScVal.fromXDR(value, "base64")
+      : value;
+
+    let eventName: string;
+    try {
+      eventName = String(scValToNative(parsedTopics[0]) ?? "");
+    } catch {
+      return null;
+    }
+    if (eventName !== "vault_document_uri_updated" && eventName !== "doc_upd") return null;
+
+    const caller = String(scValToNative(parsedTopics[1]) ?? "");
+    const data = scValToNative(parsedValue as xdr.ScVal);
+    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
+    const oldUri = String(arr[0] ?? "");
+    const newUri = String(arr[1] ?? "");
+
+    return { caller, oldUri, newUri };
+  } catch {
+    return null;
+  }
+}
+
+// ── #970: parseVaultDescriptionUpdatedEvent ───────────────────────────────────
+
+export interface ParsedVaultDescriptionUpdatedEvent {
+  caller: string;
+  description: string;
+}
+
+/**
+ * Parse the `vault_description_updated` event (short symbol `desc_upd`).
+ *
+ * Expected shape:
+ *   topics[0]: symbol "vault_description_updated" or "desc_upd"
+ *   topics[1]: caller (Address)
+ *   value:     description (String)
+ */
+export function parseVaultDescriptionUpdatedEvent(
+  rawEvent: unknown,
+): ParsedVaultDescriptionUpdatedEvent | null {
+  try {
+    if (!rawEvent || typeof rawEvent !== "object") return null;
+    const ev = rawEvent as Record<string, unknown>;
+    const topics = (ev["topic"] ?? ev["topics"]) as unknown[] | undefined;
+    const value = ev["value"] ?? ev["data"];
+
+    if (!Array.isArray(topics) || topics.length < 2 || value == null) return null;
+
+    const parsedTopics = topics.map((t) =>
+      typeof t === "string" ? xdr.ScVal.fromXDR(t, "base64") : (t as xdr.ScVal),
+    );
+    const parsedValue = typeof value === "string"
+      ? xdr.ScVal.fromXDR(value, "base64")
+      : value;
+
+    let eventName: string;
+    try {
+      eventName = String(scValToNative(parsedTopics[0]) ?? "");
+    } catch {
+      return null;
+    }
+    if (eventName !== "vault_description_updated" && eventName !== "desc_upd") return null;
+
+    const caller = String(scValToNative(parsedTopics[1]) ?? "");
+    const data = scValToNative(parsedValue as xdr.ScVal);
+    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
+    const description = String(arr[0] ?? "");
+
+    return { caller, description };
+  } catch {
+    return null;
+  }
+}
+
+// ── #971: parseVaultLogoUriUpdatedEvent ───────────────────────────────────────
+
+export interface ParsedVaultLogoUriUpdatedEvent {
+  caller: string;
+  logoUri: string;
+}
+
+/**
+ * Parse the `vault_logo_uri_updated` event (short symbol `logo_upd`).
+ *
+ * Expected shape:
+ *   topics[0]: symbol "vault_logo_uri_updated" or "logo_upd"
+ *   topics[1]: caller (Address)
+ *   value:     logoUri (String)
+ */
+export function parseVaultLogoUriUpdatedEvent(
+  rawEvent: unknown,
+): ParsedVaultLogoUriUpdatedEvent | null {
+  try {
+    if (!rawEvent || typeof rawEvent !== "object") return null;
+    const ev = rawEvent as Record<string, unknown>;
+    const topics = (ev["topic"] ?? ev["topics"]) as unknown[] | undefined;
+    const value = ev["value"] ?? ev["data"];
+
+    if (!Array.isArray(topics) || topics.length < 2 || value == null) return null;
+
+    const parsedTopics = topics.map((t) =>
+      typeof t === "string" ? xdr.ScVal.fromXDR(t, "base64") : (t as xdr.ScVal),
+    );
+    const parsedValue = typeof value === "string"
+      ? xdr.ScVal.fromXDR(value, "base64")
+      : value;
+
+    let eventName: string;
+    try {
+      eventName = String(scValToNative(parsedTopics[0]) ?? "");
+    } catch {
+      return null;
+    }
+    if (eventName !== "vault_logo_uri_updated" && eventName !== "logo_upd") return null;
+
+    const caller = String(scValToNative(parsedTopics[1]) ?? "");
+    const data = scValToNative(parsedValue as xdr.ScVal);
+    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
+    const logoUri = String(arr[0] ?? "");
+
+    return { caller, logoUri };
   } catch {
     return null;
   }

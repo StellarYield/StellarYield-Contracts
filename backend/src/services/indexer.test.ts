@@ -14,7 +14,7 @@ vi.mock("./user.js", () => ({
 vi.mock("./notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
 
 import { rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
-import { Indexer, parseDepositEvent, parseYieldDistributedEvent, parseCancelFundingEvent, parseEarlyRedemptionProcessedEvent, parseEarlyRedemptionCancelledEvent } from "./indexer.js";
+import { Indexer, parseDepositEvent, parseYieldDistributedEvent, parseCancelFundingEvent, parseEarlyRedemptionProcessedEvent, parseEarlyRedemptionCancelledEvent, parseVaultDocumentUriUpdatedEvent, parseVaultDescriptionUpdatedEvent, parseVaultLogoUriUpdatedEvent } from "./indexer.js";
 import { getSorobanRpc } from "./stellar.js";
 
 const VAULT_CONTRACT = "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B";
@@ -617,5 +617,99 @@ describe("parseKycVerifiedEvent", () => {
     expect(parseKycVerifiedEvent(null)).toBeNull();
     expect(parseKycVerifiedEvent({})).toBeNull();
     expect(parseKycVerifiedEvent({ topics: [], data: null })).toBeNull();
+  });
+});
+
+// ── Issue #969: parseVaultDocumentUriUpdatedEvent ───────────────────────────
+
+describe("parseVaultDocumentUriUpdatedEvent", () => {
+  it("parses a full-named vault_document_uri_updated event", () => {
+    const topics = [nativeToScVal("vault_document_uri_updated"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["https://old", "https://new"]);
+    const result = parseVaultDocumentUriUpdatedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.caller).toBe(ACCOUNT);
+    expect(result?.oldUri).toBe("https://old");
+    expect(result?.newUri).toBe("https://new");
+  });
+
+  it("parses a short-topic (doc_upd) event", () => {
+    const topics = [nativeToScVal("doc_upd"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["https://old", "https://new"]);
+    const result = parseVaultDocumentUriUpdatedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.caller).toBe(ACCOUNT);
+  });
+
+  it("returns null for an unrelated topic", () => {
+    const topics = [nativeToScVal("deposit"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["a", "b"]);
+    expect(parseVaultDocumentUriUpdatedEvent({ topics, data })).toBeNull();
+  });
+
+  it("returns null for malformed events", () => {
+    expect(parseVaultDocumentUriUpdatedEvent(null)).toBeNull();
+    expect(parseVaultDocumentUriUpdatedEvent({ topic: [] })).toBeNull();
+    expect(parseVaultDocumentUriUpdatedEvent({ topics: [nativeToScVal("vault_document_uri_updated")] })).toBeNull();
+  });
+});
+
+// ── Issue #970: parseVaultDescriptionUpdatedEvent ───────────────────────────
+
+describe("parseVaultDescriptionUpdatedEvent", () => {
+  it("parses a full-named vault_description_updated event", () => {
+    const topics = [nativeToScVal("vault_description_updated"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["A regulated treasury vault"]);
+    const result = parseVaultDescriptionUpdatedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.caller).toBe(ACCOUNT);
+    expect(result?.description).toBe("A regulated treasury vault");
+  });
+
+  it("parses a short-topic (desc_upd) event", () => {
+    const topics = [nativeToScVal("desc_upd"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["desc"]);
+    expect(parseVaultDescriptionUpdatedEvent({ topics, data })?.description).toBe("desc");
+  });
+
+  it("returns null for an unrelated topic", () => {
+    const topics = [nativeToScVal("withdraw"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["desc"]);
+    expect(parseVaultDescriptionUpdatedEvent({ topics, data })).toBeNull();
+  });
+
+  it("returns null for malformed events", () => {
+    expect(parseVaultDescriptionUpdatedEvent(null)).toBeNull();
+    expect(parseVaultDescriptionUpdatedEvent({ topic: [] })).toBeNull();
+  });
+});
+
+// ── Issue #971: parseVaultLogoUriUpdatedEvent ───────────────────────────────
+
+describe("parseVaultLogoUriUpdatedEvent", () => {
+  it("parses a full-named vault_logo_uri_updated event", () => {
+    const topics = [nativeToScVal("vault_logo_uri_updated"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["https://logo.png"]);
+    const result = parseVaultLogoUriUpdatedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.caller).toBe(ACCOUNT);
+    expect(result?.logoUri).toBe("https://logo.png");
+  });
+
+  it("parses a short-topic (logo_upd) event", () => {
+    const topics = [nativeToScVal("logo_upd"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["https://logo.png"]);
+    expect(parseVaultLogoUriUpdatedEvent({ topics, data })?.logoUri).toBe("https://logo.png");
+  });
+
+  it("returns null for an unrelated topic", () => {
+    const topics = [nativeToScVal("deposit"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["https://logo.png"]);
+    expect(parseVaultLogoUriUpdatedEvent({ topics, data })).toBeNull();
+  });
+
+  it("returns null for malformed events", () => {
+    expect(parseVaultLogoUriUpdatedEvent(null)).toBeNull();
+    expect(parseVaultLogoUriUpdatedEvent({ topic: [] })).toBeNull();
   });
 });

@@ -401,3 +401,50 @@ export function makeUnpausedEvent(overrides: Partial<BaseOverrides> = {}) {
     value: xdr.ScVal.scvVoid(),
   };
 }
+
+export function makeVaultDocumentUriUpdatedEvent(
+  overrides: Partial<BaseOverrides & {
+    caller: string;
+    oldUri: string;
+    newUri: string;
+  }> = {},
+) {
+  const caller = overrides.caller ?? USER_ADDRESS;
+  const oldUri = overrides.oldUri ?? "https://example.com/old";
+  const newUri = overrides.newUri ?? "https://example.com/new";
+  return {
+    ...baseEvent(overrides),
+    topic: [nativeToScVal("vault_document_uri_updated"), nativeToScVal(caller)],
+    value: nativeToScVal([oldUri, newUri]),
+  };
+}
+
+export function makeVaultDescriptionUpdatedEvent(
+  overrides: Partial<BaseOverrides & {
+    caller: string;
+    description: string;
+  }> = {},
+) {
+  const caller = overrides.caller ?? USER_ADDRESS;
+  const description = overrides.description ?? "A regulated treasury vault";
+  return {
+    ...baseEvent(overrides),
+    topic: [nativeToScVal("vault_description_updated"), nativeToScVal(caller)],
+    value: nativeToScVal([description]),
+  };
+}
+
+export function makeVaultLogoUriUpdatedEvent(
+  overrides: Partial<BaseOverrides & {
+    caller: string;
+    logoUri: string;
+  }> = {},
+) {
+  const caller = overrides.caller ?? USER_ADDRESS;
+  const logoUri = overrides.logoUri ?? "https://example.com/logo.png";
+  return {
+    ...baseEvent(overrides),
+    topic: [nativeToScVal("vault_logo_uri_updated"), nativeToScVal(caller)],
+    value: nativeToScVal([logoUri]),
+  };
+}

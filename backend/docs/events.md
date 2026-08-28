@@ -29,7 +29,10 @@ notifications fire. Topic values are the `symbol` in `topics[0]` the parser matc
 | `kyc_set` | `parseKycSetEvent` | `UserService.upsertUser`, inserts an `indexed_events` row directly (bypasses `recordEvent`) | none |
 | `paused` / `v_pause` | `parsePausedEvent` | Sets `vaults.paused = TRUE` | none |
 | `unpaused` / `v_unpause` | `parseUnpausedEvent` | Sets `vaults.paused = FALSE` | none |
-| `kyc_set` | `parseKycVerifiedEvent` | `UserService.upsertUser` (dead branch in practice — `parseKycSetEvent` matches `kyc_set` first and returns) | none |
+| `kyc_set` | `parseKycVerifiedEvent` | `UserService.upsertUser` (dead branch in practice — `parseKycSetEvent` matches `kyc_set` first and returns) |
+| `doc_upd` / `vault_document_uri_updated` | `parseVaultDocumentUriUpdatedEvent` | Updates `vaults.rwa_document_uri`, inserts a `vault_metadata_history` row (`field = 'rwa_document_uri'`), invalidates caches | none |
+| `desc_upd` / `vault_description_updated` | `parseVaultDescriptionUpdatedEvent` | Updates `vaults.description`, invalidates caches | none |
+| `logo_upd` / `vault_logo_uri_updated` | `parseVaultLogoUriUpdatedEvent` | Updates `vaults.logo_uri`, invalidates caches | none | none |
 
 ## Parsers not wired into `processEvent`
 

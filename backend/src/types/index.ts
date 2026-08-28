@@ -28,6 +28,8 @@ export interface Vault {
   rwaSymbol: string | null;
   rwaDocumentUri: string | null;
   rwaCategory: string | null;
+  description: string | null;
+  logoUri: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

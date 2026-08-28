@@ -24,6 +24,12 @@ const vaultSchema = z.object({
   fundingProgress: z.number().nullable(),
   minDeposit: z.string().nullable(),
   maxDepositPerUser: z.string().nullable(),
+  rwaName: z.string().nullable().optional(),
+  rwaSymbol: z.string().nullable().optional(),
+  rwaDocumentUri: z.string().nullable().optional(),
+  rwaCategory: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  logoUri: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -17,8 +17,19 @@ CREATE TABLE IF NOT EXISTS vaults (
   expected_apy    INT,
   maturity_date   TIMESTAMPTZ,
   rwa_category    TEXT,
+  description     TEXT,
+  logo_uri        TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS query_benchmarks (
+  id           SERIAL PRIMARY KEY,
+  deploy_id    TEXT NOT NULL,
+  query_name   TEXT NOT NULL,
+  duration_ms  DOUBLE PRECISION NOT NULL,
+  run_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (deploy_id, query_name)
 );
 
 CREATE TABLE IF NOT EXISTS users (
