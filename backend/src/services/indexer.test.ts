@@ -14,7 +14,7 @@ vi.mock("./user.js", () => ({
 vi.mock("./notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
 
 import { rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
-import { Indexer, parseDepositEvent, parseYieldDistributedEvent, parseCancelFundingEvent, parseEarlyRedemptionProcessedEvent, parseEarlyRedemptionCancelledEvent } from "./indexer.js";
+import { Indexer, parseDepositEvent, parseYieldDistributedEvent, parseCancelFundingEvent, parseEarlyRedemptionProcessedEvent, parseEarlyRedemptionCancelledEvent, parseVaultNameUpdatedEvent } from "./indexer.js";
 import { getSorobanRpc } from "./stellar.js";
 
 const VAULT_CONTRACT = "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B";
@@ -617,5 +617,44 @@ describe("parseKycVerifiedEvent", () => {
     expect(parseKycVerifiedEvent(null)).toBeNull();
     expect(parseKycVerifiedEvent({})).toBeNull();
     expect(parseKycVerifiedEvent({ topics: [], data: null })).toBeNull();
+  });
+});
+
+// ── Issue #968: parseVaultNameUpdatedEvent ────────────────────────────────────
+
+describe("parseVaultNameUpdatedEvent", () => {
+  it("parses a vault_name_updated event with full topic name", () => {
+    const caller = ACCOUNT;
+    const oldName = "Alpha Vault";
+    const newName = "Alpha Vault v2";
+    const topics = [nativeToScVal("vault_name_updated"), nativeToScVal(caller)];
+    const data = nativeToScVal([oldName, newName]);
+    const result = parseVaultNameUpdatedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.caller).toBe(caller);
+    expect(result?.oldName).toBe(oldName);
+    expect(result?.newName).toBe(newName);
+  });
+
+  it("parses a v_name_upd event with short topic name", () => {
+    const caller = ACCOUNT;
+    const topics = [nativeToScVal("v_name_upd"), nativeToScVal(caller)];
+    const data = nativeToScVal(["Old Name", "New Name"]);
+    const result = parseVaultNameUpdatedEvent({ topics, data });
+    expect(result).not.toBeNull();
+    expect(result?.oldName).toBe("Old Name");
+    expect(result?.newName).toBe("New Name");
+  });
+
+  it("returns null for an unrecognised topic", () => {
+    const topics = [nativeToScVal("deposit"), nativeToScVal(ACCOUNT)];
+    const data = nativeToScVal(["A", "B"]);
+    expect(parseVaultNameUpdatedEvent({ topics, data })).toBeNull();
+  });
+
+  it("returns null for malformed events", () => {
+    expect(parseVaultNameUpdatedEvent(null)).toBeNull();
+    expect(parseVaultNameUpdatedEvent({})).toBeNull();
+    expect(parseVaultNameUpdatedEvent({ topics: [], data: null })).toBeNull();
   });
 });

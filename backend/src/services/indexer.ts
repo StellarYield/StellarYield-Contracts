@@ -767,6 +767,18 @@ export class Indexer {
       }
       return;
     }
+
+    // ── Issue #968: vault_name_updated ────────────────────────────────────────
+    const vaultNameUpdated = parseVaultNameUpdatedEvent(event);
+    if (vaultNameUpdated) {
+      await this.handleVaultNameUpdated(event.contractId ?? "", vaultNameUpdated);
+      await this.recordEvent(event, "vault_name_updated", {
+        caller: vaultNameUpdated.caller,
+        oldName: vaultNameUpdated.oldName,
+        newName: vaultNameUpdated.newName,
+      });
+      return;
+    }
   }
 
   private async handleMetadataUpdated(
@@ -830,6 +842,40 @@ export class Indexer {
     }
 
     logger.info({ contractId }, "Processed rwa_details_updated event");
+  }
+
+  // ── Issue #968: handle vault_name_updated ─────────────────────────────────
+  private async handleVaultNameUpdated(
+    contractId: string,
+    event: ParsedVaultNameUpdatedEvent,
+  ): Promise<void> {
+    const vaultRows = await query<{ id: number; name: string }>(
+      "SELECT id, name FROM vaults WHERE contract_id = $1",
+      [contractId],
+    );
+    if (vaultRows.length === 0) {
+      logger.warn({ contractId }, "vault_name_updated for unknown vault — skipping");
+      return;
+    }
+    const { id: vaultId, name: currentName } = vaultRows[0];
+
+    // Update the canonical vault name
+    await query(
+      "UPDATE vaults SET name = $1, updated_at = NOW() WHERE id = $2",
+      [event.newName, vaultId],
+    );
+
+    // Record the change in vault_metadata_history
+    await query(
+      `INSERT INTO vault_metadata_history (vault_id, field, old_value, new_value, changed_by, recorded_at)
+       VALUES ($1, 'name', $2, $3, $4, NOW())`,
+      [vaultId, event.oldName || currentName, event.newName, event.caller],
+    );
+
+    logger.info(
+      { contractId, caller: event.caller, oldName: event.oldName, newName: event.newName },
+      "Processed vault_name_updated event",
+    );
   }
 
   isRunning(): boolean {
@@ -2669,6 +2715,63 @@ export function parseOperatorFeeUpdatedEvent(rawEvent: unknown): ParsedOperatorF
     const newFeeBps = Number(decodeBigInt(arr[1]));
 
     return { caller, oldFeeBps, newFeeBps };
+  } catch {
+    return null;
+  }
+}
+
+// ── Issue #968: parseVaultNameUpdatedEvent ────────────────────────────────────
+
+export interface ParsedVaultNameUpdatedEvent {
+  caller: string;
+  oldName: string;
+  newName: string;
+}
+
+/**
+ * Parses a `vault_name_updated` (or `v_name_upd`) on-chain event emitted when
+ * an operator renames a vault after deployment.
+ *
+ * Expected event shape:
+ *   topics[0]: symbol "vault_name_updated" or "v_name_upd"
+ *   topics[1]: account address of the caller
+ *   value:     tuple [old_name: string, new_name: string]
+ */
+export function parseVaultNameUpdatedEvent(rawEvent: unknown): ParsedVaultNameUpdatedEvent | null {
+  try {
+    if (!rawEvent || typeof rawEvent !== "object") return null;
+    const ev = rawEvent as Record<string, unknown>;
+    const topics = (ev["topic"] ?? ev["topics"]) as unknown[] | undefined;
+    const value = ev["value"] ?? ev["data"];
+
+    if (!Array.isArray(topics) || topics.length < 2 || value == null) return null;
+
+    const parsedTopics = topics.map((t) =>
+      typeof t === "string" ? xdr.ScVal.fromXDR(t, "base64") : (t as xdr.ScVal),
+    );
+    const parsedValue = typeof value === "string"
+      ? xdr.ScVal.fromXDR(value, "base64")
+      : value;
+
+    let eventName: string;
+    try {
+      eventName = String(scValToNative(parsedTopics[0]) ?? "");
+    } catch {
+      return null;
+    }
+    if (eventName !== "vault_name_updated" && eventName !== "v_name_upd") return null;
+
+    const caller = String(scValToNative(parsedTopics[1]) ?? "");
+
+    const data = scValToNative(parsedValue as xdr.ScVal);
+    const arr = Array.isArray(data)
+      ? data
+      : Object.values((data as Record<string, unknown>) ?? {});
+
+    const oldName = String(arr[0] ?? "");
+    const newName = String(arr[1] ?? "");
+
+    return { caller, oldName, newName };
   } catch {
     return null;
   }

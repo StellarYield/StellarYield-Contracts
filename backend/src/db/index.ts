@@ -16,6 +16,20 @@ export const pool = new Pool({
   query_timeout: config.db.queryTimeoutMs,
 });
 
+// ── Read-replica pool (#967) ───────────────────────────────────────────────────
+// When DATABASE_READ_URL is set, a second pool is created pointing at the
+// read replica. The pool-stats endpoint exposes both so operators can monitor
+// saturation independently.
+export const readPool: pg.Pool | null = config.db.readUrl
+  ? new Pool({
+      connectionString: config.db.readUrl,
+      min: config.db.poolMin,
+      max: config.db.poolMax,
+      idleTimeoutMillis: config.db.idleTimeoutMs,
+      query_timeout: config.db.queryTimeoutMs,
+    })
+  : null;
+
 export async function query<T = Record<string, unknown>>(
   sql: string,
   params?: unknown[],
@@ -63,6 +77,7 @@ async function validateConnection(): Promise<void> {
 process.on("SIGTERM", async () => {
   logger.info("Shutting down database pool");
   await pool.end();
+  if (readPool) await readPool.end();
 });
 
 // ── Pool exhaustion alerting (#828) ───────────────────────────────────────────

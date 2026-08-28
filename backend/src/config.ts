@@ -37,6 +37,12 @@ const envSchema = z.object({
     .refine((v) => /^postgres(ql)?:\/\/.+/.test(v), {
       message: "DATABASE_URL must be a valid PostgreSQL connection string (postgresql://...)",
     }),
+  DATABASE_READ_URL: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^postgres(ql)?:\/\/.+/.test(v), {
+      message: "DATABASE_READ_URL must be a valid PostgreSQL connection string (postgresql://...)",
+    }),
   INDEXER_START_LEDGER: z
     .string()
     .default("0")
@@ -202,6 +208,7 @@ export const config = {
 
   db: {
     url: parsed.data.DATABASE_URL,
+    readUrl: parsed.data.DATABASE_READ_URL ?? null,
     poolMin: parsed.data.DB_POOL_MIN,
     poolMax: parsed.data.DB_POOL_MAX,
     idleTimeoutMs: parsed.data.DB_IDLE_TIMEOUT_MS,

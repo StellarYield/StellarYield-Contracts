@@ -28,6 +28,9 @@ import {
   getUserComplianceSummary,
   getRetentionPolicy,
   patchRetentionPolicy,
+  getIndexStats,
+  getPoolStats,
+  getBenchmarkComparison,
 } from "../controllers/admin.js";
 import { requireApiKey } from "../middleware/auth.js";
 import { ipAllowlist } from "../middleware/ipAllowlist.js";
@@ -73,4 +76,11 @@ adminRouter.patch("/retention-policy", patchRetentionPolicy);
 adminRouter.get("/jobs/dashboard", getJobQueueDashboard);
 adminRouter.get("/jobs/failed", getFailedJobs);
 adminRouter.get("/jobs/:jobId", getJobStatus);
+
+// Issue #966: index usage statistics
+adminRouter.get("/db/index-stats", getIndexStats);
+// Issue #967: connection pool statistics
+adminRouter.get("/db/pool-stats", getPoolStats);
+// Issue #965: benchmark comparison report
+adminRouter.get("/benchmarks/compare", getBenchmarkComparison);
 

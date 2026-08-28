@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
-import { query } from "../../db/index.js";
+import { query, pool, readPool } from "../../db/index.js";
 import { indexer } from "../../services/indexerSingleton.js";
 import { jobQueue } from "../../services/jobQueue.js";
 import { sseManager } from "../../services/sseManager.js";
@@ -1167,4 +1167,185 @@ export async function getFailedJobs(_req: Request, res: Response, next: NextFunc
 /** SSE stream of indexer tick progress (#757). */
 export function streamIndexerProgress(req: Request, res: Response): void {
   sseManager.addIndexerClient(req, res);
+}
+
+// ── Issue #966: Index usage statistics endpoint ───────────────────────────────
+export async function getIndexStats(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await query<{
+      table_name: string;
+      index_name: string;
+      idx_scan: string;
+      idx_tup_read: string;
+      idx_tup_fetch: string;
+      index_size_bytes: string;
+    }>(
+      `SELECT
+         t.relname                                     AS table_name,
+         i.relname                                     AS index_name,
+         s.idx_scan::text                              AS idx_scan,
+         s.idx_tup_read::text                          AS idx_tup_read,
+         s.idx_tup_fetch::text                         AS idx_tup_fetch,
+         pg_relation_size(s.indexrelid)::text          AS index_size_bytes
+       FROM pg_stat_user_indexes s
+       JOIN pg_class t ON t.oid = s.relid
+       JOIN pg_class i ON i.oid = s.indexrelid
+       ORDER BY s.idx_scan ASC`,
+    );
+
+    res.json(
+      rows.map((r) => ({
+        table: r.table_name,
+        index: r.index_name,
+        scans: parseInt(r.idx_scan, 10),
+        tuplesRead: parseInt(r.idx_tup_read, 10),
+        tuplesReturned: parseInt(r.idx_tup_fetch, 10),
+        sizeBytes: parseInt(r.index_size_bytes, 10),
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Issue #967: Connection pool statistics endpoint ───────────────────────────
+export async function getPoolStats(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const primary = {
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+      maxSize: pool.options.max ?? 10,
+    };
+
+    const result: Record<string, unknown> = { primary };
+
+    if (readPool) {
+      result["readReplica"] = {
+        total: readPool.totalCount,
+        idle: readPool.idleCount,
+        waiting: readPool.waitingCount,
+        maxSize: readPool.options.max ?? 10,
+      };
+    }
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Issue #965: Benchmark comparison endpoint ─────────────────────────────────
+export async function getBenchmarkComparison(req: Request, res: Response, next: NextFunction) {
+  try {
+    const benchmarkQuerySchema = z.object({
+      name: z.string().min(1),
+      baseline: z.string().min(1),
+      head: z.string().min(1),
+    });
+
+    const parsed = benchmarkQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "BadRequest",
+        message: "Query parameters name, baseline, and head are required",
+      });
+      return;
+    }
+
+    const { name, baseline, head } = parsed.data;
+
+    const baselineTs = new Date(baseline);
+    const headTs = new Date(head);
+
+    if (isNaN(baselineTs.getTime()) || isNaN(headTs.getTime())) {
+      res.status(400).json({ error: "BadRequest", message: "baseline and head must be valid ISO 8601 timestamps" });
+      return;
+    }
+
+    // Fetch the closest record to each timestamp for this named run
+    const baselineRows = await query<{
+      recorded_at: Date;
+      p50_ms: string;
+      p95_ms: string;
+      p99_ms: string;
+      error_rate: string;
+    }>(
+      `SELECT recorded_at, p50_ms::text, p95_ms::text, p99_ms::text, error_rate::text
+       FROM benchmark_results
+       WHERE name = $1
+       ORDER BY ABS(EXTRACT(EPOCH FROM (recorded_at - $2::timestamptz)))
+       LIMIT 1`,
+      [name, baselineTs.toISOString()],
+    );
+
+    const headRows = await query<{
+      recorded_at: Date;
+      p50_ms: string;
+      p95_ms: string;
+      p99_ms: string;
+      error_rate: string;
+    }>(
+      `SELECT recorded_at, p50_ms::text, p95_ms::text, p99_ms::text, error_rate::text
+       FROM benchmark_results
+       WHERE name = $1
+       ORDER BY ABS(EXTRACT(EPOCH FROM (recorded_at - $2::timestamptz)))
+       LIMIT 1`,
+      [name, headTs.toISOString()],
+    );
+
+    if (baselineRows.length === 0 || headRows.length === 0) {
+      res.status(404).json({ error: "NotFound", message: "One or both benchmark records not found" });
+      return;
+    }
+
+    const b = baselineRows[0];
+    const h = headRows[0];
+
+    const bP50 = parseFloat(b.p50_ms);
+    const bP95 = parseFloat(b.p95_ms);
+    const bP99 = parseFloat(b.p99_ms);
+    const bErr = parseFloat(b.error_rate);
+
+    const hP50 = parseFloat(h.p50_ms);
+    const hP95 = parseFloat(h.p95_ms);
+    const hP99 = parseFloat(h.p99_ms);
+    const hErr = parseFloat(h.error_rate);
+
+    // Relative deltas as fractions (positive = worse / higher latency)
+    const deltaP50 = bP50 > 0 ? (hP50 - bP50) / bP50 : 0;
+    const deltaP95 = bP95 > 0 ? (hP95 - bP95) / bP95 : 0;
+    const deltaP99 = bP99 > 0 ? (hP99 - bP99) / bP99 : 0;
+    const deltaErrorRate = hErr - bErr;
+
+    // Regressed when p95 worsened by more than 20 %
+    const regressed = deltaP95 > 0.2;
+
+    res.json({
+      name,
+      baseline: {
+        recordedAt: b.recorded_at,
+        p50: bP50,
+        p95: bP95,
+        p99: bP99,
+        errorRate: bErr,
+      },
+      head: {
+        recordedAt: h.recorded_at,
+        p50: hP50,
+        p95: hP95,
+        p99: hP99,
+        errorRate: hErr,
+      },
+      delta: {
+        p50: deltaP50,
+        p95: deltaP95,
+        p99: deltaP99,
+        errorRate: deltaErrorRate,
+      },
+      regressed,
+    });
+  } catch (err) {
+    next(err);
+  }
 }
