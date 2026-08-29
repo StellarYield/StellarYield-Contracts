@@ -14,6 +14,7 @@ import {
   getApyTrend,
   getRollingApy,
   getApyHistory,
+  getYieldVolatility,
 } from "../controllers/yields.js";
 import { getYieldsStream } from "../controllers/yields-stream.js";
 import { validateQuery, validateParams } from "../middleware/validate.js";
@@ -96,6 +97,9 @@ const apyHistoryQuerySchema = z.object({
 });
 yieldsRouter.get("/:contractId/apy/history", validateQuery(apyHistoryQuerySchema), getApyHistory);
 
+// ── Yield volatility metric per vault (#982) ──────────────────────────────────
+yieldsRouter.get("/:contractId/volatility", getYieldVolatility);
+
 yieldsRouter.get("/:contractId/yield-per-share-history", validateQuery(yieldHistoryQuerySchema), getYieldPerShareHistory);
 yieldsRouter.get("/:contractId/pending/:userAddress", getUserPendingYield);
 
@@ -105,3 +109,4 @@ const timelineQuerySchema = z.object({
 });
 
 yieldsRouter.get("/:contractId/timeline", validateQuery(timelineQuerySchema), getYieldTimeline);
+

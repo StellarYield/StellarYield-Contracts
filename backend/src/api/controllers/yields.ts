@@ -369,3 +369,25 @@ export async function getApyHistory(
     next(err);
   }
 }
+
+// ── Yield volatility metric per vault (#982) ──────────────────────────────────
+export async function getYieldVolatility(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const exists = await yieldService.vaultExists(contractId);
+    if (!exists) {
+      res.status(404).json({ error: "NotFound", message: "Vault not found" });
+      return;
+    }
+
+    const result = await yieldService.getYieldVolatility(contractId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
