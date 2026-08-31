@@ -4,6 +4,8 @@ import jwt, { type JwtPayload, TokenExpiredError } from "jsonwebtoken";
 import { query } from "../../db/index.js";
 import { logger } from "../../logger.js";
 import { config } from "../../config.js";
+import { incrementCounter } from "../../cache/redis.js";
+import { logSecurityEvent } from "../../services/securityLogger.js";
 
 interface ApiKey {
   id: number;
@@ -13,6 +15,7 @@ interface ApiKey {
   lastUsedAt: Date | null;
   active: boolean;
   allowedMethods: string[] | null;
+  rateLimitOverride?: number | null;
   allowedCidrs: string[] | null;
 }
 
@@ -31,6 +34,20 @@ declare module "express-serve-static-core" {
 
 const READ_ONLY_METHODS = new Set(["GET", "HEAD"]);
 
+const AUTH_FAIL_LOCKOUT_THRESHOLD = 20;
+const AUTH_FAIL_LOCKOUT_TTL_SECONDS = 15 * 60;
+
+async function lookupApiKeyByPlaintext(plaintext: string): Promise<ApiKey | null> {
+  const keyHash = createHash("sha256").update(plaintext).digest("hex");
+
+  try {
+    const rows = (await query<ApiKey>(
+      `SELECT id, role, label, expires_at AS "expiresAt", last_used_at AS "lastUsedAt", active,
+              allowed_methods AS "allowedMethods", rate_limit_override AS "rateLimitOverride"
+       FROM api_keys WHERE key_hash = $1`,
+      [keyHash],
+    )) ?? [];
+    return rows[0] ?? null;
 function parseIpv4(ip: string): number {
   const parts = ip.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
@@ -116,6 +133,7 @@ async function lookupApiKeyByPlaintext(plaintext: string): Promise<ApiKey | null
   try {
     const rows = (await query<ApiKey>(
       `SELECT id, role, label, expires_at AS "expiresAt", last_used_at AS "lastUsedAt", active,
+              allowed_methods AS "allowedMethods", rate_limit_override AS "rateLimitOverride"
               allowed_methods AS "allowedMethods", allowed_cidrs AS "allowedCidrs"
        FROM api_keys WHERE key_hash = $1`,
       [keyHash],
@@ -197,6 +215,14 @@ export function refreshAdminSessionToken(token: string): string {
 export function requireApiKey(options?: { role?: string; minRole?: "readonly" | "admin" }) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const ip = getClientIp(req);
+
+    const lockoutCount = await incrementCounter(`auth_fail:${ip}`, AUTH_FAIL_LOCKOUT_TTL_SECONDS);
+    if (lockoutCount !== null && lockoutCount > AUTH_FAIL_LOCKOUT_THRESHOLD) {
+      await logSecurityEvent("IP_LOCKOUT", { ipAddress: ip, path: req.path });
+      res.status(429).json({ error: "TooManyRequests", message: "IP locked out due to too many failed attempts" });
+      return;
+    }
+
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
       res.status(401).json({ error: "Unauthorized", message: "Missing API key" });
@@ -320,6 +346,7 @@ export function requireApiKey(options?: { role?: string; minRole?: "readonly" | 
     const apiKey = await lookupApiKeyByPlaintext(token);
 
     if (!apiKey) {
+      await logSecurityEvent("AUTH_FAILURE", { ipAddress: ip, path: req.path, details: { reason: "key_not_found" } });
       logger.info({
         event: "auth_attempt",
         success: false,
@@ -335,6 +362,7 @@ export function requireApiKey(options?: { role?: string; minRole?: "readonly" | 
 
     // Keys deactivated by the inactivity sweep are rejected outright (#934).
     if (apiKey.active === false) {
+      await logSecurityEvent("AUTH_FAILURE", { ipAddress: ip, apiKeyLabel: apiKey.label, path: req.path, details: { reason: "deactivated" } });
       logger.info({
         event: "auth_attempt",
         success: false,
@@ -349,6 +377,7 @@ export function requireApiKey(options?: { role?: string; minRole?: "readonly" | 
     }
 
     if (apiKey.expiresAt && apiKey.expiresAt.getTime() <= Date.now()) {
+      await logSecurityEvent("AUTH_FAILURE", { ipAddress: ip, apiKeyLabel: apiKey.label, path: req.path, details: { reason: "expired" } });
       logger.info({
         event: "auth_attempt",
         success: false,
@@ -363,6 +392,7 @@ export function requireApiKey(options?: { role?: string; minRole?: "readonly" | 
     }
 
     if (!isMethodAllowed(apiKey, req.method)) {
+      await logSecurityEvent("AUTH_FAILURE", { ipAddress: ip, apiKeyLabel: apiKey.label, path: req.path, details: { reason: "method_not_allowed" } });
       logger.info({
         event: "auth_attempt",
         success: false,
@@ -380,6 +410,7 @@ export function requireApiKey(options?: { role?: string; minRole?: "readonly" | 
     }
 
     if (options?.role && apiKey.role !== options.role) {
+      await logSecurityEvent("AUTH_FAILURE", { ipAddress: ip, apiKeyLabel: apiKey.label, path: req.path, details: { reason: "insufficient_permissions" } });
       logger.info({
         event: "auth_attempt",
         success: false,
@@ -395,6 +426,7 @@ export function requireApiKey(options?: { role?: string; minRole?: "readonly" | 
 
     if (options?.minRole === "readonly" && apiKey.role !== "admin") {
       if (apiKey.role !== "readonly" || !READ_ONLY_METHODS.has(req.method)) {
+        await logSecurityEvent("AUTH_FAILURE", { ipAddress: ip, apiKeyLabel: apiKey.label, path: req.path, details: { reason: "insufficient_permissions" } });
         logger.info({
           event: "auth_attempt",
           success: false,

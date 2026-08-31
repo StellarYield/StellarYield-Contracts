@@ -38,6 +38,7 @@ import {
   refreshAdminSession,
   getSecurityHeadersAudit,
   resetSandboxData,
+  getSecurityEvents,
   toggleVaultArchiveExclusion,
   verifyArchiveConsistency,
 } from "../controllers/admin.js";
@@ -110,6 +111,7 @@ adminRouter.get("/jobs/:jobId", getJobStatus);
 adminRouter.post("/benchmarks", requireApiKey({ role: "admin" }), postBenchmark);
 adminRouter.get("/benchmarks/:name", getBenchmarksByName);
 adminRouter.get("/security/headers-audit", requireApiKey({ role: "admin" }), getSecurityHeadersAudit);
+adminRouter.get("/security/events", requireApiKey({ role: "admin" }), getSecurityEvents);
 adminRouter.post("/sandbox/reset", requireApiKey({ role: "admin" }), resetSandboxData);
 
 adminRouter.post("/db/vacuum", requireApiKey({ role: "admin" }), vacuumDatabase);

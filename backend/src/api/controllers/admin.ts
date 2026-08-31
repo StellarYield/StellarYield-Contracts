@@ -13,6 +13,39 @@ import { sseManager } from "../../services/sseManager.js";
 import { logger } from "../../logger.js";
 import { createAdminSessionToken, refreshAdminSessionToken } from "../middleware/auth.js";
 
+export async function getSecurityEvents(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await query<{
+      id: number;
+      event_type: string;
+      ip_address: string | null;
+      api_key_label: string | null;
+      path: string | null;
+      details: Record<string, unknown> | null;
+      created_at: Date;
+    }>(
+      `SELECT id, event_type, ip_address, api_key_label, path, details, created_at
+       FROM security_events
+       ORDER BY created_at DESC
+       LIMIT 200`,
+    );
+
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        eventType: row.event_type,
+        ipAddress: row.ip_address,
+        apiKeyLabel: row.api_key_label,
+        path: row.path,
+        details: row.details,
+        createdAt: row.created_at,
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
+
 const stellarAddressSchema = z.string().length(56).regex(/^G[A-Z2-7]{55}$/);
 const contractAddressSchema = z.string().length(56).regex(/^C[A-Z2-7]{55}$/);
 
@@ -125,7 +158,7 @@ export async function createAdminSession(req: Request, res: Response, next: Next
   }
 }
 
-export async function refreshAdminSession(req: Request, res: Response, next: NextFunction) {
+export async function refreshAdminSession(req: Request, res: Response, _next: NextFunction) {
   try {
     const authHeader = req.headers.authorization ?? "";
     if (!authHeader.startsWith("Bearer ")) {
