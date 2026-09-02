@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHash } from "crypto";
+import jwt from "jsonwebtoken";
 
 // Mock the database layer so the middleware never touches a real DB.
 vi.mock("../../db/index.js", () => ({ query: vi.fn() }));
@@ -245,6 +246,43 @@ describe("requireApiKey middleware (#693)", () => {
       );
       const [, params] = query.mock.calls[0];
       expect(params[0]).not.toBe(plaintext);
+    });
+  });
+
+  describe("admin JWT session support", () => {
+    it("accepts a valid admin JWT in the Authorization header", async () => {
+      const { requireApiKey } = await getTestContext();
+      const secret = "test-admin-jwt-secret";
+      process.env.ADMIN_JWT_SECRET = secret;
+      const token = jwt.sign({ sub: "admin-session", role: "admin", type: "admin_session" }, secret, {
+        expiresIn: 60 * 60,
+      });
+      const { req, res, next } = makeReqRes(`Bearer ${token}`);
+
+      await requireApiKey({ role: "admin" })(req, res, next);
+
+      expect(next).toHaveBeenCalledOnce();
+      expect(res.status).not.toHaveBeenCalled();
+      expect(req.apiKey).toMatchObject({ role: "admin" });
+    });
+
+    it("rejects an expired admin JWT with 401", async () => {
+      const { requireApiKey } = await getTestContext();
+      const secret = "test-admin-jwt-secret";
+      process.env.ADMIN_JWT_SECRET = secret;
+      const token = jwt.sign({ sub: "admin-session", role: "admin", type: "admin_session" }, secret, {
+        expiresIn: "-1s",
+      });
+      const { req, res, next } = makeReqRes(`Bearer ${token}`);
+
+      await requireApiKey({ role: "admin" })(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({
+        error: "Unauthorized",
+        message: "JWT expired",
+      });
+      expect(next).not.toHaveBeenCalled();
     });
   });
 });

@@ -202,19 +202,20 @@ vaultsRouter.get("/maturing-soon", validateQuery(maturingSoonQuerySchema), getMa
 vaultsRouter.get("/fully-funded", getFullyFundedVaults);
 vaultsRouter.get("/stream", streamVaultEvents);
 // Issue #998: Bulk vault status query (placed before /:contractId routes)
-const bulkStatusBodySchema = z.object({
+export const bulkStatusBodySchema = z.object({
   contractIds: z.array(contractAddressSchema).min(1).max(100),
 });
 vaultsRouter.post("/bulk/status", validateBody(bulkStatusBodySchema), getVaultsBulkStatus);
 // Issue #1015: Simulation error translation (placed before /:contractId routes)
+export const translateErrorBodySchema = z.object({ errorCode: z.number().int() });
 vaultsRouter.post(
   "/simulate/translate-error",
   simulateLimiter,
-  validateBody(z.object({ errorCode: z.number().int() })),
+  validateBody(translateErrorBodySchema),
   translateSimulationError,
 );
 // Issue #976: Vault metadata validation
-const metadataValidationSchema = z.object({
+export const metadataValidationSchema = z.object({
   name: z.string().optional(),
   documentUri: z.string().optional(),
   logoUri: z.string().optional(),

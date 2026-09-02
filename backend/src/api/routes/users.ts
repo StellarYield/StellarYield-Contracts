@@ -21,6 +21,13 @@ import {
   streamUserPositions,
 } from "../controllers/users.js";
 import {
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  createVaultSubscription,
+  deleteVaultSubscription,
+  listVaultSubscriptions,
+} from "../controllers/userNotifications.js";
+import {
   validateBody,
   validateParams,
   validateQuery,
@@ -34,7 +41,12 @@ const addressParamSchema = z.object({
   address: stellarAddressSchema,
 });
 
-const batchPortfoliosBodySchema = z.object({
+const subscriptionParamsSchema = z.object({
+  address: stellarAddressSchema,
+  contractId: z.string().length(56).regex(/^C[A-Z2-7]{55}$/, "Invalid vault contract ID"),
+});
+
+export const batchPortfoliosBodySchema = z.object({
   addresses: z
     .array(stellarAddressSchema)
     .min(1, "At least one address is required")
@@ -49,7 +61,7 @@ const kycQuerySchema = z.object({
   vaultId: z.string().length(56).regex(/^C[A-Z2-7]{55}$/),
 });
 
-const kycBatchBodySchema = z.object({
+export const kycBatchBodySchema = z.object({
   addresses: z
     .array(stellarAddressSchema)
     .min(1, "At least one address is required")
@@ -134,6 +146,31 @@ usersRouter.get(
   validateParams(addressParamSchema),
   validateQuery(shareHistoryQuerySchema),
   getUserShareHistory,
+);
+usersRouter.get(
+  "/:address/notification-preferences",
+  validateParams(addressParamSchema),
+  getNotificationPreferences,
+);
+usersRouter.put(
+  "/:address/notification-preferences",
+  validateParams(addressParamSchema),
+  updateNotificationPreferences,
+);
+usersRouter.get(
+  "/:address/subscriptions",
+  validateParams(addressParamSchema),
+  listVaultSubscriptions,
+);
+usersRouter.post(
+  "/:address/subscriptions",
+  validateParams(addressParamSchema),
+  createVaultSubscription,
+);
+usersRouter.delete(
+  "/:address/subscriptions/:contractId",
+  validateParams(subscriptionParamsSchema),
+  deleteVaultSubscription,
 );
 usersRouter.get("/:address", validateParams(addressParamSchema), getUser);
 usersRouter.get(

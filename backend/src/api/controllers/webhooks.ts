@@ -152,6 +152,36 @@ export async function testWebhook(req: Request, res: Response, next: NextFunctio
 }
 
 /**
+ * GET /api/v1/webhooks/opt-out
+ * Returns the current global notification opt-out state.
+ * Issue #994.
+ */
+export async function getGlobalOptOut(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const enabled = await notificationService.isGloballyEnabled();
+    res.json({ notificationsEnabled: enabled });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * PUT /api/v1/webhooks/opt-out
+ * Sets the global notification opt-out flag. When disabled, no webhook
+ * notifications are dispatched regardless of individual webhook subscriptions.
+ * Issue #994.
+ */
+export async function setGlobalOptOut(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { enabled } = req.body as { enabled: boolean };
+    await notificationService.setGloballyEnabled(enabled);
+    res.json({ notificationsEnabled: enabled });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * POST /api/v1/webhooks/verify-signature
  * Verifies an HMAC-SHA256 webhook signature.
  * Issue #664.

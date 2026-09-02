@@ -62,7 +62,9 @@ describe("NotificationService.notify — enqueues via job queue (#847)", () => {
   });
 
   it("enqueues a job for each matching webhook", async () => {
-    mockQuery.mockResolvedValue([
+    // First call is the global opt-out check (empty rows = enabled/default),
+    // second is the webhook lookup.
+    mockQuery.mockResolvedValueOnce([]).mockResolvedValueOnce([
       { id: 1, url: "https://example.com/hook", events: ["deposit"], secret: null },
     ]);
 

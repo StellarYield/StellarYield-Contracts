@@ -1,6 +1,8 @@
 import { pool } from "./index.js";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-async function seed() {
+export async function seed() {
   console.log("Seeding database...");
 
   // Insert sample vaults
@@ -22,10 +24,20 @@ async function seed() {
   console.log("Inserted 1 sample user");
 
   console.log("Seeding complete.");
-  await pool.end();
 }
 
-seed().catch((err) => {
-  console.error("Seeding failed:", err);
-  process.exit(1);
-});
+const isDirectScriptRun = (() => {
+  const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+  return scriptPath !== null && scriptPath === fileURLToPath(import.meta.url);
+})();
+
+if (isDirectScriptRun) {
+  seed()
+    .then(async () => {
+      await pool.end();
+    })
+    .catch((err) => {
+      console.error("Seeding failed:", err);
+      process.exit(1);
+    });
+}

@@ -184,7 +184,11 @@ erDiagram
         text key_hash UK
         text label
         text role
+        text_array allowed_methods
+        boolean active
         timestamptz expires_at
+        timestamptz last_used_at
+        timestamptz deactivated_at
         timestamptz created_at
     }
 
@@ -242,6 +246,7 @@ Core vault entity. Tracks RWA vault lifecycle from Funding through Active, Matur
 | `operator_fee_bps` | `INT` | YES | `0` | Operator fee in basis points |
 | `search_vector` | `TSVECTOR` | YES | — | Generated full-text search vector (name + symbol) |
 | `archived` | `BOOLEAN` | NOT NULL | `false` | Soft-delete flag |
+| `deactivated_at` | `TIMESTAMPTZ` | YES | — | When the inactivity sweep deactivated the key (#934) |
 | `created_at` | `TIMESTAMPTZ` | YES | `NOW()` | Row creation timestamp |
 | `updated_at` | `TIMESTAMPTZ` | YES | `NOW()` | Row last-update timestamp |
 
@@ -377,6 +382,7 @@ Configured webhook endpoints for event notifications.
 | `url` | `TEXT` | NOT NULL | — | Webhook callback URL (HTTPS only) |
 | `events` | `TEXT[]` | NOT NULL | — | Array of subscribed event types |
 | `secret` | `TEXT` | YES | — | HMAC signing secret |
+| `allowed_methods` | `TEXT[]` | YES | — | HTTP methods this key may use; `NULL` means all methods (#935) |
 | `active` | `BOOLEAN` | YES | `true` | Whether the webhook is active |
 | `consecutive_failures` | `INT` | NOT NULL | `0` | Consecutive delivery failures |
 | `created_at` | `TIMESTAMPTZ` | YES | `NOW()` | Row creation timestamp |
@@ -529,7 +535,9 @@ API keys for programmatic access.
 | `key_hash` | `TEXT` | NOT NULL | — | Hashed API key value |
 | `label` | `TEXT` | NOT NULL | — | Human-readable label |
 | `role` | `TEXT` | NOT NULL | — | Role: `admin` or `readonly` |
+| `active` | `BOOLEAN` | NOT NULL | `TRUE` | `FALSE` once the inactivity sweep retires the key; inactive keys are rejected with 403 (#934) |
 | `expires_at` | `TIMESTAMPTZ` | YES | — | Key expiration timestamp |
+| `last_used_at` | `TIMESTAMPTZ` | YES | — | Last successful authentication with this key; `NULL` if never used (#933) |
 | `created_at` | `TIMESTAMPTZ` | YES | `NOW()` | Row creation timestamp |
 
 **Primary key:** `id`  

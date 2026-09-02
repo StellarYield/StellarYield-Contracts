@@ -5,7 +5,7 @@ import { requireApiKey } from "../middleware/auth.js";
 import { ipAllowlist } from "../middleware/ipAllowlist.js";
 import { validateBody } from "../middleware/validate.js";
 
-const previewSchema = z.object({
+export const previewSchema = z.object({
   eventType: z.string().min(1),
   channel: z.string().min(1),
   samplePayload: z.record(z.unknown()),

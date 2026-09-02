@@ -1,5 +1,6 @@
 import type { Vault, VaultOperator, UserVaultPosition, PaginatedResponse, VaultHolder, VaultHolderSort, OperatorLogEntry } from "../types/index.js";
 import { query } from "../db/index.js";
+import * as db from "../db/index.js";
 import { logger } from "../logger.js";
 import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
 import { xdr, scValToNative } from "@stellar/stellar-sdk";
@@ -331,6 +332,43 @@ export function parseVaultSort(
   }
 
   return { ok: true, specs };
+}
+
+// Register hot query prepared statements at module load
+try {
+  const registerFn = (db as any)["registerPreparedStatement"];
+  if (typeof registerFn === "function") {
+    registerFn(
+      "list_vaults",
+      `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
+              v.total_assets, v.total_supply, v.created_at, v.updated_at,
+              COALESCE((
+                SELECT COUNT(*)::int
+                FROM user_vault_positions uvp
+                WHERE uvp.vault_id = v.id AND uvp.shares > 0
+              ), 0) AS depositor_count
+       FROM vaults v
+       ORDER BY v.created_at DESC
+       LIMIT $1 OFFSET $2`
+    );
+
+    registerFn(
+      "latest_epoch_per_vault",
+      `SELECT DISTINCT ON (e.vault_id) e.vault_id, e.epoch, e.yield_amount, e.total_shares, e.distributed_at
+       FROM epochs e
+       ORDER BY e.vault_id, e.epoch DESC`
+    );
+
+    registerFn(
+      "tvl_history",
+      `SELECT v.contract_id, v.total_assets, v.updated_at
+       FROM vaults v
+       ORDER BY v.updated_at DESC
+       LIMIT $1`
+    );
+  }
+} catch {
+  // Ignored in unit test environments where db/index.js is partially mocked
 }
 
 interface ListVaultsOptions {
@@ -721,7 +759,7 @@ export class VaultService {
     return rows.map((r) => r.rwa_category!);
   }
 
-  async listVaultsByFactory(factoryId: string): Promise<Vault[]> {
+  async listVaultsByFactory(factoryId: string, timeoutMs?: number): Promise<Vault[]> {
     const rows = await query<VaultRow>(
       `SELECT v.id, v.contract_id, v.factory_id, v.asset, v.name, v.symbol, v.state,
               v.total_assets, v.total_supply, v.total_shares_ever_minted, v.total_shares_ever_burned,
@@ -738,6 +776,7 @@ export class VaultService {
        WHERE v.factory_id = $1 AND v.archived = FALSE
        ORDER BY v.created_at DESC`,
       [factoryId],
+      timeoutMs ? { timeoutMs } : undefined,
     );
 
     return rows.map(mapVaultRow);

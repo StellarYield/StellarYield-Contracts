@@ -11,6 +11,7 @@ export enum ErrorCode {
   INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR",
   NOT_FOUND = "NOT_FOUND",
   WEBHOOK_INVALID = "WEBHOOK_INVALID",
+  QUERY_TIMEOUT = "QUERY_TIMEOUT",
 }
 
 export class AppError extends Error {
