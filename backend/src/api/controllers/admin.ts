@@ -1,11 +1,50 @@
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import type { Request, Response, NextFunction } from "express";
-import { query, pool, readPool } from "../../db/index.js";
+import Cursor from "pg-cursor";
+import { stringify } from "csv-stringify";
+import { z } from "zod";
+import { query, pool } from "../../db/index.js";
+import { config } from "../../config.js";
+import { seed } from "../../db/seed.js";
 import { indexer } from "../../services/indexerSingleton.js";
 import { jobQueue } from "../../services/jobQueue.js";
 import { sseManager } from "../../services/sseManager.js";
 import { logger } from "../../logger.js";
-import { z } from "zod";
+import { createAdminSessionToken, refreshAdminSessionToken } from "../middleware/auth.js";
+
+export async function getSecurityEvents(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const rows = await query<{
+      id: number;
+      event_type: string;
+      ip_address: string | null;
+      api_key_label: string | null;
+      path: string | null;
+      details: Record<string, unknown> | null;
+      created_at: Date;
+    }>(
+      `SELECT id, event_type, ip_address, api_key_label, path, details, created_at
+       FROM security_events
+       ORDER BY created_at DESC
+       LIMIT 200`,
+    );
+
+    res.json(
+      rows.map((row) => ({
+        id: row.id,
+        eventType: row.event_type,
+        ipAddress: row.ip_address,
+        apiKeyLabel: row.api_key_label,
+        path: row.path,
+        details: row.details,
+        createdAt: row.created_at,
+      })),
+    );
+  } catch (err) {
+    next(err);
+  }
+}
 
 const stellarAddressSchema = z.string().length(56).regex(/^G[A-Z2-7]{55}$/);
 const contractAddressSchema = z.string().length(56).regex(/^C[A-Z2-7]{55}$/);
@@ -38,19 +77,163 @@ async function logAdminAudit(req: Request, action: string, target: string): Prom
   );
 }
 
+interface ApiKeyRecord {
+  id: number;
+  role: string;
+  label: string | null;
+  expiresAt: Date | null;
+  active: boolean;
+  allowedMethods: string[] | null;
+}
+
+async function findApiKeyByValue(plaintext: string): Promise<ApiKeyRecord | null> {
+  const keyHash = createHash("sha256").update(plaintext).digest("hex");
+  const rows = await query<{
+    id: number;
+    role: string;
+    label: string | null;
+    expires_at: Date | null;
+    active: boolean | null;
+    allowed_methods: string[] | null;
+  }>(
+    'SELECT id, role, label, expires_at, active, allowed_methods FROM api_keys WHERE key_hash = $1',
+    [keyHash],
+  ).catch(() => []);
+
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    id: row.id,
+    role: row.role,
+    label: row.label,
+    expiresAt: row.expires_at,
+    active: row.active ?? true,
+    allowedMethods: row.allowed_methods ?? null,
+  };
+}
+
+export async function createAdminSession(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = z.object({ apiKey: z.string().min(1, "apiKey is required") }).safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid request body" });
+      return;
+    }
+
+    const apiKey = await findApiKeyByValue(parsed.data.apiKey);
+    if (!apiKey) {
+      res.status(401).json({ error: "Unauthorized", message: "Invalid API key" });
+      return;
+    }
+
+    // A session must never outlive the key it is minted from, so the same
+    // lifecycle checks the auth middleware applies run here too (#934).
+    if (!apiKey.active) {
+      res.status(403).json({ error: "Forbidden", message: "API key has been deactivated" });
+      return;
+    }
+
+    if (apiKey.role !== "admin") {
+      res.status(403).json({ error: "Forbidden", message: "Admin API key required" });
+      return;
+    }
+
+    if (apiKey.expiresAt && apiKey.expiresAt.getTime() <= Date.now()) {
+      res.status(401).json({ error: "Unauthorized", message: "API key has expired" });
+      return;
+    }
+
+    // Exchanging a key for a session is an authentication, so it counts as use
+    // and must not reset the inactivity clock silently (#933).
+    void query("UPDATE api_keys SET last_used_at = NOW() WHERE id = $1", [apiKey.id]).catch(
+      (err: unknown) => {
+        logger.warn({ err, keyId: apiKey.id }, "Failed to update api_keys.last_used_at");
+      },
+    );
+
+    const token = createAdminSessionToken(apiKey);
+    res.json({ token, expiresInMinutes: config.adminSessionExpiryMinutes });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function refreshAdminSession(req: Request, res: Response, _next: NextFunction) {
+  try {
+    const authHeader = req.headers.authorization ?? "";
+    if (!authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "Unauthorized", message: "Missing JWT" });
+      return;
+    }
+
+    const token = authHeader.slice("Bearer ".length).trim();
+    const refreshedToken = refreshAdminSessionToken(token);
+    res.json({ token: refreshedToken, expiresInMinutes: config.adminSessionExpiryMinutes });
+  } catch {
+    res.status(401).json({ error: "Unauthorized", message: "Invalid or expired JWT" });
+  }
+}
+
+export async function getSecurityHeadersAudit(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { default: supertest } = await import("supertest");
+    const healthResponse = await supertest(req.app).get("/health");
+
+    const headerNames = [
+      "x-content-type-options",
+      "x-frame-options",
+      "content-security-policy",
+      "strict-transport-security",
+    ];
+
+    const audit = headerNames.map((header) => {
+      const value = healthResponse.headers[header] ?? null;
+      return {
+        header,
+        value,
+        required: true,
+        present: Boolean(value),
+      };
+    });
+
+    res.json(audit);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function resetSandboxData(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!config.enableSandboxReset) {
+      res.status(404).json({ error: "NotFound", message: "Sandbox reset is disabled" });
+      return;
+    }
+
+    await query("TRUNCATE TABLE indexed_events, yield_snapshots, vault_tvl_snapshots RESTART IDENTITY CASCADE");
+    await seed();
+    res.json({ success: true, tablesReset: ["indexed_events", "yield_snapshots", "vault_tvl_snapshots"] });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getAdminStats(_req: Request, res: Response, next: NextFunction) {
   try {
     const vaultCountRows = await query<{ count: string }>("SELECT COUNT(*)::text as count FROM vaults");
     const userCountRows = await query<{ count: string }>("SELECT COUNT(*)::text as count FROM users");
     const totalAssetsRows = await query<{ total: string }>("SELECT COALESCE(SUM(total_assets::numeric), 0)::text as total FROM vaults");
     const epochCountRows = await query<{ count: string }>("SELECT COUNT(*)::text as count FROM epochs");
+    const archiveSizeRows = await query<{ total: string }>(
+      "SELECT COALESCE(SUM(pg_total_relation_size(relid)), 0)::text AS total FROM pg_stat_user_tables WHERE relname LIKE '%_archive'",
+    );
 
     const vaultCount = parseInt(vaultCountRows[0]?.count ?? "0", 10);
     const userCount = parseInt(userCountRows[0]?.count ?? "0", 10);
     const totalValueLocked = totalAssetsRows[0]?.total ?? "0";
     const epochCount = parseInt(epochCountRows[0]?.count ?? "0", 10);
+    const archiveSizeBytes = parseInt(archiveSizeRows[0]?.total ?? "0", 10);
 
-    res.json({ vaultCount, userCount, totalValueLocked, epochCount });
+    res.json({ vaultCount, userCount, totalValueLocked, epochCount, archiveSizeBytes });
   } catch (err) {
     next(err);
   }
@@ -142,8 +325,15 @@ export async function getApiKeys(_req: Request, res: Response, next: NextFunctio
       role: string;
       created_at: Date;
       expires_at: Date | null;
+      last_used_at: Date | null;
+      active: boolean;
+      deactivated_at: Date | null;
+      allowed_methods: string[] | null;
+      allowed_cidrs: string[] | null;
     }>(
-      "SELECT id, label, role, created_at, expires_at FROM api_keys ORDER BY created_at DESC",
+      `SELECT id, label, role, created_at, expires_at, last_used_at, active, deactivated_at,
+              allowed_methods, allowed_cidrs
+       FROM api_keys ORDER BY created_at DESC`,
     );
 
     res.json(
@@ -153,8 +343,80 @@ export async function getApiKeys(_req: Request, res: Response, next: NextFunctio
         role: row.role,
         createdAt: row.created_at,
         expiresAt: row.expires_at,
+        // null until the key authenticates a request for the first time (#933)
+        lastUsedAt: row.last_used_at ?? null,
+        // false once the inactivity sweep has retired the key (#934)
+        active: row.active,
+        deactivatedAt: row.deactivated_at ?? null,
+        // null means the key may use any HTTP method (#935)
+        allowedMethods: row.allowed_methods ?? null,
+        // null means the key may be used from any IP (#928)
+        allowedCidrs: row.allowed_cidrs ?? null,
       })),
     );
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateApiKeyDescription(req: Request, res: Response, next: NextFunction) {
+  try {
+    const keyId = String(req.params["id"]);
+    const idNum = parseInt(keyId, 10);
+
+    if (isNaN(idNum) || idNum <= 0) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid key ID" });
+      return;
+    }
+
+    const descriptionSchema = z.object({
+      description: z.string().nullable(),
+    });
+
+    const parsed = descriptionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid request body" });
+      return;
+    }
+
+    const { description } = parsed.data;
+
+    // Check if key exists
+    const existingRows = await query<{ id: number }>("SELECT id FROM api_keys WHERE id = $1", [idNum]);
+
+    if (existingRows.length === 0) {
+      res.status(404).json({ error: "NotFound", message: "API key not found" });
+      return;
+    }
+
+    // Update only the description field
+    await query(
+      "UPDATE api_keys SET description = $1 WHERE id = $2",
+      [description, idNum],
+    );
+
+    // Return the updated key
+    const updatedRows = await query<{
+      id: number;
+      label: string | null;
+      role: string;
+      created_at: Date;
+      expires_at: Date | null;
+      description: string | null;
+    }>(
+      "SELECT id, label, role, created_at, expires_at, description FROM api_keys WHERE id = $1",
+      [idNum],
+    );
+
+    const updatedKey = updatedRows[0];
+    res.json({
+      id: updatedKey.id,
+      label: updatedKey.label,
+      role: updatedKey.role,
+      createdAt: updatedKey.created_at,
+      expiresAt: updatedKey.expires_at,
+      description: updatedKey.description,
+    });
   } catch (err) {
     next(err);
   }
@@ -822,6 +1084,89 @@ export async function getPositionsSnapshot(req: Request, res: Response, next: Ne
   }
 }
 
+/**
+ * GET /api/v1/admin/positions/export.csv
+ *
+ * Streams every user vault position as CSV (#950). Instead of buffering the
+ * whole result set in memory (see #430), a pg-cursor is read in batches and
+ * piped through a csv-stringify transform straight to the response, so memory
+ * use stays flat regardless of row count and the first bytes reach the client
+ * as soon as the first batch is read.
+ */
+const POSITIONS_EXPORT_COLUMNS = [
+  "user_address",
+  "vault_contract_id",
+  "shares",
+  "deposited",
+  "last_claimed_epoch",
+  "updated_at",
+] as const;
+
+export async function exportPositionsCsv(_req: Request, res: Response, next: NextFunction) {
+  const client = await pool.connect();
+  const cursor = client.query(
+    new Cursor(
+      `SELECT uvp.user_address,
+              v.contract_id           AS vault_contract_id,
+              uvp.shares::text        AS shares,
+              uvp.deposited::text     AS deposited,
+              uvp.last_claimed_epoch,
+              uvp.updated_at
+         FROM user_vault_positions uvp
+         JOIN vaults v ON v.id = uvp.vault_id
+        ORDER BY uvp.id`,
+    ),
+  );
+
+  let released = false;
+  const cleanup = async (): Promise<void> => {
+    if (released) return;
+    released = true;
+    try {
+      await cursor.close();
+    } catch {
+      /* connection may already be gone */
+    }
+    client.release();
+  };
+
+  const stringifier = stringify({ header: true, columns: [...POSITIONS_EXPORT_COLUMNS] });
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="positions-export.csv"');
+  res.setHeader("Transfer-Encoding", "chunked");
+
+  stringifier.on("error", (err) => {
+    void cleanup();
+    res.destroy(err);
+  });
+  res.on("close", () => {
+    void cleanup();
+  });
+  stringifier.pipe(res);
+
+  try {
+    for (;;) {
+      const rows = await cursor.read(500);
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        if (!stringifier.write(row)) {
+          await once(stringifier, "drain");
+        }
+      }
+    }
+    stringifier.end();
+    await cleanup();
+  } catch (err) {
+    await cleanup();
+    if (!res.headersSent) {
+      next(err);
+      return;
+    }
+    res.destroy(err as Error);
+  }
+}
+
 // ── Issue #803: Vault compliance status ──────────────────────────────────────
 export async function getVaultComplianceStatus(req: Request, res: Response, next: NextFunction) {
   try {
@@ -1169,38 +1514,31 @@ export function streamIndexerProgress(req: Request, res: Response): void {
   sseManager.addIndexerClient(req, res);
 }
 
-// ── Issue #966: Index usage statistics endpoint ───────────────────────────────
-export async function getIndexStats(_req: Request, res: Response, next: NextFunction) {
+/** GET /api/v1/admin/db/slow-queries — retrieve recent slow queries (#963) */
+export async function getSlowQueries(_req: Request, res: Response, next: NextFunction) {
   try {
     const rows = await query<{
-      table_name: string;
-      index_name: string;
-      idx_scan: string;
-      idx_tup_read: string;
-      idx_tup_fetch: string;
-      index_size_bytes: string;
+      id: number;
+      query_hash: string;
+      query_preview: string;
+      duration_ms: string | number;
+      route: string | null;
+      occurred_at: Date;
     }>(
-      `SELECT
-         t.relname                                     AS table_name,
-         i.relname                                     AS index_name,
-         s.idx_scan::text                              AS idx_scan,
-         s.idx_tup_read::text                          AS idx_tup_read,
-         s.idx_tup_fetch::text                         AS idx_tup_fetch,
-         pg_relation_size(s.indexrelid)::text          AS index_size_bytes
-       FROM pg_stat_user_indexes s
-       JOIN pg_class t ON t.oid = s.relid
-       JOIN pg_class i ON i.oid = s.indexrelid
-       ORDER BY s.idx_scan ASC`,
+      `SELECT id, query_hash, query_preview, duration_ms, route, occurred_at
+       FROM slow_query_log
+       ORDER BY occurred_at DESC
+       LIMIT 50`,
     );
 
     res.json(
-      rows.map((r) => ({
-        table: r.table_name,
-        index: r.index_name,
-        scans: parseInt(r.idx_scan, 10),
-        tuplesRead: parseInt(r.idx_tup_read, 10),
-        tuplesReturned: parseInt(r.idx_tup_fetch, 10),
-        sizeBytes: parseInt(r.index_size_bytes, 10),
+      rows.map((row) => ({
+        id: row.id,
+        query_hash: row.query_hash,
+        query_preview: row.query_preview,
+        duration_ms: typeof row.duration_ms === "string" ? parseFloat(row.duration_ms) : row.duration_ms,
+        route: row.route,
+        occurred_at: row.occurred_at,
       })),
     );
   } catch (err) {
@@ -1208,143 +1546,221 @@ export async function getIndexStats(_req: Request, res: Response, next: NextFunc
   }
 }
 
-// ── Issue #967: Connection pool statistics endpoint ───────────────────────────
-export async function getPoolStats(_req: Request, res: Response, next: NextFunction) {
+// ── Issue #961: Benchmark reporting ──────────────────────────────────────────
+
+const benchmarkPostSchema = z.object({
+  name: z.string().min(1).max(255),
+  p50: z.number(),
+  p95: z.number(),
+  p99: z.number(),
+  errorRate: z.number().min(0).max(1),
+  timestamp: z.string().datetime(),
+}).strict();
+
+export async function postBenchmark(req: Request, res: Response, next: NextFunction) {
   try {
-    const primary = {
-      total: pool.totalCount,
-      idle: pool.idleCount,
-      waiting: pool.waitingCount,
-      maxSize: pool.options.max ?? 10,
-    };
-
-    const result: Record<string, unknown> = { primary };
-
-    if (readPool) {
-      result["readReplica"] = {
-        total: readPool.totalCount,
-        idle: readPool.idleCount,
-        waiting: readPool.waitingCount,
-        maxSize: readPool.options.max ?? 10,
-      };
+    const parsed = benchmarkPostSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid benchmark payload", details: parsed.error.issues });
+      return;
     }
 
-    res.json(result);
+    const { name, p50, p95, p99, errorRate, timestamp } = parsed.data;
+
+    await query(
+      `INSERT INTO benchmark_results (name, p50, p95, p99, error_rate, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [name, p50, p95, p99, errorRate, timestamp],
+    );
+
+    await logAdminAudit(req, "post_benchmark", `/api/v1/admin/benchmarks`);
+
+    res.status(201).json({ name, p50, p95, p99, errorRate, timestamp });
   } catch (err) {
     next(err);
   }
 }
 
-// ── Issue #965: Benchmark comparison endpoint ─────────────────────────────────
-export async function getBenchmarkComparison(req: Request, res: Response, next: NextFunction) {
+export async function getBenchmarksByName(req: Request, res: Response, next: NextFunction) {
   try {
-    const benchmarkQuerySchema = z.object({
-      name: z.string().min(1),
-      baseline: z.string().min(1),
-      head: z.string().min(1),
-    });
+    const name = String(req.params["name"]);
 
-    const parsed = benchmarkQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      res.status(400).json({
-        error: "BadRequest",
-        message: "Query parameters name, baseline, and head are required",
-      });
-      return;
-    }
-
-    const { name, baseline, head } = parsed.data;
-
-    const baselineTs = new Date(baseline);
-    const headTs = new Date(head);
-
-    if (isNaN(baselineTs.getTime()) || isNaN(headTs.getTime())) {
-      res.status(400).json({ error: "BadRequest", message: "baseline and head must be valid ISO 8601 timestamps" });
-      return;
-    }
-
-    // Fetch the closest record to each timestamp for this named run
-    const baselineRows = await query<{
-      recorded_at: Date;
-      p50_ms: string;
-      p95_ms: string;
-      p99_ms: string;
-      error_rate: string;
+    const rows = await query<{
+      p50: number;
+      p95: number;
+      p99: number;
+      error_rate: number;
+      timestamp: Date;
+      created_at: Date;
     }>(
-      `SELECT recorded_at, p50_ms::text, p95_ms::text, p99_ms::text, error_rate::text
+      `SELECT p50, p95, p99, error_rate, timestamp, created_at
        FROM benchmark_results
        WHERE name = $1
-       ORDER BY ABS(EXTRACT(EPOCH FROM (recorded_at - $2::timestamptz)))
-       LIMIT 1`,
-      [name, baselineTs.toISOString()],
+       ORDER BY timestamp DESC`,
+      [name],
     );
-
-    const headRows = await query<{
-      recorded_at: Date;
-      p50_ms: string;
-      p95_ms: string;
-      p99_ms: string;
-      error_rate: string;
-    }>(
-      `SELECT recorded_at, p50_ms::text, p95_ms::text, p99_ms::text, error_rate::text
-       FROM benchmark_results
-       WHERE name = $1
-       ORDER BY ABS(EXTRACT(EPOCH FROM (recorded_at - $2::timestamptz)))
-       LIMIT 1`,
-      [name, headTs.toISOString()],
-    );
-
-    if (baselineRows.length === 0 || headRows.length === 0) {
-      res.status(404).json({ error: "NotFound", message: "One or both benchmark records not found" });
-      return;
-    }
-
-    const b = baselineRows[0];
-    const h = headRows[0];
-
-    const bP50 = parseFloat(b.p50_ms);
-    const bP95 = parseFloat(b.p95_ms);
-    const bP99 = parseFloat(b.p99_ms);
-    const bErr = parseFloat(b.error_rate);
-
-    const hP50 = parseFloat(h.p50_ms);
-    const hP95 = parseFloat(h.p95_ms);
-    const hP99 = parseFloat(h.p99_ms);
-    const hErr = parseFloat(h.error_rate);
-
-    // Relative deltas as fractions (positive = worse / higher latency)
-    const deltaP50 = bP50 > 0 ? (hP50 - bP50) / bP50 : 0;
-    const deltaP95 = bP95 > 0 ? (hP95 - bP95) / bP95 : 0;
-    const deltaP99 = bP99 > 0 ? (hP99 - bP99) / bP99 : 0;
-    const deltaErrorRate = hErr - bErr;
-
-    // Regressed when p95 worsened by more than 20 %
-    const regressed = deltaP95 > 0.2;
 
     res.json({
       name,
-      baseline: {
-        recordedAt: b.recorded_at,
-        p50: bP50,
-        p95: bP95,
-        p99: bP99,
-        errorRate: bErr,
-      },
-      head: {
-        recordedAt: h.recorded_at,
-        p50: hP50,
-        p95: hP95,
-        p99: hP99,
-        errorRate: hErr,
-      },
-      delta: {
-        p50: deltaP50,
-        p95: deltaP95,
-        p99: deltaP99,
-        errorRate: deltaErrorRate,
-      },
-      regressed,
+      results: rows.map((r) => ({
+        p50: r.p50,
+        p95: r.p95,
+        p99: r.p99,
+        errorRate: r.error_rate,
+        timestamp: r.timestamp,
+        createdAt: r.created_at,
+      })),
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Issue #926: Vault archive exclusion toggle ──────────────────────────────
+export async function toggleVaultArchiveExclusion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = contractAddressSchema.safeParse(req.params["contractId"]);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid contractId format" });
+      return;
+    }
+    const contractId = parsed.data;
+
+    const bodySchema = z.object({ excludeFromArchive: z.boolean() });
+    const bodyParsed = bodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "excludeFromArchive must be a boolean" });
+      return;
+    }
+    const { excludeFromArchive } = bodyParsed.data;
+
+    const rows = await query<{ id: number }>(
+      "SELECT id FROM vaults WHERE contract_id = $1",
+      [contractId],
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: "NotFound", message: "Vault not found" });
+      return;
+    }
+
+    await query(
+      "UPDATE vaults SET exclude_from_archive = $1, updated_at = NOW() WHERE contract_id = $2",
+      [excludeFromArchive, contractId],
+    );
+
+    await logAdminAudit(req, "toggle_vault_archive_exclusion", `/api/v1/admin/vaults/${contractId}/archive-exclusion`);
+
+    res.json({ contractId, excludeFromArchive });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Issue #927: Archival verification ────────────────────────────────────────
+const ARCHIVABLE_TABLES = ["indexed_events", "share_balance_snapshots", "vault_tvl_snapshots"];
+
+export async function verifyArchiveConsistency(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const tableResults: {
+      name: string;
+      liveRows: number;
+      archiveRows: number;
+      totalRows: number;
+      consistent: boolean;
+    }[] = [];
+
+    for (const table of ARCHIVABLE_TABLES) {
+      const liveRowsResult = await query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM ${table}`,
+      );
+      const liveRows = parseInt(liveRowsResult[0]?.count ?? "0", 10);
+
+      const archiveTable = `${table}_archive`;
+      let archiveRows = 0;
+      try {
+        const archiveRowsResult = await query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM ${archiveTable}`,
+        );
+        archiveRows = parseInt(archiveRowsResult[0]?.count ?? "0", 10);
+      } catch {
+        // Archive table may not exist yet
+      }
+
+      const totalRows = liveRows + archiveRows;
+
+      const auditResult = await query<{ pre_archival_count: string }>(
+        `SELECT pre_archival_count::text
+         FROM archive_audit_log
+         WHERE table_name = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [table],
+      );
+
+      let consistent = true;
+      if (auditResult.length > 0) {
+        const preArchivalCount = parseInt(auditResult[0].pre_archival_count, 10);
+        consistent = totalRows === preArchivalCount;
+      }
+
+      tableResults.push({
+        name: table,
+        liveRows,
+        archiveRows,
+        totalRows,
+        consistent,
+      });
+    }
+
+    res.json({ tables: tableResults });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Issue #962: Database VACUUM/ANALYZE ──────────────────────────────────────
+
+const APP_TABLES = [
+  "vaults", "users", "epochs", "user_vault_positions",
+  "indexed_events", "indexer_state", "webhooks", "webhook_deliveries",
+  "api_keys", "redemption_requests", "share_balance_snapshots",
+  "admin_audit_log", "app_config",
+];
+
+const vacuumSchema = z.object({
+  tables: z.array(z.string()).optional(),
+  analyze: z.boolean(),
+}).strict();
+
+export async function vacuumDatabase(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = vacuumSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid payload", details: parsed.error.issues });
+      return;
+    }
+
+    const targetTables = parsed.data.tables?.length ? parsed.data.tables : APP_TABLES;
+    const analyze = parsed.data.analyze;
+    const command = analyze ? "VACUUM (ANALYZE)" : "VACUUM";
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const table of targetTables) {
+        await client.query(`${command} ${table}`);
+      }
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await logAdminAudit(req, "vacuum_database", "/api/v1/admin/db/vacuum");
+
+    res.json({ ok: true, tables: targetTables, analyze, command });
   } catch (err) {
     next(err);
   }

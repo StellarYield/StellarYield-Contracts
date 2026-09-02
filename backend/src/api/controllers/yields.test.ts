@@ -4,11 +4,12 @@ vi.mock("../../db/index.js", () => ({ query: vi.fn() }));
 
 async function getTestContext() {
   const { query } = await import("../../db/index.js");
-  const { getVaultEpochs, getUserPendingYield } = await import("./yields.js");
+  const { getVaultEpochs, getUserPendingYield, getYieldVolatility } = await import("./yields.js");
   return {
     query: query as ReturnType<typeof vi.fn>,
     getVaultEpochs,
     getUserPendingYield,
+    getYieldVolatility,
   };
 }
 
@@ -103,4 +104,64 @@ describe("Yield Controllers", () => {
       expect(body.pendingYield).toBe("0");
     });
   });
+
+  describe("getYieldVolatility (#982)", () => {
+    it("returns 404 when vault is not found", async () => {
+      const { query, getYieldVolatility } = await getTestContext();
+      query.mockResolvedValueOnce([]); // vaultExists check
+
+      const req = { params: { contractId: "CC_NONEXISTENT" } } as any;
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+      const next = vi.fn();
+
+      await getYieldVolatility(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ error: "NotFound", message: "Vault not found" });
+    });
+
+    it("returns null for vaults with fewer than 3 epochs", async () => {
+      const { query, getYieldVolatility } = await getTestContext();
+      query
+        .mockResolvedValueOnce([{ id: 1 }]) // vaultExists check
+        .mockResolvedValueOnce([{ id: 1 }]) // getYieldVolatility vault check
+        .mockResolvedValueOnce([
+          { yield_amount: "100" },
+          { yield_amount: "100" },
+        ]); // 2 epochs
+
+      const req = { params: { contractId: "CC_VAULT" } } as any;
+      const res = { json: vi.fn() } as any;
+      const next = vi.fn();
+
+      await getYieldVolatility(req, res, next);
+
+      expect(res.json).toHaveBeenCalledWith(null);
+    });
+
+    it("returns coefficientOfVariation: 0 for identical yields across epochs", async () => {
+      const { query, getYieldVolatility } = await getTestContext();
+      query
+        .mockResolvedValueOnce([{ id: 1 }]) // vaultExists check
+        .mockResolvedValueOnce([{ id: 1 }]) // getYieldVolatility vault check
+        .mockResolvedValueOnce([
+          { yield_amount: "100" },
+          { yield_amount: "100" },
+          { yield_amount: "100" },
+        ]); // 3 identical epochs
+
+      const req = { params: { contractId: "CC_VAULT" } } as any;
+      const res = { json: vi.fn() } as any;
+      const next = vi.fn();
+
+      await getYieldVolatility(req, res, next);
+
+      expect(res.json).toHaveBeenCalledWith({
+        stdDevYield: "0",
+        coefficientOfVariation: 0,
+        epochCount: 3,
+      });
+    });
+  });
 });
+

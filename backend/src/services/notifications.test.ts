@@ -29,7 +29,9 @@ describe("NotificationService", () => {
   describe("notify", () => {
     it("does nothing when no webhooks match the event", async () => {
       const { query, jobQueue, service } = await getTestContext();
-      query.mockResolvedValue([]);
+      // First call is the global opt-out check (empty rows = enabled/default),
+      // second is the webhook lookup.
+      query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
       await service.notify("deposit", { amount: "100" });
 
@@ -38,7 +40,7 @@ describe("NotificationService", () => {
 
     it("enqueues a webhook-deliver job for each matching webhook", async () => {
       const { query, jobQueue, service } = await getTestContext();
-      query.mockResolvedValue([
+      query.mockResolvedValueOnce([]).mockResolvedValueOnce([
         { id: 1, url: "https://example.com/hook", events: ["deposit"], secret: null },
       ]);
 
@@ -53,7 +55,7 @@ describe("NotificationService", () => {
 
     it("enqueues jobs for multiple webhooks", async () => {
       const { query, jobQueue, service } = await getTestContext();
-      query.mockResolvedValue([
+      query.mockResolvedValueOnce([]).mockResolvedValueOnce([
         { id: 1, url: "https://a.com/hook", events: ["deposit"], secret: null },
         { id: 2, url: "https://b.com/hook", events: ["deposit"], secret: "secret" },
       ]);
@@ -73,7 +75,7 @@ describe("NotificationService", () => {
 
     it("constructs a JSON payload with event, data, and timestamp", async () => {
       const { query, jobQueue, service } = await getTestContext();
-      query.mockResolvedValue([
+      query.mockResolvedValueOnce([]).mockResolvedValueOnce([
         { id: 1, url: "https://example.com/hook", events: ["deposit"], secret: null },
       ]);
 
@@ -84,6 +86,45 @@ describe("NotificationService", () => {
       expect(parsed.event).toBe("deposit");
       expect(parsed.data).toEqual({ amount: "100" });
       expect(parsed).toHaveProperty("timestamp");
+    });
+
+    it("skips dispatch entirely when globally disabled (#994)", async () => {
+      const { query, jobQueue, service } = await getTestContext();
+      query.mockResolvedValueOnce([{ value: "false" }]);
+
+      await service.notify("deposit", { amount: "100" });
+
+      expect(jobQueue.send).not.toHaveBeenCalled();
+      // Only the opt-out check ran — the webhook lookup was never reached.
+      expect(query).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("global opt-out (#994)", () => {
+    it("isGloballyEnabled defaults to true when the key has never been set", async () => {
+      const { query, service } = await getTestContext();
+      query.mockResolvedValue([]);
+
+      await expect(service.isGloballyEnabled()).resolves.toBe(true);
+    });
+
+    it("isGloballyEnabled reflects a stored false value", async () => {
+      const { query, service } = await getTestContext();
+      query.mockResolvedValue([{ value: "false" }]);
+
+      await expect(service.isGloballyEnabled()).resolves.toBe(false);
+    });
+
+    it("setGloballyEnabled upserts the flag into app_config", async () => {
+      const { query, service } = await getTestContext();
+      query.mockResolvedValue([]);
+
+      await service.setGloballyEnabled(false);
+
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT INTO app_config"),
+        ["notificationsGloballyEnabled", "false"],
+      );
     });
   });
 

@@ -69,3 +69,39 @@ describe("Apollo GraphQL server - #765", () => {
     expect(res.body).toEqual({ data: { health: "ok" } });
   });
 });
+
+describe("Sandbox mode and security audit - #938/#936", () => {
+  it("returns the sandbox header and a mocked success response for mutating endpoints", async () => {
+    process.env.SANDBOX_MODE = "true";
+    const { default: supertest } = await import("supertest");
+    const { query } = await import("./db/index.js");
+    vi.mocked(query).mockResolvedValue([{ id: 1, role: "admin", label: "ci" }]);
+    const appSandbox = createApp();
+    const res = await supertest(appSandbox)
+      .post("/api/v1/admin/vaults/reindex")
+      .set("Authorization", "Bearer admin-key");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["x-sandbox"]).toBe("true");
+    expect(res.body).toEqual({ success: true });
+  });
+
+  it("GET /api/v1/admin/security/headers-audit returns required header audit entries", async () => {
+    process.env.SANDBOX_MODE = "false";
+    const { default: supertest } = await import("supertest");
+    const { query } = await import("./db/index.js");
+    vi.mocked(query).mockResolvedValue([{ id: 1, role: "admin", label: "ci" }]);
+    const res = await supertest(app)
+      .get("/api/v1/admin/security/headers-audit")
+      .set("Authorization", "Bearer admin-key");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ header: "x-content-type-options", required: true }),
+      expect.objectContaining({ header: "x-frame-options", required: true }),
+      expect.objectContaining({ header: "content-security-policy", required: true }),
+      expect.objectContaining({ header: "strict-transport-security", required: true }),
+    ]));
+  });
+});

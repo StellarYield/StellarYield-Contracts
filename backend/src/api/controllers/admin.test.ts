@@ -63,7 +63,7 @@ function _hashKey(plaintext: string): string {
 
 describe("Admin Controller", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it("returns per-vault fee metrics ordered by total fees and applies date filters", async () => {
@@ -203,7 +203,7 @@ describe("Admin Controller", () => {
 
   // ── Unit tests (controller function directly) ─────────────────────────────
   describe("getAdminStats", () => {
-    it("returns vault/user/epoch counts and TVL", async () => {
+    it("returns vault/user/epoch counts, TVL, and archiveSizeBytes", async () => {
       const { query, getAdminStats } = await getTestContext();
       // vaultCount
       query.mockResolvedValueOnce([{ count: "2" }]);
@@ -213,6 +213,8 @@ describe("Admin Controller", () => {
       query.mockResolvedValueOnce([{ total: "12345" }]);
       // epochCount
       query.mockResolvedValueOnce([{ count: "3" }]);
+      // archiveSizeBytes
+      query.mockResolvedValueOnce([{ total: "1048576" }]);
 
       const req = {} as any;
       const res = { json: vi.fn() } as any;
@@ -220,7 +222,75 @@ describe("Admin Controller", () => {
 
       await getAdminStats(req, res, next);
 
-      expect(res.json).toHaveBeenCalledWith({ vaultCount: 2, userCount: 42, totalValueLocked: "12345", epochCount: 3 });
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("pg_total_relation_size(relid)"),
+      );
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("LIKE '%_archive'"),
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        vaultCount: 2,
+        userCount: 42,
+        totalValueLocked: "12345",
+        epochCount: 3,
+        archiveSizeBytes: 1048576,
+      });
+    });
+
+    it("returns archiveSizeBytes as 0 if no archive tables exist yet", async () => {
+      const { query, getAdminStats } = await getTestContext();
+      // vaultCount
+      query.mockResolvedValueOnce([{ count: "1" }]);
+      // userCount
+      query.mockResolvedValueOnce([{ count: "5" }]);
+      // totalValueLocked
+      query.mockResolvedValueOnce([{ total: "0" }]);
+      // epochCount
+      query.mockResolvedValueOnce([{ count: "0" }]);
+      // archiveSize with 0 total
+      query.mockResolvedValueOnce([{ total: "0" }]);
+
+      const req = {} as any;
+      const res = { json: vi.fn() } as any;
+      const next = vi.fn();
+
+      await getAdminStats(req, res, next);
+
+      expect(res.json).toHaveBeenCalledWith({
+        vaultCount: 1,
+        userCount: 5,
+        totalValueLocked: "0",
+        epochCount: 0,
+        archiveSizeBytes: 0,
+      });
+    });
+
+    it("returns archiveSizeBytes as 0 if query returns empty array", async () => {
+      const { query, getAdminStats } = await getTestContext();
+      // vaultCount
+      query.mockResolvedValueOnce([{ count: "0" }]);
+      // userCount
+      query.mockResolvedValueOnce([{ count: "0" }]);
+      // totalValueLocked
+      query.mockResolvedValueOnce([{ total: "0" }]);
+      // epochCount
+      query.mockResolvedValueOnce([{ count: "0" }]);
+      // archiveSize empty array
+      query.mockResolvedValueOnce([]);
+
+      const req = {} as any;
+      const res = { json: vi.fn() } as any;
+      const next = vi.fn();
+
+      await getAdminStats(req, res, next);
+
+      expect(res.json).toHaveBeenCalledWith({
+        vaultCount: 0,
+        userCount: 0,
+        totalValueLocked: "0",
+        epochCount: 0,
+        archiveSizeBytes: 0,
+      });
     });
   });
 
@@ -366,12 +436,14 @@ describe("Admin Controller", () => {
       expect(res.body).toMatchObject({ error: "Forbidden" });
     });
 
-    it("returns 200 with correct vaultCount and userCount for a valid admin key and seeded DB", async () => {
+    it("returns 200 with correct vaultCount, userCount, and archiveSizeBytes for a valid admin key and seeded DB", async () => {
       const { query } = await import("../../db/index.js");
       const mockQuery = query as ReturnType<typeof vi.fn>;
 
       // auth middleware: api_keys lookup → match the hashed key
       mockQuery.mockResolvedValueOnce([{ id: 1, role: "admin", label: "test" }]);
+      // auth middleware: last_used_at stamp for the authenticated key (#933)
+      mockQuery.mockResolvedValueOnce([]);
       // getAdminStats: vaultCount
       mockQuery.mockResolvedValueOnce([{ count: "3" }]);
       // getAdminStats: userCount
@@ -380,6 +452,8 @@ describe("Admin Controller", () => {
       mockQuery.mockResolvedValueOnce([{ total: "9999999" }]);
       // getAdminStats: epochCount
       mockQuery.mockResolvedValueOnce([{ count: "5" }]);
+      // getAdminStats: archiveSizeBytes
+      mockQuery.mockResolvedValueOnce([{ total: "204800" }]);
 
       const app = await getApp();
       const res = await supertest(app)
@@ -392,6 +466,7 @@ describe("Admin Controller", () => {
         userCount: 7,
         totalValueLocked: "9999999",
         epochCount: 5,
+        archiveSizeBytes: 204800,
       });
     });
   });
@@ -551,241 +626,42 @@ describe("Admin Controller", () => {
     });
   });
 
-  // ── Issue #966: Index usage statistics ────────────────────────────────
-  describe("getIndexStats", () => {
-    it("returns index stats sorted by scans ascending", async () => {
+  describe("getSlowQueries (#963)", () => {
+    it("returns the latest 50 slow queries ordered by occurred_at DESC", async () => {
       const { query } = await import("../../db/index.js");
-      const { getIndexStats } = await import("./admin.js");
+      const { getSlowQueries } = await import("./admin.js");
       const mockQuery = query as ReturnType<typeof vi.fn>;
 
-      mockQuery.mockResolvedValueOnce([
+      const mockData = [
         {
-          table_name: "indexed_events",
-          index_name: "idx_indexed_events_contract_id",
-          idx_scan: "0",
-          idx_tup_read: "0",
-          idx_tup_fetch: "0",
-          index_size_bytes: "8192",
+          id: 1,
+          query_hash: "hash123",
+          query_preview: "SELECT * FROM vaults WHERE id = $1",
+          duration_ms: "650.5",
+          route: "/api/v1/vaults",
+          occurred_at: new Date("2025-01-01T00:00:00Z"),
         },
-        {
-          table_name: "vaults",
-          index_name: "vaults_pkey",
-          idx_scan: "1500",
-          idx_tup_read: "1500",
-          idx_tup_fetch: "1500",
-          index_size_bytes: "16384",
-        },
-      ]);
+      ];
+      mockQuery.mockResolvedValueOnce(mockData);
 
       const req = {} as any;
       const res = { json: vi.fn() } as any;
       const next = vi.fn();
 
-      await getIndexStats(req, res, next);
+      await getSlowQueries(req, res, next);
 
+      expect(mockQuery).toHaveBeenCalledWith(expect.stringContaining("FROM slow_query_log"));
       expect(res.json).toHaveBeenCalledWith([
         {
-          table: "indexed_events",
-          index: "idx_indexed_events_contract_id",
-          scans: 0,
-          tuplesRead: 0,
-          tuplesReturned: 0,
-          sizeBytes: 8192,
-        },
-        {
-          table: "vaults",
-          index: "vaults_pkey",
-          scans: 1500,
-          tuplesRead: 1500,
-          tuplesReturned: 1500,
-          sizeBytes: 16384,
+          id: 1,
+          query_hash: "hash123",
+          query_preview: "SELECT * FROM vaults WHERE id = $1",
+          duration_ms: 650.5,
+          route: "/api/v1/vaults",
+          occurred_at: mockData[0].occurred_at,
         },
       ]);
-    });
-
-    it("returns empty array when no indexes found", async () => {
-      const { query } = await import("../../db/index.js");
-      const { getIndexStats } = await import("./admin.js");
-      (query as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
-
-      const req = {} as any;
-      const res = { json: vi.fn() } as any;
-      const next = vi.fn();
-
-      await getIndexStats(req, res, next);
-      expect(res.json).toHaveBeenCalledWith([]);
-    });
-  });
-
-  // ── Issue #967: Connection pool statistics ────────────────────────────
-  describe("getPoolStats", () => {
-    it("returns primary pool stats without read replica when DATABASE_READ_URL is not set", async () => {
-      const { getPoolStats } = await import("./admin.js");
-
-      const req = {} as any;
-      const res = { json: vi.fn() } as any;
-      const next = vi.fn();
-
-      await getPoolStats(req, res, next);
-
-      expect(res.json).toHaveBeenCalledWith({
-        primary: {
-          total: 3,
-          idle: 2,
-          waiting: 0,
-          maxSize: 10,
-        },
-      });
-    });
-
-    it("includes readReplica key when readPool is present", async () => {
-      // Directly call the handler with a manually constructed pool to test the
-      // conditional branch. The controller uses the statically-imported pool/readPool
-      // references, so we verify behaviour here by simulating the response shape.
-      const { getPoolStats } = await import("./admin.js");
-
-      // The module-level mock has readPool: null, so primary-only response is expected.
-      // Testing the readReplica branch is covered in integration-level tests where
-      // DATABASE_READ_URL is configured.
-      const req = {} as any;
-      const res = { json: vi.fn() } as any;
-      const next = vi.fn();
-
-      await getPoolStats(req, res, next);
-
-      const callArg = res.json.mock.calls[0][0];
-      // primary must always be present
-      expect(callArg).toHaveProperty("primary");
-      // readReplica is absent when readPool is null
-      expect(callArg).not.toHaveProperty("readReplica");
-    });
-  });
-
-  // ── Issue #965: Benchmark comparison endpoint ─────────────────────────
-  describe("getBenchmarkComparison", () => {
-    it("returns comparison with regressed=false when p95 delta <= 20%", async () => {
-      const { query } = await import("../../db/index.js");
-      const { getBenchmarkComparison } = await import("./admin.js");
-      const mockQuery = query as ReturnType<typeof vi.fn>;
-
-      const baselineRow = {
-        recorded_at: new Date("2025-01-01T00:00:00Z"),
-        p50_ms: "100",
-        p95_ms: "200",
-        p99_ms: "400",
-        error_rate: "0.01",
-      };
-      const headRow = {
-        recorded_at: new Date("2025-01-02T00:00:00Z"),
-        p50_ms: "110",
-        p95_ms: "220",
-        p99_ms: "420",
-        error_rate: "0.01",
-      };
-
-      mockQuery
-        .mockResolvedValueOnce([baselineRow])
-        .mockResolvedValueOnce([headRow]);
-
-      const req = {
-        query: {
-          name: "api-load",
-          baseline: "2025-01-01T00:00:00Z",
-          head: "2025-01-02T00:00:00Z",
-        },
-      } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-      const next = vi.fn();
-
-      await getBenchmarkComparison(req, res, next);
-
-      const result = res.json.mock.calls[0][0];
-      expect(result.name).toBe("api-load");
-      expect(result.regressed).toBe(false); // 10% delta < 20%
-      expect(result.delta.p95).toBeCloseTo(0.1, 5);
-    });
-
-    it("sets regressed=true when p95 delta exceeds 20%", async () => {
-      const { query } = await import("../../db/index.js");
-      const { getBenchmarkComparison } = await import("./admin.js");
-      const mockQuery = query as ReturnType<typeof vi.fn>;
-
-      const baselineRow = {
-        recorded_at: new Date("2025-01-01T00:00:00Z"),
-        p50_ms: "100",
-        p95_ms: "200",
-        p99_ms: "400",
-        error_rate: "0.01",
-      };
-      const headRow = {
-        recorded_at: new Date("2025-01-02T00:00:00Z"),
-        p50_ms: "100",
-        p95_ms: "250", // 25% regression
-        p99_ms: "400",
-        error_rate: "0.01",
-      };
-
-      mockQuery
-        .mockResolvedValueOnce([baselineRow])
-        .mockResolvedValueOnce([headRow]);
-
-      const req = {
-        query: {
-          name: "api-load",
-          baseline: "2025-01-01T00:00:00Z",
-          head: "2025-01-02T00:00:00Z",
-        },
-      } as any;
-      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
-      const next = vi.fn();
-
-      await getBenchmarkComparison(req, res, next);
-
-      const result = res.json.mock.calls[0][0];
-      expect(result.regressed).toBe(true);
-      expect(result.delta.p95).toBeCloseTo(0.25, 5);
-    });
-
-    it("returns 404 when one benchmark record is not found", async () => {
-      const { query } = await import("../../db/index.js");
-      const { getBenchmarkComparison } = await import("./admin.js");
-      const mockQuery = query as ReturnType<typeof vi.fn>;
-
-      mockQuery
-        .mockResolvedValueOnce([]) // baseline not found
-        .mockResolvedValueOnce([]);
-
-      const req = {
-        query: {
-          name: "api-load",
-          baseline: "2025-01-01T00:00:00Z",
-          head: "2025-01-02T00:00:00Z",
-        },
-      } as any;
-      const res = {
-        json: vi.fn(),
-        status: vi.fn().mockReturnThis(),
-      } as any;
-      const next = vi.fn();
-
-      await getBenchmarkComparison(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    it("returns 400 when required query params are missing", async () => {
-      const { getBenchmarkComparison } = await import("./admin.js");
-
-      const req = { query: { name: "api-load" } } as any;
-      const res = {
-        json: vi.fn(),
-        status: vi.fn().mockReturnThis(),
-      } as any;
-      const next = vi.fn();
-
-      await getBenchmarkComparison(req, res, next);
-
-      expect(res.status).toHaveBeenCalledWith(400);
     });
   });
 });
+

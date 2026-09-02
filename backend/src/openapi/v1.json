@@ -1,0 +1,2054 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "StellarYield API",
+    "version": "0.1.0",
+    "description": "REST API for StellarYield — indexes on-chain events and exposes vault, user, and yield data."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Base URL"
+    }
+  ],
+  "components": {
+    "schemas": {},
+    "parameters": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "tags": [
+          "Health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "version",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults": {
+      "get": {
+        "summary": "List vaults",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "state",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated list of up to 3 `field[:direction]` pairs, e.g. `state:asc,total_assets:desc`. Allowed fields: created_at, updated_at, total_assets, total_supply, state, name. A field with no explicit direction inherits `order`."
+            },
+            "required": false,
+            "description": "Comma-separated list of up to 3 `field[:direction]` pairs, e.g. `state:asc,total_assets:desc`. Allowed fields: created_at, updated_at, total_assets, total_supply, state, name. A field with no explicit direction inherits `order`.",
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "required": false,
+            "name": "order",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Inclusive lower bound on creation date (ISO 8601 date or date-time)."
+            },
+            "required": false,
+            "description": "Inclusive lower bound on creation date (ISO 8601 date or date-time).",
+            "name": "createdFrom",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Inclusive upper bound on creation date (ISO 8601 date or date-time)."
+            },
+            "required": false,
+            "description": "Inclusive upper bound on creation date (ISO 8601 date or date-time).",
+            "name": "createdTo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Inclusive lower bound on total assets, as a non-negative integer string."
+            },
+            "required": false,
+            "description": "Inclusive lower bound on total assets, as a non-negative integer string.",
+            "name": "minTotalAssets",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Inclusive upper bound on total assets, as a non-negative integer string."
+            },
+            "required": false,
+            "description": "Inclusive upper bound on total assets, as a non-negative integer string.",
+            "name": "maxTotalAssets",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of vaults",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "contractId": {
+                            "type": "string"
+                          },
+                          "factoryId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "asset": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "symbol": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "Funding",
+                              "Active",
+                              "Matured",
+                              "Closed",
+                              "Cancelled"
+                            ]
+                          },
+                          "totalAssets": {
+                            "type": "string"
+                          },
+                          "totalSupply": {
+                            "type": "string"
+                          },
+                          "depositorCount": {
+                            "type": "number"
+                          },
+                          "fundingTarget": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "fundingDeadline": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "fundingProgress": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "minDeposit": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "maxDepositPerUser": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "contractId",
+                          "factoryId",
+                          "asset",
+                          "name",
+                          "symbol",
+                          "state",
+                          "totalAssets",
+                          "totalSupply",
+                          "depositorCount",
+                          "fundingTarget",
+                          "fundingDeadline",
+                          "fundingProgress",
+                          "minDeposit",
+                          "maxDepositPerUser",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "pageSize": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/count": {
+      "get": {
+        "summary": "Get vault count",
+        "tags": [
+          "Vaults"
+        ],
+        "responses": {
+          "200": {
+            "description": "Total vault count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "total"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}": {
+      "get": {
+        "summary": "Get vault by contract ID",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "contractId": {
+                      "type": "string"
+                    },
+                    "factoryId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "asset": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "symbol": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "Funding",
+                        "Active",
+                        "Matured",
+                        "Closed",
+                        "Cancelled"
+                      ]
+                    },
+                    "totalAssets": {
+                      "type": "string"
+                    },
+                    "totalSupply": {
+                      "type": "string"
+                    },
+                    "depositorCount": {
+                      "type": "number"
+                    },
+                    "fundingTarget": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "fundingDeadline": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "fundingProgress": {
+                      "type": "number",
+                      "nullable": true
+                    },
+                    "minDeposit": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "maxDepositPerUser": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "contractId",
+                    "factoryId",
+                    "asset",
+                    "name",
+                    "symbol",
+                    "state",
+                    "totalAssets",
+                    "totalSupply",
+                    "depositorCount",
+                    "fundingTarget",
+                    "fundingDeadline",
+                    "fundingProgress",
+                    "minDeposit",
+                    "maxDepositPerUser",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vault not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/factory/{factoryId}": {
+      "get": {
+        "summary": "List vaults by factory",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "factoryId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of vaults for factory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "contractId": {
+                        "type": "string"
+                      },
+                      "factoryId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "asset": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "symbol": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "Funding",
+                          "Active",
+                          "Matured",
+                          "Closed",
+                          "Cancelled"
+                        ]
+                      },
+                      "totalAssets": {
+                        "type": "string"
+                      },
+                      "totalSupply": {
+                        "type": "string"
+                      },
+                      "depositorCount": {
+                        "type": "number"
+                      },
+                      "fundingTarget": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "fundingDeadline": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "fundingProgress": {
+                        "type": "number",
+                        "nullable": true
+                      },
+                      "minDeposit": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "maxDepositPerUser": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "contractId",
+                      "factoryId",
+                      "asset",
+                      "name",
+                      "symbol",
+                      "state",
+                      "totalAssets",
+                      "totalSupply",
+                      "depositorCount",
+                      "fundingTarget",
+                      "fundingDeadline",
+                      "fundingProgress",
+                      "minDeposit",
+                      "maxDepositPerUser",
+                      "createdAt",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/state/live": {
+      "get": {
+        "summary": "Get live vault state from chain",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live vault state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/total-assets/live": {
+      "get": {
+        "summary": "Get live total assets from chain",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live total assets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalAssets": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "totalAssets"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/redemption-queue": {
+      "get": {
+        "summary": "Get redemption queue",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redemption queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "userAddress": {
+                        "type": "string"
+                      },
+                      "shares": {
+                        "type": "string"
+                      },
+                      "requestTime": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "userAddress",
+                      "shares",
+                      "requestTime"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/snapshot": {
+      "get": {
+        "summary": "Get vault snapshot",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string"
+                    },
+                    "totalAssets": {
+                      "type": "string"
+                    },
+                    "totalSupply": {
+                      "type": "string"
+                    },
+                    "depositorCount": {
+                      "type": "number"
+                    },
+                    "epochCount": {
+                      "type": "number"
+                    },
+                    "lastIndexedAt": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "totalAssets",
+                    "totalSupply",
+                    "depositorCount",
+                    "epochCount",
+                    "lastIndexedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/holders": {
+      "get": {
+        "summary": "List active vault holders",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "shares",
+                "deposited"
+              ]
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated active holder list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "userAddress": {
+                            "type": "string"
+                          },
+                          "shares": {
+                            "type": "string"
+                          },
+                          "deposited": {
+                            "type": "string"
+                          },
+                          "lastUpdatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "userAddress",
+                          "shares",
+                          "deposited",
+                          "lastUpdatedAt"
+                        ]
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "pageSize": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "page",
+                    "pageSize"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vault not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/holders/count": {
+      "get": {
+        "summary": "Get active vault holder count",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active holder count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vault not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/holders/export.csv": {
+      "get": {
+        "summary": "Export active vault holders as CSV",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV attachment with active holders",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vault not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/tvl-history": {
+      "get": {
+        "summary": "Get vault TVL history",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "TVL history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "totalAssets": {
+                        "type": "string"
+                      },
+                      "totalSupply": {
+                        "type": "string"
+                      },
+                      "recordedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "totalAssets",
+                      "totalSupply",
+                      "recordedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/fees": {
+      "get": {
+        "summary": "Get operator fee summary per vault",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault fee summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalOperatorFees": {
+                      "type": "string"
+                    },
+                    "epochCount": {
+                      "type": "number"
+                    },
+                    "averageFeePerEpoch": {
+                      "type": "string"
+                    },
+                    "feeBps": {
+                      "type": "number"
+                    },
+                    "earlyRedemptionFeeRevenue": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "totalOperatorFees",
+                    "epochCount",
+                    "averageFeePerEpoch",
+                    "feeBps",
+                    "earlyRedemptionFeeRevenue"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vault not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vaults/{contractId}/fees/cooperator": {
+      "get": {
+        "summary": "Get cooperator fee breakdown per vault",
+        "tags": [
+          "Vaults"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cooperator fee breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cooperatorAddress": {
+                      "type": "string"
+                    },
+                    "cooperatorFeeBps": {
+                      "type": "number"
+                    },
+                    "totalCooperatorFees": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cooperatorAddress",
+                    "cooperatorFeeBps",
+                    "totalCooperatorFees"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Vault not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{address}": {
+      "get": {
+        "summary": "Get user by address",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "address": {
+                      "type": "string"
+                    },
+                    "kycVerified": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "address",
+                    "kycVerified",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{address}/portfolio": {
+      "get": {
+        "summary": "Get user portfolio",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User portfolio",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "positions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "userAddress": {
+                            "type": "string"
+                          },
+                          "vaultId": {
+                            "type": "number"
+                          },
+                          "shares": {
+                            "type": "string"
+                          },
+                          "deposited": {
+                            "type": "string"
+                          },
+                          "lastClaimedEpoch": {
+                            "type": "number"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "userAddress",
+                          "vaultId",
+                          "shares",
+                          "deposited",
+                          "lastClaimedEpoch",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "totalDeposited": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "positions",
+                    "totalDeposited"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{address}/share-history": {
+      "get": {
+        "summary": "Get user share balance history",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "vaultId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Share balance snapshots ordered by epoch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "epoch": {
+                        "type": "number"
+                      },
+                      "shares": {
+                        "type": "string"
+                      },
+                      "recordedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "epoch",
+                      "shares",
+                      "recordedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{address}/positions": {
+      "get": {
+        "summary": "Get user vault positions",
+        "tags": [
+          "Users"
+        ],
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User vault positions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "userAddress": {
+                        "type": "string"
+                      },
+                      "vaultId": {
+                        "type": "number"
+                      },
+                      "shares": {
+                        "type": "string"
+                      },
+                      "deposited": {
+                        "type": "string"
+                      },
+                      "lastClaimedEpoch": {
+                        "type": "number"
+                      },
+                      "updatedAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "userAddress",
+                      "vaultId",
+                      "shares",
+                      "deposited",
+                      "lastClaimedEpoch",
+                      "updatedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/yields": {
+      "get": {
+        "summary": "List yields",
+        "tags": [
+          "Yields"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "vaultId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "number",
+              "nullable": true
+            },
+            "required": false,
+            "name": "epoch",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of yield distributions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "vaultId": {
+                        "type": "number"
+                      },
+                      "epoch": {
+                        "type": "number"
+                      },
+                      "yieldAmount": {
+                        "type": "string"
+                      },
+                      "totalShares": {
+                        "type": "string"
+                      },
+                      "distributedAt": {
+                        "type": "string",
+                        "nullable": true
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "vaultId",
+                      "epoch",
+                      "yieldAmount",
+                      "totalShares",
+                      "distributedAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/stats": {
+      "get": {
+        "summary": "Get admin stats (requires API key)",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Admin statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "vaultCount": {
+                      "type": "number"
+                    },
+                    "userCount": {
+                      "type": "number"
+                    },
+                    "totalValueLocked": {
+                      "type": "string"
+                    },
+                    "epochCount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "vaultCount",
+                    "userCount",
+                    "totalValueLocked",
+                    "epochCount"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/fees": {
+      "get": {
+        "summary": "Get platform-wide fee analytics (requires API key)",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Platform fee analytics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "totalOperatorFees": {
+                      "type": "string"
+                    },
+                    "totalEarlyRedemptionFees": {
+                      "type": "string"
+                    },
+                    "totalPlatformRevenue": {
+                      "type": "string"
+                    },
+                    "topFeeVaults": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "contractId": {
+                            "type": "string"
+                          },
+                          "totalFees": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "contractId",
+                          "totalFees"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "totalOperatorFees",
+                    "totalEarlyRedemptionFees",
+                    "totalPlatformRevenue",
+                    "topFeeVaults"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/indexer": {
+      "get": {
+        "summary": "Get indexer status (requires API key)",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Indexer status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "running": {
+                      "type": "boolean"
+                    },
+                    "lastLedger": {
+                      "type": "number"
+                    },
+                    "lastTickAt": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "eventsIndexed": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "running",
+                    "lastLedger",
+                    "lastTickAt",
+                    "eventsIndexed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/indexer/backfill": {
+      "post": {
+        "summary": "Trigger indexer backfill (requires API key)",
+        "tags": [
+          "Admin"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fromLedger": {
+                    "type": "number"
+                  },
+                  "toLedger": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "fromLedger",
+                  "toLedger"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Backfill queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queued": {
+                      "type": "boolean"
+                    },
+                    "fromLedger": {
+                      "type": "number"
+                    },
+                    "toLedger": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "queued",
+                    "fromLedger",
+                    "toLedger"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/events": {
+      "get": {
+        "summary": "Get indexed events (requires API key)",
+        "tags": [
+          "Admin"
+        ],
+        "responses": {
+          "200": {
+            "description": "Indexed events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "ledger": {
+                        "type": "number"
+                      },
+                      "txHash": {
+                        "type": "string"
+                      },
+                      "contractId": {
+                        "type": "string"
+                      },
+                      "eventType": {
+                        "type": "string"
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "ledger",
+                      "txHash",
+                      "contractId",
+                      "eventType",
+                      "createdAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/vaults/{contractId}/audit": {
+      "get": {
+        "summary": "Get vault audit trail (requires API key)",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "name": "contractId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vault audit trail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "nullable": true
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "offset": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "limit",
+                    "offset"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks": {
+      "post": {
+        "summary": "Create webhook (requires API key)",
+        "tags": [
+          "Webhooks"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "secret": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url",
+                  "events"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Webhook created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "events",
+                    "active",
+                    "createdAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List webhooks (requires API key)",
+        "tags": [
+          "Webhooks"
+        ],
+        "responses": {
+          "200": {
+            "description": "List of webhooks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "url": {
+                        "type": "string"
+                      },
+                      "events": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "active": {
+                        "type": "boolean"
+                      },
+                      "createdAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "url",
+                      "events",
+                      "active",
+                      "createdAt"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/{id}": {
+      "delete": {
+        "summary": "Delete webhook (requires API key)",
+        "tags": [
+          "Webhooks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Webhook deleted"
+          },
+          "404": {
+            "description": "Webhook not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -93,6 +93,7 @@ npm run dev
 | `INDEXER_POLL_INTERVAL_MS` | No | `5000` | Indexer polling interval. |
 | `WEBHOOK_SECRET` | No | empty | Optional webhook signing secret. |
 | `ADMIN_API_KEY` | No | empty | Admin API authentication key. |
+| `KEY_INACTIVITY_DAYS` | No | unset (never) | Days an API key may go unused before the daily sweep deactivates it. Never-used keys are measured from `created_at`. Deactivated keys are rejected with 403. |
 
 Docker Compose reads `.env.example` and overrides `DATABASE_URL` so the backend
 connects to the `postgres` service.
@@ -123,6 +124,10 @@ connects to the `postgres` service.
 - `POST /api/v1/users/portfolios/batch` - batch-fetch portfolios for up to 50 addresses (`{ addresses: string[] }`).
 - `GET /api/v1/yields/:contractId/epochs` - list vault yield epochs.
 - `GET /api/v1/yields/:contractId/pending/:userAddress` - get pending yield.
+- `POST /api/v1/validate` - dry-run a request body against the schema of the route it is
+  destined for, without executing it. Takes `{ route, method, body }` and returns
+  `{ valid, errors }`, where `errors` is the list of Zod issues (`null` when the body is
+  valid). Returns 404 if no schema is registered for that route and method.
 
 ### Admin Endpoints
 

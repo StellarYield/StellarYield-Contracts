@@ -5,6 +5,14 @@ export type VaultState =
   | "Closed"
   | "Cancelled";
 
+declare global {
+  namespace Express {
+    interface Request {
+      queryTimeoutMs?: number;
+    }
+  }
+}
+
 export interface Vault {
   id: number;
   contractId: string;

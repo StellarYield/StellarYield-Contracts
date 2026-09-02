@@ -2,12 +2,18 @@ import "./instrumentation.js";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
+import { warmUpPool } from "./db/index.js";
 import { indexer } from "./services/indexerSingleton.js";
 import { jobQueue } from "./services/jobQueue.js";
 import { EventsPruner } from "./services/eventsPruner.js";
 
 const app = createApp();
 const pruner = new EventsPruner();
+
+// Establish the configured number of pool connections before we start accepting
+// traffic, so cold-start requests don't time out waiting on connection setup
+// under load (#951).
+await warmUpPool();
 
 const server = app.listen(config.port, async () => {
   logger.info(
