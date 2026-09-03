@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import supertest from "supertest";
 import { createHash } from "crypto";
 
-vi.mock("../../db/index.js", () => ({ query: vi.fn() }));
+vi.mock("../../db/index.js", () => ({
+  query: vi.fn().mockResolvedValue([]),
+  pool: {
+    totalCount: 3,
+    idleCount: 2,
+    waitingCount: 0,
+    options: { max: 10 },
+  },
+  readPool: null,
+}));
 vi.mock("../../services/indexerSingleton.js", () => ({
   indexer: {
     isRunning: vi.fn().mockReturnValue(false),
