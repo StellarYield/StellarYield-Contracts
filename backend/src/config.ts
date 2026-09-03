@@ -217,6 +217,7 @@ export const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
+  DEPLOY_ID: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -340,6 +341,7 @@ export const config = {
     pass: parsed.data.SMTP_PASS,
     from: parsed.data.SMTP_FROM,
   },
+  deployId: parsed.data.DEPLOY_ID ?? null,
 } as const;
 
 export const ROUTE_CACHE_CONTROL: Record<string, number> = {

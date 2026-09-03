@@ -6,6 +6,7 @@ import { warmUpPool } from "./db/index.js";
 import { indexer } from "./services/indexerSingleton.js";
 import { jobQueue } from "./services/jobQueue.js";
 import { EventsPruner } from "./services/eventsPruner.js";
+import { runDeploymentBenchmarksIfNeeded } from "./services/queryBenchmarks.js";
 
 const app = createApp();
 const pruner = new EventsPruner();
@@ -25,6 +26,8 @@ const server = app.listen(config.port, async () => {
   } catch (err) {
     logger.error({ err }, "Failed to start job queue; continuing without it");
   }
+  // Issue #964: benchmark hot queries once per deployment
+  void runDeploymentBenchmarksIfNeeded();
   void indexer.start();
   pruner.start();
 });
