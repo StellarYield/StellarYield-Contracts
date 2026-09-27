@@ -2224,7 +2224,7 @@ export async function acknowledgeTransferAlert(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(String(req.params["id"]), 10);
     if (Number.isNaN(id) || id <= 0) {
       res.status(400).json({ error: "Invalid alert id" });
       return;

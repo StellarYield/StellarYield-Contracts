@@ -19,6 +19,72 @@ export const httpRequestDurationSeconds = new client.Histogram({
   registers: [register],
 });
 
+// Error-rate companion to http_requests_total (#831). Kept as a separate
+// counter so error ratios can be charted without a full label-set join in
+// PromQL. `statusClass` collapses 400-499 into "4xx" and 500-599 into "5xx" to
+// bound cardinality; everything else is ignored.
+export const httpErrorsTotal = new client.Counter({
+  name: "http_errors_total",
+  help: "Total number of HTTP error responses (4xx and 5xx) by status class",
+  labelNames: ["statusClass", "route"] as const,
+  registers: [register],
+});
+
+// 5xx-only companion to http_errors_total (#1091). Alerting on elevated 5xx
+// rates is a single PromQL expression against this counter, without having to
+// filter http_errors_total by statusClass. `method` and `route` are the only
+// labels, bounding cardinality to the number of registered routes.
+export const http5xxTotal = new client.Counter({
+  name: "http_5xx_total",
+  help: "Total number of HTTP responses with a 5xx status, by method and route",
+  labelNames: ["method", "route"] as const,
+  registers: [register],
+});
+
+// Number of SSE connections currently held open (#1092). Each stream pins a
+// socket and a file descriptor plus the response buffer, so a rising gauge is
+// the early signal that a deploy is running into memory or fd limits.
+export const sseActiveConnections = new client.Gauge({
+  name: "sse_active_connections",
+  help: "Number of currently open Server-Sent Events connections",
+  registers: [register],
+});
+
+// pg-boss queue depth (#1093). Gauges rather than counters because a job moving
+// from `created` to `active` to `failed` does not accumulate: the interesting
+// signal is the current number of jobs sitting in each state, sampled by
+// JobQueueDepthPoller (services/jobQueueDepthPoller.ts).
+export const pgbossJobsCreated = new client.Gauge({
+  name: "pgboss_jobs_created",
+  help: "Number of pg-boss jobs currently in the 'created' state",
+  registers: [register],
+});
+
+export const pgbossJobsActive = new client.Gauge({
+  name: "pgboss_jobs_active",
+  help: "Number of pg-boss jobs currently in the 'active' state",
+  registers: [register],
+});
+
+export const pgbossJobsFailed = new client.Gauge({
+  name: "pgboss_jobs_failed",
+  help: "Number of pg-boss jobs currently in the 'failed' state",
+  registers: [register],
+});
+
+// Prime the gauges so they are exposed by /metrics with a value of 0 from the
+// first scrape, before any SSE stream is opened or the queue poller completes
+// its first pass. Alerting rules like `pgboss_jobs_failed > 0` must not depend
+// on warm-up ordering.
+sseActiveConnections.set(0);
+pgbossJobsCreated.set(0);
+pgbossJobsActive.set(0);
+pgbossJobsFailed.set(0);
+
+// Backing count for sse_active_connections. Kept in module scope because the
+// prom-client Gauge API only exposes its value asynchronously, and the decrement
+// path needs the current count synchronously in order to clamp it at zero.
+let sseConnections = 0;
 
 export const indexerEventsProcessedTotal = new client.Counter({
   name: "indexer_events_processed_total",

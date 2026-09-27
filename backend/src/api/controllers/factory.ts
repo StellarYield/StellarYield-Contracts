@@ -1,10 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { query } from "../../db/index.js";
 import { config } from "../../config.js";
-import { getCurrentFactoryWasmHash } from "../../services/factory.js";
-
-const VAULT_COUNT_STATES = ["Funding", "Active", "Matured", "Cancelled"] as const;
-type VaultCountState = (typeof VAULT_COUNT_STATES)[number];
 
 // GET /api/v1/factory/admin-history — audit log of factory admin transfers (#839)
 export async function getFactoryAdminHistory(_req: Request, res: Response, next: NextFunction) {

@@ -100,8 +100,10 @@ describe("http_5xx_total (#1091)", () => {
     const res = await supertest(app).get("/health");
 
     expect(res.status).toBe(200);
+    // The label is the full mount path, not the router-relative "/", so routes
+    // served by two different routers cannot collapse into one series.
     expect(await scrapeCounter("http_5xx_total")).toContain(
-      'http_5xx_total{method="GET",route="/"} 0',
+      'http_5xx_total{method="GET",route="/health"} 0',
     );
   });
 

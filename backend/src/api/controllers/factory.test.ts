@@ -22,7 +22,6 @@ import {
   getFactoryEvents,
   getFactoryOperators,
 } from "./factory.js";
-import { config } from "../../config.js";
 
 
 function makeRes() {

@@ -52,7 +52,7 @@ function initStaticCache(): void {
 }
 
 initStaticCache();
-import { httpRequestsTotal, httpRequestDurationSeconds, getMetrics } from "./services/metrics.js";
+import { httpRequestsTotal, httpRequestDurationSeconds, getMetrics, recordHttp5xx } from "./services/metrics.js";
 
 import { setupOpenApiRoutes } from "./services/openapi.js";
 import { schema } from "./graphql/schema.js";
@@ -113,6 +113,7 @@ export function createApp(): Express {
       const route = (req.baseUrl ? `${req.baseUrl}${req.route?.path && req.route.path !== "/" ? req.route.path : ""}` : req.route?.path) || req.path;
       httpRequestsTotal.inc({ method: req.method, route, status: res.statusCode });
       httpRequestDurationSeconds.observe({ method: req.method, route }, durationSeconds);
+      recordHttp5xx(req.method, route, res.statusCode, req.route !== undefined);
     });
 
     if (config.sandboxMode) {
