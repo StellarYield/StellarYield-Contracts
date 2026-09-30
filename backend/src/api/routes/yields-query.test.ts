@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getVaultEpochs: vi.fn(),
   getClaimStatsForVault: vi.fn(),
   getHolderCountsForVault: vi.fn(),
+  getEpochYieldPerShare: vi.fn(),
 }));
 
 vi.mock("../../db/index.js", () => ({
@@ -23,6 +24,7 @@ vi.mock("../../services/yield.js", async (importOriginal) => {
       getVaultEpochs: mocks.getVaultEpochs,
       getClaimStatsForVault: mocks.getClaimStatsForVault,
       getHolderCountsForVault: mocks.getHolderCountsForVault,
+      getEpochYieldPerShare: mocks.getEpochYieldPerShare,
       deriveEpochStatus: actual.YieldService.prototype.deriveEpochStatus,
       calculateParticipationRate: actual.YieldService.prototype.calculateParticipationRate,
     })),
@@ -138,5 +140,46 @@ describe("GET /api/v1/yields/:contractId/epochs yield range validation (#858)", 
     const res = await request.get(`${EPOCHS_PATH}?epoch=3`);
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /api/v1/yields/:contractId/epochs/:epochId/yield-per-share (#1071)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns epochId, yieldPerShare as fixed-point string, and decimals when finalized", async () => {
+    mocks.getEpochYieldPerShare.mockResolvedValueOnce({
+      epochId: 5,
+      yieldPerShare: "0.020000000000000000",
+      decimals: 18,
+    });
+
+    const res = await request.get(`/api/v1/yields/${CONTRACT_ID}/epochs/5/yield-per-share`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      epochId: 5,
+      yieldPerShare: "0.020000000000000000",
+      decimals: 18,
+    });
+    expect(mocks.getEpochYieldPerShare).toHaveBeenCalledWith(CONTRACT_ID, 5);
+  });
+
+  it("returns 404 when epoch is not found or not finalized", async () => {
+    mocks.getEpochYieldPerShare.mockResolvedValueOnce(null);
+
+    const res = await request.get(`/api/v1/yields/${CONTRACT_ID}/epochs/99/yield-per-share`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("NotFound");
+  });
+
+  it("returns 400 when epochId is non-positive or invalid", async () => {
+    const res = await request.get(`/api/v1/yields/${CONTRACT_ID}/epochs/invalid/yield-per-share`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
+    expect(mocks.getEpochYieldPerShare).not.toHaveBeenCalled();
   });
 });

@@ -460,3 +460,28 @@ export async function getYieldVolatility(
   }
 }
 
+
+// ── Epoch yield per share (#1071) ─────────────────────────────────────────────
+export async function getEpochYieldPerShare(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const epochId = Number(req.params["epochId"] ?? req.params["epoch"]);
+
+    const result = await yieldService.getEpochYieldPerShare(contractId, epochId);
+    if (!result) {
+      res.status(404).json({
+        error: "NotFound",
+        message: "Epoch not found or not yet finalized",
+      });
+      return;
+    }
+
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}

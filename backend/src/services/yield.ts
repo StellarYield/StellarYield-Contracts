@@ -1,4 +1,4 @@
-import type { Epoch } from "../types/index.js";
+import type { Epoch, EpochYieldPerShare } from "../types/index.js";
 import { query } from "../db/index.js";
 import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
 import { config } from "../config.js";
@@ -1625,6 +1625,40 @@ export class YieldService {
       apy7d,
       totalAssets,
     }));
+  }
+
+  /**
+   * Fetch yield per share for a specific finalized epoch (#1071).
+   * Computed as totalYield / totalShares at epoch close.
+   * Returns null if the epoch does not exist or has not been finalized yet.
+   */
+  async getEpochYieldPerShare(
+    contractId: string,
+    epochId: number,
+  ): Promise<EpochYieldPerShare | null> {
+    const rows = await query<{
+      epoch: number;
+      yield_amount: string;
+      total_shares: string;
+      distributed_at: Date | null;
+    }>(
+      `SELECT e.epoch, e.yield_amount, e.total_shares, e.distributed_at
+       FROM epochs e
+       JOIN vaults v ON e.vault_id = v.id
+       WHERE v.contract_id = $1 AND e.epoch = $2`,
+      [contractId, epochId],
+    );
+
+    const row = rows[0];
+    if (!row || row.distributed_at === null) {
+      return null;
+    }
+
+    return {
+      epochId: row.epoch,
+      yieldPerShare: this.formatYieldPerShare(row.yield_amount, row.total_shares),
+      decimals: 18,
+    };
   }
 }
 

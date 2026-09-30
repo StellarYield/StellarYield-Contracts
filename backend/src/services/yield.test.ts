@@ -165,4 +165,53 @@ describe("YieldService", () => {
       }
     });
   });
+
+  describe("getEpochYieldPerShare (#1071)", () => {
+    it("returns yield per share and decimals for a finalized epoch", async () => {
+      const { query, service } = await getTestContext();
+      query.mockResolvedValueOnce([
+        {
+          epoch: 3,
+          yield_amount: "1000",
+          total_shares: "50000",
+          distributed_at: new Date("2026-03-01T00:00:00Z"),
+        },
+      ]);
+
+      const result = await service.getEpochYieldPerShare("CC_VAULT", 3);
+      expect(result).toEqual({
+        epochId: 3,
+        yieldPerShare: "0.020000000000000000",
+        decimals: 18,
+      });
+      expect(query).toHaveBeenCalledWith(
+        expect.stringContaining("WHERE v.contract_id = $1 AND e.epoch = $2"),
+        ["CC_VAULT", 3],
+      );
+    });
+
+    it("returns null when epoch is not yet finalized (distributed_at is null)", async () => {
+      const { query, service } = await getTestContext();
+      query.mockResolvedValueOnce([
+        {
+          epoch: 4,
+          yield_amount: "2000",
+          total_shares: "50000",
+          distributed_at: null,
+        },
+      ]);
+
+      const result = await service.getEpochYieldPerShare("CC_VAULT", 4);
+      expect(result).toBeNull();
+    });
+
+    it("returns null when epoch is not found", async () => {
+      const { query, service } = await getTestContext();
+      query.mockResolvedValueOnce([]);
+
+      const result = await service.getEpochYieldPerShare("CC_VAULT", 999);
+      expect(result).toBeNull();
+    });
+  });
+
 });

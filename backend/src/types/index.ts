@@ -94,6 +94,12 @@ export interface UserPortfolioResponse {
   totalValue: string;
 }
 
+export interface EpochYieldPerShare {
+  epochId: number;
+  yieldPerShare: string;
+  decimals: number;
+}
+
 export interface Epoch {
   id: number;
   vaultId: number;
