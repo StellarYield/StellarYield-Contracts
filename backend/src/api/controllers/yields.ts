@@ -154,6 +154,23 @@ export async function getEpochDetail(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function getEpochSummary(req: Request, res: Response, next: NextFunction) {
+  try {
+    const summary = await yieldService.getEpochSummary(
+      String(req.params["contractId"]),
+      Number(req.params["epoch"]),
+    );
+    if (!summary) {
+      res.status(404).json({ error: "NotFound", message: "Epoch not found" });
+      return;
+    }
+
+    res.json(summary);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // ── Epoch comparison (#820) ──────────────────────────────────────────────────
 export async function compareEpochs(req: Request, res: Response, next: NextFunction) {
   try {
@@ -459,4 +476,3 @@ export async function getYieldVolatility(
     next(err);
   }
 }
-

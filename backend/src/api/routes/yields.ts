@@ -4,6 +4,7 @@ import {
   getVaultEpochs,
   getEpochYieldPerShare,
   getEpochDetail,
+  getEpochSummary,
   getBulkEpochs,
   getUserPendingYield,
   getYieldSummary,
@@ -111,6 +112,11 @@ yieldsRouter.get("/:contractId/summary", getYieldSummary);
 yieldsRouter.get("/:contractId/epochs", validateQuery(epochQuerySchema), getVaultEpochs);
 yieldsRouter.get("/:contractId/epochs/bulk", getBulkEpochs);
 yieldsRouter.get(
+  "/:contractId/epochs/:epoch/summary",
+  validateParams(epochDetailParamsSchema),
+  getEpochSummary,
+);
+yieldsRouter.get(
   "/:contractId/epochs/:epoch",
   validateParams(epochDetailParamsSchema),
   getEpochDetail,
@@ -161,4 +167,3 @@ const timelineQuerySchema = z.object({
 });
 
 yieldsRouter.get("/:contractId/timeline", validateQuery(timelineQuerySchema), getYieldTimeline);
-

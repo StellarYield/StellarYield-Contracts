@@ -4,12 +4,13 @@ vi.mock("../../db/index.js", () => ({ query: vi.fn() }));
 
 async function getTestContext() {
   const { query } = await import("../../db/index.js");
-  const { getVaultEpochs, getUserPendingYield, getYieldVolatility } = await import("./yields.js");
+  const { getVaultEpochs, getUserPendingYield, getYieldVolatility, getEpochSummary } = await import("./yields.js");
   return {
     query: query as ReturnType<typeof vi.fn>,
     getVaultEpochs,
     getUserPendingYield,
     getYieldVolatility,
+    getEpochSummary,
   };
 }
 
@@ -105,6 +106,35 @@ describe("Yield Controllers", () => {
     });
   });
 
+  describe("getEpochSummary", () => {
+    it("returns holder count and per-holder allocations", async () => {
+      const { query, getEpochSummary } = await getTestContext();
+      query
+        .mockResolvedValueOnce([{ vault_id: 10, epoch: 3, yield_amount: "1000", total_shares: "400" }])
+        .mockResolvedValueOnce([
+          { address: "GADDR_A", shares: "100" },
+          { address: "GADDR_B", shares: "300" },
+        ]);
+
+      const req = { params: { contractId: "CC_VAULT", epoch: "3" } } as any;
+      const res = { json: vi.fn() } as any;
+      const next = vi.fn();
+
+      await getEpochSummary(req, res, next);
+
+      expect(res.json).toHaveBeenCalledWith({
+        epochId: 3,
+        totalYield: "1000",
+        holderCount: 2,
+        distributions: [
+          { address: "GADDR_A", amount: "250" },
+          { address: "GADDR_B", amount: "750" },
+        ],
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
   describe("getYieldVolatility (#982)", () => {
     it("returns 404 when vault is not found", async () => {
       const { query, getYieldVolatility } = await getTestContext();
@@ -164,4 +194,3 @@ describe("Yield Controllers", () => {
     });
   });
 });
-

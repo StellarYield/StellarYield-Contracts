@@ -444,6 +444,61 @@ export class YieldService {
   }
 
   /**
+   * Return the finalized yield and allocation for every holder at an epoch's
+   * close-time share snapshot.
+   */
+  async getEpochSummary(
+    contractId: string,
+    epoch: number,
+  ): Promise<{
+    epochId: number;
+    totalYield: string;
+    holderCount: number;
+    distributions: Array<{ address: string; amount: string }>;
+  } | null> {
+    const epochRows = await query<{
+      vault_id: number;
+      epoch: number;
+      yield_amount: string;
+      total_shares: string;
+    }>(
+      `SELECT e.vault_id, e.epoch, e.yield_amount, e.total_shares
+       FROM epochs e
+       JOIN vaults v ON e.vault_id = v.id
+       WHERE v.contract_id = $1 AND e.epoch = $2`,
+      [contractId, epoch],
+    );
+
+    const epochRow = epochRows[0];
+    if (!epochRow) return null;
+
+    const holderRows = await query<{ address: string; shares: string }>(
+      `SELECT user_address AS address, SUM(shares)::text AS shares
+       FROM share_balance_snapshots
+       WHERE vault_id = $1 AND epoch = $2 AND shares::numeric > 0
+       GROUP BY user_address
+       ORDER BY user_address`,
+      [epochRow.vault_id, epoch],
+    );
+
+    const totalYield = BigInt(epochRow.yield_amount);
+    const totalShares = BigInt(epochRow.total_shares);
+    const distributions = holderRows.map((holder) => ({
+      address: holder.address,
+      amount: totalShares > 0n
+        ? (totalYield * BigInt(holder.shares) / totalShares).toString()
+        : "0",
+    }));
+
+    return {
+      epochId: epochRow.epoch,
+      totalYield: epochRow.yield_amount,
+      holderCount: distributions.length,
+      distributions,
+    };
+  }
+
+  /**
    * Claim stats for every epoch of a vault in one query, keyed by epoch
    * number. Used by the epoch list endpoint to avoid N+1 queries (#816, #817).
    */
@@ -1627,4 +1682,3 @@ export class YieldService {
     }));
   }
 }
-

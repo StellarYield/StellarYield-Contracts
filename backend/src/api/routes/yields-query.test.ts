@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getVaultEpochs: vi.fn(),
   getClaimStatsForVault: vi.fn(),
   getHolderCountsForVault: vi.fn(),
+  getEpochSummary: vi.fn(),
 }));
 
 vi.mock("../../db/index.js", () => ({
@@ -23,6 +24,7 @@ vi.mock("../../services/yield.js", async (importOriginal) => {
       getVaultEpochs: mocks.getVaultEpochs,
       getClaimStatsForVault: mocks.getClaimStatsForVault,
       getHolderCountsForVault: mocks.getHolderCountsForVault,
+      getEpochSummary: mocks.getEpochSummary,
       deriveEpochStatus: actual.YieldService.prototype.deriveEpochStatus,
       calculateParticipationRate: actual.YieldService.prototype.calculateParticipationRate,
     })),
@@ -138,5 +140,37 @@ describe("GET /api/v1/yields/:contractId/epochs yield range validation (#858)", 
     const res = await request.get(`${EPOCHS_PATH}?epoch=3`);
 
     expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /api/v1/yields/:contractId/epochs/:epoch/summary (#1070)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the epoch summary payload", async () => {
+    mocks.getEpochSummary.mockResolvedValue({
+      epochId: 3,
+      totalYield: "1000",
+      holderCount: 2,
+      distributions: [
+        { address: "GADDR_A", amount: "250" },
+        { address: "GADDR_B", amount: "750" },
+      ],
+    });
+
+    const res = await request.get(`${EPOCHS_PATH}/3/summary`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      epochId: 3,
+      totalYield: "1000",
+      holderCount: 2,
+      distributions: [
+        { address: "GADDR_A", amount: "250" },
+        { address: "GADDR_B", amount: "750" },
+      ],
+    });
+    expect(mocks.getEpochSummary).toHaveBeenCalledWith(CONTRACT_ID, 3);
   });
 });
