@@ -9,6 +9,7 @@ import { EventsPruner } from "./services/eventsPruner.js";
 import { JobQueueDepthPoller } from "./services/jobQueueDepthPoller.js";
 import { runDeploymentBenchmarksIfNeeded } from "./services/queryBenchmarks.js";
 import { registerProcessErrorHandlers } from "./services/processErrors.js";
+import { validateNetworkPassphrase } from "./services/networkValidation.js";
 
 // Registered before any startup work, so a rejection in warmUpPool or the listen callback is logged at fatal level (#1249).
 registerProcessErrorHandlers();
@@ -22,6 +23,11 @@ const jobQueueDepthPoller = new JobQueueDepthPoller();
 // traffic, so cold-start requests don't time out waiting on connection setup
 // under load (#951).
 await warmUpPool();
+
+// Network passphrase validation (#1197): confirm the RPC server is on the
+// expected network before starting the indexer. Exits with code 1 on mismatch
+// to prevent indexing events from the wrong network.
+await validateNetworkPassphrase();
 
 const server = app.listen(config.port, async () => {
   logger.info(
