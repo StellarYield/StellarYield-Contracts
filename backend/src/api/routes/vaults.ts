@@ -70,6 +70,7 @@ import {
 import { validateParams, validateQuery, validateBody, nfcStringSchema, contractAddressSchema } from "../middleware/validate.js";
 import { requireApiKey, enforceApiKeyContractScope } from "../middleware/auth.js";
 import { simulateLimiter } from "../middleware/rateLimit.js";
+import { normalizeAddressParam } from "../middleware/normalizeAddressParams.js";
 import { captureForStaleFallback } from "../middleware/staleResponse.js";
 import { parseVaultSort } from "../../services/vault.js";
 
@@ -234,6 +235,8 @@ const tvlHistoryQuerySchema = z.object({
 });
 
 export const vaultsRouter = Router();
+vaultsRouter.param("contractId", normalizeAddressParam("contractId"));
+vaultsRouter.param("address", normalizeAddressParam("address"));
 // Vault scope for keys that carry an `allowed_contract_ids` list (#1243). Runs
 // for every route that names a contract, before its handler.
 vaultsRouter.param("contractId", enforceApiKeyContractScope);

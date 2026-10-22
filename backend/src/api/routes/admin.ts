@@ -71,10 +71,13 @@ import { getHolderConcentrationReport } from "../controllers/regulatoryReports.j
 import { requireApiKey } from "../middleware/auth.js";
 import { adminFeesRouter } from "./fees.js";
 import { ipAllowlist } from "../middleware/ipAllowlist.js";
+import { normalizeAddressParam } from "../middleware/normalizeAddressParams.js";
 import { config } from "../../config.js";
 import { jobQueue } from "../../services/jobQueue.js";
 
 export const adminRouter = Router();
+adminRouter.param("address", normalizeAddressParam("address"));
+adminRouter.param("contractId", normalizeAddressParam("contractId"));
 
 adminRouter.post("/session", createAdminSession);
 adminRouter.post("/session/refresh", refreshAdminSession);
