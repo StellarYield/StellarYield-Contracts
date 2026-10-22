@@ -2,6 +2,8 @@ import { tvlPubSub } from "./tvlPubSub.js";
 import { xdr, scValToNative } from "@stellar/stellar-sdk";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
+import { decodeSymbol, decodeAddress, decodeVec, decodeI128 } from "../stellar/scval.js";
+import { validateRpcResponse, getEventsSchema } from "./rpcSchemas.js";
 import { query } from "../db/index.js";
 import { userServiceInstance } from "./userSingleton.js";
 import {
@@ -377,9 +379,10 @@ export class Indexer {
     if (contractIds.length > 0 || this.watchedContractIds.size === 0) {
       const filters = contractIds.map((id) => ({ contractIds: [id] }));
       try {
-        const resp = await withBackoff(() =>
+        const rawResp = await withBackoff(() =>
           server.getEvents({ startLedger: from, filters }),
         );
+        const resp = validateRpcResponse("getEvents", rawResp, getEventsSchema);
         events = resp.events;
       } catch (err) {
         logger.warn({ err, from, to: latestLedger }, "RPC error fetching events during tick");
@@ -440,9 +443,10 @@ export class Indexer {
 
       const endBatchTimer = indexerProcessingDurationSeconds.startTimer();
       try {
-        const resp = await withBackoff(() =>
+        const rawResp = await withBackoff(() =>
           server.getEvents({ startLedger: cursor + 1, filters }),
         );
+        const resp = validateRpcResponse("getEvents", rawResp, getEventsSchema);
 
         for (const event of resp.events) {
           logger.debug(
@@ -574,9 +578,10 @@ export class Indexer {
       const batchTo = Math.min(cursor + config.indexer.batchSize, toLedger);
       const endBatchTimer = indexerProcessingDurationSeconds.startTimer();
       try {
-        const resp = await withBackoff(() =>
+        const rawResp = await withBackoff(() =>
           server.getEvents({ startLedger: cursor + 1, filters }),
         );
+        const resp = validateRpcResponse("getEvents", rawResp, getEventsSchema);
         for (const event of resp.events) {
           // Events past the global cursor are picked up by the regular tick.
           if ((event.ledger ?? 0) > toLedger) continue;
@@ -2334,21 +2339,15 @@ export function parseDepositEvent(rawEvent: unknown): ParsedDepositEvent | null 
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "deposit") return null;
 
-    const caller = String(scValToNative(parsedTopics[1]) ?? "");
-    const receiver = String(scValToNative(parsedTopics[2]) ?? "");
+    const caller = decodeAddress(parsedTopics[1]);
+    const receiver = decodeAddress(parsedTopics[2]);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const assets = decodeBigInt(arr[0]);
-    const shares = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const assets = decodeI128(dataVec[0]);
+    const shares = decodeI128(dataVec[1]);
 
     return { caller, receiver, assets, shares };
   } catch {
@@ -2380,22 +2379,16 @@ export function parseWithdrawEvent(rawEvent: unknown): ParsedWithdrawEvent | nul
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "withdraw") return null;
 
-    const caller = String(scValToNative(parsedTopics[1]) ?? "");
-    const receiver = String(scValToNative(parsedTopics[2]) ?? "");
-    const owner = String(scValToNative(parsedTopics[3]) ?? "");
+    const caller = decodeAddress(parsedTopics[1]);
+    const receiver = decodeAddress(parsedTopics[2]);
+    const owner = decodeAddress(parsedTopics[3]);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const assets = decodeBigInt(arr[0]);
-    const shares = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const assets = decodeI128(dataVec[0]);
+    const shares = decodeI128(dataVec[1]);
 
     return { caller, receiver, owner, assets, shares };
   } catch {
@@ -2425,20 +2418,14 @@ export function parseYieldDistributedEvent(rawEvent: unknown): ParsedYieldDistri
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "yield_dis") return null;
 
     const epoch = Number(scValToNative(parsedTopics[1]) ?? 0);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const amount = decodeBigInt(arr[0]);
-    const timestamp = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const amount = decodeI128(dataVec[0]);
+    const timestamp = decodeI128(dataVec[1]);
 
     return { epoch, amount, timestamp };
   } catch {

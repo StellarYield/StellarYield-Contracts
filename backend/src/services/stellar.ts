@@ -3,6 +3,11 @@ import { rpc, scValToNative, xdr, Address } from "@stellar/stellar-sdk";
 import { config } from "../config.js";
 import { tryRpcEndpoints } from "./rpcClient.js";
 import type { VaultState } from "../types/index.js";
+import {
+  validateRpcResponse,
+  getLatestLedgerSchema,
+  simulateTransactionSchema,
+} from "./rpcSchemas.js";
 
 export function getSorobanRpc(): rpc.Server {
   return new rpc.Server(config.stellar.rpcUrl);
@@ -14,7 +19,8 @@ export function getSorobanRpc(): rpc.Server {
  */
 export async function getLatestLedger(): Promise<rpc.Api.GetLatestLedgerResponse> {
   const server = getSorobanRpc();
-  return server.getLatestLedger();
+  const rawResponse = await server.getLatestLedger();
+  return validateRpcResponse("getLatestLedger", rawResponse, getLatestLedgerSchema) as rpc.Api.GetLatestLedgerResponse;
 }
 
 
@@ -54,11 +60,12 @@ async function simulateRead<T>(
     });
 
     try {
-      const result = await Promise.race([
+      const rawResult = await Promise.race([
         server.simulateTransaction(tx),
         timeoutPromise,
       ]);
-      return result;
+      const validatedResult = validateRpcResponse("simulateTransaction", rawResult, simulateTransactionSchema);
+      return validatedResult;
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
     }
