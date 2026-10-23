@@ -972,7 +972,7 @@ export class Indexer {
 
     const yieldClaimed = parseYieldClaimedEvent(event);
     if (yieldClaimed) {
-      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimed.user, yieldClaimed.epoch);
+      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimed.user, yieldClaimed.epoch, yieldClaimed.amount);
       await query(
         `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload)
          VALUES ($1, $2, $3, 'yield_claimed', $4)
@@ -993,7 +993,7 @@ export class Indexer {
 
     const yieldClaimedPartial = parseYieldClaimedPartialEvent(event);
     if (yieldClaimedPartial) {
-      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimedPartial.user, yieldClaimedPartial.epoch);
+      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimedPartial.user, yieldClaimedPartial.epoch, yieldClaimedPartial.claimed);
       await query(
         `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload)
          VALUES ($1, $2, $3, 'yield_claimed_partial', $4)
@@ -1723,7 +1723,36 @@ export class Indexer {
     logger.info({ contractId }, "Processed vault_removed event — vault archived");
   }
 
-  private async handleYieldClaimed(contractId: string, userAddress: string, epoch: number): Promise<void> {
+  private async handleYieldClaimed(contractId: string, userAddress: string, epoch: number, amount: bigint | string = "0"): Promise<void> {
+    const vaultRow = await query<{ id: number }>(
+      `SELECT id FROM vaults WHERE contract_id = $1 LIMIT 1`,
+      [contractId],
+    );
+    if (vaultRow.length === 0) {
+      logger.warn({ contractId, userAddress, epoch }, "yield_claimed for unknown vault — skipping snapshot update");
+      return;
+    }
+
+    const vaultId = vaultRow[0].id;
+    const claimedAmount = typeof amount === "bigint" ? amount.toString() : String(amount ?? "0");
+    await query(
+      `INSERT INTO share_balance_snapshots (vault_id, user_address, epoch, shares, recorded_at, cumulative_yield_claimed)
+       VALUES ($1, $2, $3, 0, NOW(), 0)
+       ON CONFLICT (user_address, vault_id, epoch) DO NOTHING`,
+      [vaultId, userAddress, epoch],
+    );
+
+    // Additive updates are the correctness invariant for lifetime yield totals.
+    // The cumulative value must remain monotonic and atomic with the event write;
+    // the duplicate replay guard in #1174 prevents the same claim from being added twice.
+    await query(
+      `UPDATE share_balance_snapshots
+       SET cumulative_yield_claimed = cumulative_yield_claimed + $1,
+           recorded_at = NOW()
+       WHERE user_address = $2 AND vault_id = $3 AND epoch = $4`,
+      [claimedAmount, userAddress, vaultId, epoch],
+    );
+
     await query(
       `UPDATE user_vault_positions uvp
        SET last_claimed_epoch = GREATEST(last_claimed_epoch, $1), updated_at = NOW()
@@ -1734,7 +1763,7 @@ export class Indexer {
       [epoch, contractId, userAddress],
     );
     await cacheDel(`pending-yield:${contractId}:${userAddress}`);
-    logger.info({ contractId, userAddress, epoch }, "Processed yield_claimed event");
+    logger.info({ contractId, userAddress, epoch, claimedAmount }, "Processed yield_claimed event");
 
     // Check if epoch is now fully claimed and fire webhook (#819)
     try {
@@ -2947,11 +2976,10 @@ export function parseEarlyRedemptionProcessedEvent(rawEvent: unknown): ParsedEar
     if (eventName !== "erq_done" && eventName !== "early_redemption_processed") return null;
 
     const user = String(scValToNative(parsedTopics[1]) ?? "");
-
     const data = scValToNative(parsedValue as xdr.ScVal);
     const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
     const requestId = Number(decodeBigInt(arr[0]));
-    const netAssets = decodeBigInt(arr[1]);
+    const netAssets = decodeBigInt(arr[1] ?? 0n);
 
     return { user, requestId, netAssets };
   } catch {
@@ -2962,7 +2990,6 @@ export function parseEarlyRedemptionProcessedEvent(rawEvent: unknown): ParsedEar
 export interface ParsedEarlyRedemptionCancelledEvent {
   user: string;
   requestId: number;
-  shares: bigint;
 }
 
 export function parseEarlyRedemptionCancelledEvent(rawEvent: unknown): ParsedEarlyRedemptionCancelledEvent | null {
@@ -2990,13 +3017,11 @@ export function parseEarlyRedemptionCancelledEvent(rawEvent: unknown): ParsedEar
     if (eventName !== "erq_can" && eventName !== "erq_can2" && eventName !== "early_redemption_cancelled") return null;
 
     const user = String(scValToNative(parsedTopics[1]) ?? "");
-
     const data = scValToNative(parsedValue as xdr.ScVal);
     const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
     const requestId = Number(decodeBigInt(arr[0]));
-    const shares = decodeBigInt(arr[1]);
 
-    return { user, requestId, shares };
+    return { user, requestId };
   } catch {
     return null;
   }
