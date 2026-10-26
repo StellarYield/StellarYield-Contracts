@@ -26,6 +26,11 @@ const jobQueueDepthPoller = new JobQueueDepthPoller();
 // under load (#951).
 await warmUpPool();
 
+// Network passphrase validation (#1197): confirm the RPC server is on the
+// expected network before starting the indexer. Exits with code 1 on mismatch
+// to prevent indexing events from the wrong network.
+await validateNetworkPassphrase();
+
 const server = app.listen(config.port, async () => {
   logger.info(
     { port: config.port, env: config.nodeEnv, network: config.stellar.network },

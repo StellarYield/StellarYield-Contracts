@@ -2529,21 +2529,15 @@ export function parseDepositEvent(rawEvent: unknown): ParsedDepositEvent | null 
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "deposit") return null;
 
-    const caller = String(scValToNative(parsedTopics[1]) ?? "");
-    const receiver = String(scValToNative(parsedTopics[2]) ?? "");
+    const caller = decodeAddress(parsedTopics[1]);
+    const receiver = decodeAddress(parsedTopics[2]);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const assets = decodeBigInt(arr[0]);
-    const shares = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const assets = decodeI128(dataVec[0]);
+    const shares = decodeI128(dataVec[1]);
 
     return { caller, receiver, assets, shares };
   } catch {
@@ -2575,22 +2569,16 @@ export function parseWithdrawEvent(rawEvent: unknown): ParsedWithdrawEvent | nul
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "withdraw") return null;
 
-    const caller = String(scValToNative(parsedTopics[1]) ?? "");
-    const receiver = String(scValToNative(parsedTopics[2]) ?? "");
-    const owner = String(scValToNative(parsedTopics[3]) ?? "");
+    const caller = decodeAddress(parsedTopics[1]);
+    const receiver = decodeAddress(parsedTopics[2]);
+    const owner = decodeAddress(parsedTopics[3]);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const assets = decodeBigInt(arr[0]);
-    const shares = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const assets = decodeI128(dataVec[0]);
+    const shares = decodeI128(dataVec[1]);
 
     return { caller, receiver, owner, assets, shares };
   } catch {
@@ -2620,20 +2608,14 @@ export function parseYieldDistributedEvent(rawEvent: unknown): ParsedYieldDistri
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "yield_dis") return null;
 
     const epoch = Number(scValToNative(parsedTopics[1]) ?? 0);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const amount = decodeBigInt(arr[0]);
-    const timestamp = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const amount = decodeI128(dataVec[0]);
+    const timestamp = decodeI128(dataVec[1]);
 
     return { epoch, amount, timestamp };
   } catch {
