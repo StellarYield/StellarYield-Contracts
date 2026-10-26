@@ -3,7 +3,7 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 // Issues #1106 (event-type filter), #1107 (per-contract pause/resume) and
 // #1109 (throughput metrics).
 
-vi.mock("../db/index.js", () => ({ query: vi.fn().mockResolvedValue([]) }));
+vi.mock("../db/index.js", () => ({ withTransaction: (fn: () => unknown) => fn(), query: vi.fn().mockResolvedValue([]) }));
 vi.mock("../logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));

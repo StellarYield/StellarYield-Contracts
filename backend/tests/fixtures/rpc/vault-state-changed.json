@@ -1,0 +1,20 @@
+{
+  "latestLedger": 1002,
+  "events": [
+    {
+      "type": "contract",
+      "ledger": 1002,
+      "ledgerClosedAt": "2025-01-01T00:10:00Z",
+      "contractId": "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3BMNOP",
+      "id": "0000001002-state-0001",
+      "pagingToken": "",
+      "inSuccessfulContractCall": true,
+      "txHash": "cc33dd44ee55ff6600112233445566778899aabbccddeeff0011223344556677",
+      "topic": [
+        "AAAADgAAAAZzdF9jaGcAAA=="
+      ],
+      "value": "AAAAEQAAAAEAAAACAAAADgAAAAhuZXdTdGF0ZQAAAA4AAAAGQWN0aXZlAAAAAAAOAAAACG9sZFN0YXRlAAAADgAAAAdGdW5kaW5nAA=="
+    }
+  ],
+  "cursor": ""
+}

@@ -1,7 +1,7 @@
 import { Account, Contract, TransactionBuilder, BASE_FEE } from "@stellar/stellar-sdk";
 import { rpc, scValToNative, xdr, Address } from "@stellar/stellar-sdk";
 import { config } from "../config.js";
-import { tryRpcEndpoints } from "./rpcClient.js";
+import { timedRpcCall, tryRpcEndpoints } from "./rpcClient.js";
 import type { VaultState } from "../types/index.js";
 import {
   validateRpcResponse,
@@ -13,14 +13,40 @@ export function getSorobanRpc(): rpc.Server {
   return new rpc.Server(config.stellar.rpcUrl);
 }
 
+let cachedLatestLedger: { response: rpc.Api.GetLatestLedgerResponse; expiresAt: number } | null = null;
+let inFlightLatestLedger: Promise<rpc.Api.GetLatestLedgerResponse> | null = null;
+const LATEST_LEDGER_TTL_MS = 5000;
+
 /**
  * Query the latest ledger sequence from the Soroban RPC server.
  * Lightweight call used by the indexer and /health latency check.
+ * Cached in-memory with a 5s TTL, coalescing concurrent calls.
  */
 export async function getLatestLedger(): Promise<rpc.Api.GetLatestLedgerResponse> {
-  const server = getSorobanRpc();
-  const rawResponse = await server.getLatestLedger();
-  return validateRpcResponse("getLatestLedger", rawResponse, getLatestLedgerSchema) as rpc.Api.GetLatestLedgerResponse;
+  const now = Date.now();
+  if (cachedLatestLedger && cachedLatestLedger.expiresAt > now) {
+    return cachedLatestLedger.response;
+  }
+
+  if (inFlightLatestLedger) {
+    return inFlightLatestLedger;
+  }
+
+  inFlightLatestLedger = (async () => {
+    try {
+      const server = getSorobanRpc();
+      const resp = await timedRpcCall("getLatestLedger", () => server.getLatestLedger());
+      cachedLatestLedger = {
+        response: resp,
+        expiresAt: Date.now() + LATEST_LEDGER_TTL_MS,
+      };
+      return resp;
+    } finally {
+      inFlightLatestLedger = null;
+    }
+  })();
+
+  return inFlightLatestLedger;
 }
 
 
@@ -60,8 +86,8 @@ async function simulateRead<T>(
     });
 
     try {
-      const rawResult = await Promise.race([
-        server.simulateTransaction(tx),
+      const result = await Promise.race([
+        timedRpcCall("simulateTransaction", () => server.simulateTransaction(tx)),
         timeoutPromise,
       ]);
       const validatedResult = validateRpcResponse("simulateTransaction", rawResult, simulateTransactionSchema);

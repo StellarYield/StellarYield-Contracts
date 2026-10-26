@@ -1,0 +1,134 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`API response snapshots (#1291) > epoch detail response shape is stable 1`] = `
+{
+  "distributedAt": "<date>",
+  "epoch": 3,
+  "netYield": "950000",
+  "participationRate": 0.25,
+  "status": "partially_claimed",
+  "totalClaimed": "400000",
+  "totalShares": "4000000",
+  "totalUnclaimed": "600000",
+  "yieldAmount": "1000000",
+  "yieldPerShare": "0.25",
+}
+`;
+
+exports[`API response snapshots (#1291) > user portfolio response shape is stable 1`] = `
+{
+  "positions": [
+    {
+      "contractId": "CAUZE223Z3225XAS6DTIAV3ZCK4SD3XSKURGALZJNSCW7CW5QYEHF557",
+      "deposited": "250000",
+      "id": "<id>",
+      "lastClaimedEpoch": 2,
+      "shares": "250000",
+      "state": "Active",
+      "updatedAt": "<date>",
+      "userAddress": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      "vaultId": "<id>",
+    },
+  ],
+  "totalDeposited": "250000",
+  "totalPendingYield": "12500",
+  "totalValue": "262500",
+}
+`;
+
+exports[`API response snapshots (#1291) > vault detail response shape is stable 1`] = `
+{
+  "asset": "native",
+  "contractId": "CAUZE223Z3225XAS6DTIAV3ZCK4SD3XSKURGALZJNSCW7CW5QYEHF557",
+  "createdAt": "<date>",
+  "depositorCount": 3,
+  "description": "Deterministic seed vault for snapshot coverage",
+  "factoryId": "CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC",
+  "fundingDeadline": "<date>",
+  "fundingProgress": 0.25,
+  "fundingTarget": "500000",
+  "id": "<id>",
+  "logoUri": null,
+  "maxDepositPerUser": "100000",
+  "minDeposit": "10",
+  "name": "Seed Vault",
+  "rwaCategory": null,
+  "rwaDocumentUri": null,
+  "rwaName": null,
+  "rwaSymbol": null,
+  "state": "Active",
+  "symbol": "SEED",
+  "totalAssets": "1234567",
+  "totalSharesEverBurned": "0",
+  "totalSharesEverMinted": "1000000",
+  "totalSupply": "1000000",
+  "updatedAt": "<date>",
+  "zkmeVerifier": null,
+}
+`;
+
+exports[`API response snapshots (#1291) > vault list response shape is stable 1`] = `
+{
+  "data": [
+    {
+      "asset": "native",
+      "contractId": "CAUZE223Z3225XAS6DTIAV3ZCK4SD3XSKURGALZJNSCW7CW5QYEHF557",
+      "createdAt": "<date>",
+      "depositorCount": 3,
+      "description": "Deterministic seed vault for snapshot coverage",
+      "factoryId": "CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC",
+      "fundingDeadline": "<date>",
+      "fundingProgress": 0.25,
+      "fundingTarget": "500000",
+      "id": "<id>",
+      "logoUri": null,
+      "maxDepositPerUser": "100000",
+      "minDeposit": "10",
+      "name": "Seed Vault",
+      "rwaCategory": null,
+      "rwaDocumentUri": null,
+      "rwaName": null,
+      "rwaSymbol": null,
+      "state": "Funding",
+      "symbol": "SEED",
+      "totalAssets": "1234567",
+      "totalSharesEverBurned": "0",
+      "totalSharesEverMinted": "1000000",
+      "totalSupply": "1000000",
+      "updatedAt": "<date>",
+      "zkmeVerifier": null,
+    },
+    {
+      "asset": "native",
+      "contractId": "CAUZE223Z3225XAS6DTIAV3ZCK4SD3XSKURGALZJNSCW7CW5QYEHF557",
+      "createdAt": "<date>",
+      "depositorCount": 3,
+      "description": "Deterministic seed vault for snapshot coverage",
+      "factoryId": "CBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC",
+      "fundingDeadline": "<date>",
+      "fundingProgress": 0.25,
+      "fundingTarget": "500000",
+      "id": "<id>",
+      "logoUri": null,
+      "maxDepositPerUser": "100000",
+      "minDeposit": "10",
+      "name": "Seed Vault",
+      "rwaCategory": null,
+      "rwaDocumentUri": null,
+      "rwaName": null,
+      "rwaSymbol": null,
+      "state": "Active",
+      "symbol": "SEED",
+      "totalAssets": "1234567",
+      "totalSharesEverBurned": "0",
+      "totalSharesEverMinted": "1000000",
+      "totalSupply": "1000000",
+      "updatedAt": "<date>",
+      "zkmeVerifier": null,
+    },
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 2,
+}
+`;

@@ -135,6 +135,8 @@ describe("whitelist_updated indexing (#1094)", () => {
       "whitelist_updated",
       expect.any(String),
       JSON.stringify({ address: INVESTOR, action: "added", caller: ADMIN }),
+      null,
+      0,
     ]);
   });
 

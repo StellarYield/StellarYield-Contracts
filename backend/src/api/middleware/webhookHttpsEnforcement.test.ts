@@ -1,13 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import request from "supertest";
 import express from "express";
 import { webhookHttpsEnforcement } from "./webhookHttpsEnforcement.js";
 import * as configModule from "../../config.js";
-
-// Mock the config module
-const mockConfig = {
-  nodeEnv: "development",
-} as any;
 
 describe("webhookHttpsEnforcement", () => {
   function createApp() {

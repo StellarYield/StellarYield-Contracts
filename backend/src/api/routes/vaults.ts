@@ -9,7 +9,14 @@ import {
   getVaultLiveState,
   getVaultLiveTotalAssets,
   getRedemptionQueue,
-  getVaultSnapshotV2 as getVaultSnapshot,
+  getVaultSnapshotWithRatios,
+  getHoldingDuration,
+  getFundingVelocity,
+  getRedemptionQueueEta,
+  getMaturityCountdown,
+  getRedemptionStats,
+  getRedemptionCancellationRate,
+  getHolderRetention,
   getVaultMetadataHistory,
   getWhitelistHistory,
   getVaultStatusHistory,
@@ -46,19 +53,27 @@ import {
   validateVaultMetadata,
   getDepositDistribution,
   getVaultCohorts,
+  getHoldingDuration,
+  getVaultSnapshotWithRatios,
+  getFundingVelocity,
+  getRedemptionQueueEta,
+  getMaturityCountdown,
+  getRedemptionStats,
+  getRedemptionCancellationRate,
+  getHolderRetention,
 } from "../controllers/vaults.js";
 import {
   translateSimulationError,
   simulateFundingProgress,
   simulateMultiOperation,
 } from "../controllers/simulate.js";
-import { validateParams, validateQuery, validateBody, nfcStringSchema } from "../middleware/validate.js";
+import { validateParams, validateQuery, validateBody } from "../middleware/validate.js";
+import { requireApiKey, enforceApiKeyContractScope, optionalApiKey } from "../middleware/auth.js";
+import { validateParams, validateQuery, validateBody, nfcStringSchema, contractAddressSchema } from "../middleware/validate.js";
 import { requireApiKey, enforceApiKeyContractScope } from "../middleware/auth.js";
 import { simulateLimiter } from "../middleware/rateLimit.js";
 import { captureForStaleFallback } from "../middleware/staleResponse.js";
 import { parseVaultSort } from "../../services/vault.js";
-
-const contractAddressSchema = z.string().length(56).regex(/^C[A-Z2-7]{55}$/);
 
 // Accepts a calendar date (2025-01-31) or a full ISO 8601 date-time, with or
 // without an offset.
@@ -108,7 +123,7 @@ export const listVaultsQuerySchema = z
     cursor: z.string().optional(),
     // Comma-separated `field[:direction]` list, e.g. `state:asc,total_assets:desc` (#855).
     // A bare field name (`?sort=total_assets`) still takes its direction from `order`.
-    sort: z.string().default("created_at"),
+    sort: z.string().optional(),
     order: z.enum(["asc", "desc"]).default("desc"),
     // Creation date range; either bound may stand alone for an open-ended filter (#856).
     createdFrom: isoDateSchema.optional(),
@@ -121,11 +136,15 @@ export const listVaultsQuerySchema = z
     filter: z.string().optional(),
     // Comma-separated camelCase fields to include in responses
     fields: z.string().optional(),
+    // Filter vaults by admin tag (#1283)
+    tag: z.string().optional(),
   })
   .superRefine((value, ctx) => {
-    const parsed = parseVaultSort(value.sort, value.order);
-    if (!parsed.ok) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sort"], message: parsed.message });
+    if (value.sort) {
+      const parsed = parseVaultSort(value.sort, value.order);
+      if (!parsed.ok) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["sort"], message: parsed.message });
+      }
     }
 
     if (
@@ -227,7 +246,7 @@ vaultsRouter.param("contractId", enforceApiKeyContractScope);
 
 vaultsRouter.get("/categories", listCategories);
 // Public list and detail reads keep a stale copy for outage fallback (#1254).
-vaultsRouter.get("/", validateQuery(listVaultsQuerySchema), captureForStaleFallback, listVaults);
+vaultsRouter.get("/", optionalApiKey(), validateQuery(listVaultsQuerySchema), captureForStaleFallback, listVaults);
 vaultsRouter.get("/count", getVaultCount);
 // Aggregates endpoint (placed before dynamic :contractId routes)
 const aggregatesQuerySchema = z.object({ state: z.string().optional() });

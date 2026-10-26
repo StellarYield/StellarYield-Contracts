@@ -395,6 +395,10 @@ interface ListVaultsOptions {
   fields?: string[];
   /** Limit the list to these contract IDs, for a key scoped to some vaults (#1243). */
   contractIds?: string[];
+  /** Filter by admin tag (#1283). */
+  tag?: string;
+  /** Whether using default ordering (#1286). */
+  isDefaultSort?: boolean;
 }
 
 /** Row-selection filters shared by the vault list query and its COUNT companion. */
@@ -407,6 +411,8 @@ interface VaultListFilters {
   maxTotalAssets?: string;
   /** Restrict to these contract IDs; an empty array matches nothing (#1243). */
   contractIds?: string[];
+  /** Filter by admin tag (#1283). */
+  tag?: string;
 }
 
 /**
@@ -449,6 +455,11 @@ function buildVaultListFilters(
     add((p) => `v.contract_id = ANY(${p}::text[])`, filters.contractIds);
   }
 
+  // Filter vaults by admin tag (#1283)
+  if (filters.tag) {
+    add((p) => `${p} = ANY(v.tags)`, filters.tag);
+  }
+
   return { conditions, params, nextIdx: idx };
 }
 
@@ -480,6 +491,9 @@ interface VaultRow {
   updated_at: Date;
   settlement_status: string | null;
   supply_at_maturity?: string | null;
+  unlisted?: boolean;
+  featured_rank?: number | null;
+  tags?: string[];
 }
 
 function computeFundingProgress(totalAssets: string, fundingTarget: string | null): number | null {
@@ -555,6 +569,9 @@ function mapVaultRow(row: VaultRow): Vault {
     updatedAt: row.updated_at,
     settlementStatus: (row.settlement_status as Vault["settlementStatus"]) ?? null,
     ...(redeemedPct !== undefined ? { redeemedPct } : {}),
+    ...(row.unlisted !== undefined ? { unlisted: row.unlisted } : {}),
+    ...(row.featured_rank !== undefined ? { featuredRank: row.featured_rank } : {}),
+    ...(row.tags !== undefined ? { tags: row.tags } : {}),
   };
 }
 
@@ -606,9 +623,12 @@ export class VaultService {
     if (!sortResult.ok) {
       throw new Error(`Invalid sort parameter: ${sortResult.message}`);
     }
-    const orderByClause = sortResult.specs
+    let orderByClause = sortResult.specs
       .map((spec) => `v.${spec.field} ${spec.direction === "asc" ? "ASC" : "DESC"}`)
       .join(", ");
+    if (opts.isDefaultSort ?? !opts.sort) {
+      orderByClause = `v.featured_rank ASC NULLS LAST, ${orderByClause}`;
+    }
 
     // Cursor pagination keys off (created_at, id), so the tiebreaker and the
     // cursor comparison both follow the primary sort field's direction.
@@ -637,6 +657,7 @@ export class VaultService {
       minTotalAssets: opts.minTotalAssets,
       maxTotalAssets: opts.maxTotalAssets,
       contractIds: opts.contractIds,
+      tag: opts.tag,
     };
     const filtered = buildVaultListFilters(filters);
     const conditions = filtered.conditions;
@@ -645,6 +666,8 @@ export class VaultService {
 
     // Filter out archived vaults from standard list queries (#674)
     conditions.push(`v.archived = FALSE`);
+    // Exclude unlisted vaults from public listings (#1285)
+    conditions.push(`v.unlisted = FALSE`);
 
     // Compound filter tree (#859)
     if (opts.filter) {
@@ -686,6 +709,7 @@ export class VaultService {
                v.description, v.logo_uri,
                v.settlement_status,
                v.supply_at_maturity,
+               v.unlisted, v.featured_rank, v.tags,
                COALESCE((
                  SELECT COUNT(*)::int
                  FROM user_vault_positions uvp
@@ -706,6 +730,7 @@ export class VaultService {
                v.description, v.logo_uri,
                v.settlement_status,
                v.supply_at_maturity,
+               v.unlisted, v.featured_rank, v.tags,
                COALESCE((
                  SELECT COUNT(*)::int
                  FROM user_vault_positions uvp
@@ -740,6 +765,7 @@ export class VaultService {
       let countIdx = countFilters.nextIdx;
 
       countConditions.push(`v.archived = FALSE`);
+      countConditions.push(`v.unlisted = FALSE`);
 
       if (opts.filter) {
         const { sql: filterSql, nextIdx } = applyFilterTree(opts.filter, countParams, countIdx + 1);
@@ -821,13 +847,14 @@ export class VaultService {
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.zkme_verifier_address,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+              v.unlisted, v.featured_rank, v.tags,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
-       WHERE v.factory_id = $1 AND v.archived = FALSE
+       WHERE v.factory_id = $1 AND v.archived = FALSE AND v.unlisted = FALSE
        ORDER BY v.created_at DESC`,
       [factoryId],
       timeoutMs ? { timeoutMs } : undefined,
@@ -861,6 +888,7 @@ export class VaultService {
               v.description, v.logo_uri,
               v.settlement_status,
               v.supply_at_maturity,
+              v.unlisted, v.featured_rank, v.tags,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -1533,10 +1561,10 @@ export class VaultService {
       payload: Record<string, unknown>;
       created_at: Date;
     }>(
-      `SELECT ledger, event_type, payload, created_at
+       `SELECT ledger, event_type, payload, created_at
        FROM indexed_events
        WHERE contract_id = $1 AND event_type IN ('op_add', 'op_rem')
-       ORDER BY created_at DESC
+       ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC
        LIMIT $2 OFFSET $3`,
       [contractId, pageSize, offset],
     );
@@ -1610,6 +1638,8 @@ export class VaultService {
 
     // Filter out archived vaults (#674)
     conditions.push(`v.archived = FALSE`);
+    // Exclude unlisted vaults (#1285)
+    conditions.push(`v.unlisted = FALSE`);
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -1619,6 +1649,7 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+              v.unlisted, v.featured_rank, v.tags,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -1680,6 +1711,7 @@ export class VaultService {
        WHERE ie.event_type = 'deposit'
          AND ie.created_at > NOW() - INTERVAL '24 hours'
          AND v.archived = FALSE
+         AND v.unlisted = FALSE
        GROUP BY v.contract_id, v.name
        ORDER BY total_deposited DESC
        LIMIT 10`,
@@ -1701,13 +1733,14 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+              v.unlisted, v.featured_rank, v.tags,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
-       WHERE v.created_at > $1 AND v.archived = FALSE
+       WHERE v.created_at > $1 AND v.archived = FALSE AND v.unlisted = FALSE
        ORDER BY v.created_at DESC`,
       [cutoff],
     );
@@ -1723,6 +1756,7 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+              v.unlisted, v.featured_rank, v.tags,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -1734,6 +1768,7 @@ export class VaultService {
          AND v.maturity_date > NOW()
          AND v.maturity_date <= NOW() + ($1::int * INTERVAL '1 day')
          AND v.archived = FALSE
+         AND v.unlisted = FALSE
        ORDER BY v.maturity_date ASC`,
       [days],
     );
@@ -1752,6 +1787,7 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
+              v.unlisted, v.featured_rank, v.tags,
               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
@@ -1763,6 +1799,7 @@ export class VaultService {
          AND v.funding_target::numeric > 0
          AND v.total_assets::numeric >= v.funding_target::numeric
          AND v.archived = FALSE
+         AND v.unlisted = FALSE
        ORDER BY (v.total_assets::numeric / v.funding_target::numeric) DESC`,
     );
 
@@ -1802,6 +1839,7 @@ export class VaultService {
          AND state = 'Active'
          AND contract_id != $2
          AND archived = FALSE
+         AND unlisted = FALSE
        ORDER BY ABS(total_assets::numeric - $3::numeric) ASC
        LIMIT 5`,
       [rwa_category, contractId, total_assets],

@@ -13,8 +13,26 @@ function getClient(): Redis | null {
   return client;
 }
 
-export async function cacheGet<T>(key: string): Promise<T | null> {
+/**
+ * Close the Redis client if one was ever created (#1294).
+ *
+ * Idempotent and safe when `REDIS_URL` is unset (no client was created) or when
+ * the client never connected (`lazyConnect`): `quit()` is attempted first so an
+ * established connection closes cleanly, falling back to `disconnect()` for a
+ * lazy client that was never connected.
+ */
+export async function closeRedis(): Promise<void> {
+  const redis = client;
+  client = null;
+  if (!redis) return;
   try {
+    await redis.quit();
+  } catch {
+    redis.disconnect();
+  }
+}
+
+export async function cacheGet<T>(key: string): Promise<T | null> {  try {
     const redis = getClient();
     if (!redis) return null;
     const val = await redis.get(key);

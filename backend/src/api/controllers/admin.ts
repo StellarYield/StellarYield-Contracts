@@ -22,6 +22,7 @@ import { getApiKeyUsage } from "../../cache/redis.js";
 import { logAdminAudit } from "../../services/adminAuditLog.js";
 import { logSecurityEvent } from "../../services/securityLogger.js";
 import { generateWebhookSecret, secretRotationWindowHours } from "../../services/webhookSignature.js";
+import { setPaginationLinks } from "../middleware/paginationLinks.js";
 
 const OPENAPI_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../openapi");
 
@@ -292,7 +293,43 @@ export async function getAdminIndexer(_req: Request, res: Response, next: NextFu
     const lastTickAt = lastTickAtDate ? lastTickAtDate.toISOString() : null;
     const eventsIndexed = await indexer.getEventsIndexedCount();
 
-    res.json({ running, lastLedger, lastTickAt, eventsIndexed });
+    res.json({
+      running,
+      lastLedger,
+      lastTickAt,
+      eventsIndexed,
+      // #1213: current adaptive ledger batch size.
+      batchSize: indexer.getBatchSize(),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getIndexerDeadLetters(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rawLimit = parseInt(String(req.query["limit"] ?? "50"), 10);
+    const limit = Math.max(1, Math.min(200, Number.isNaN(rawLimit) ? 50 : rawLimit));
+    const rawOffset = parseInt(String(req.query["offset"] ?? "0"), 10);
+    const offset = Math.max(0, Number.isNaN(rawOffset) ? 0 : rawOffset);
+
+    const [rows, countRows] = await Promise.all([
+      query(
+        `SELECT id, contract_id, ledger, raw_event, error_message, created_at
+         FROM indexer_dead_letters
+         ORDER BY created_at DESC, id DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ),
+      query<{ count: string }>("SELECT COUNT(*)::text AS count FROM indexer_dead_letters"),
+    ]);
+
+    res.json({
+      data: rows,
+      total: parseInt(countRows[0]?.count ?? "0", 10),
+      limit,
+      offset,
+    });
   } catch (err) {
     next(err);
   }
@@ -991,7 +1028,7 @@ export async function getAdminEvents(req: Request, res: Response, next: NextFunc
       `SELECT id, ledger, tx_hash, contract_id, event_type, payload, created_at
        FROM indexed_events
        ${whereClause}
-       ORDER BY created_at DESC
+       ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC
        LIMIT 50`,
       params,
     );
@@ -1337,6 +1374,7 @@ export async function getAdminAuditLog(req: Request, res: Response, next: NextFu
       if (nextCursor) {
         res.set("X-Next-Cursor", nextCursor);
       }
+      setPaginationLinks(res, req, { nextCursor });
 
       res.json({
         data: rows.map((row) => ({
@@ -1396,6 +1434,7 @@ export async function getAdminAuditLog(req: Request, res: Response, next: NextFu
     if (nextCursor) {
       res.set("X-Next-Cursor", nextCursor);
     }
+    setPaginationLinks(res, req, { nextCursor });
 
     res.json({
       data: rows.map((row) => ({
@@ -2921,7 +2960,7 @@ export async function acknowledgeTransferAlert(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(req.params["id"] as string, 10);
     if (Number.isNaN(id) || id <= 0) {
       res.status(400).json({ error: "Invalid alert id" });
       return;
@@ -3017,6 +3056,174 @@ export async function exportVaultsCsv(_req: Request, res: Response, next: NextFu
     }
 
     csvStream.end();
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Admin Watchlist (#1284) ──────────────────────────────────────────────
+export async function getAdminWatchlist(req: Request, res: Response, next: NextFunction) {
+  try {
+    const adminKeyId = req.apiKey?.id;
+    if (!adminKeyId) {
+      res.status(401).json({ error: "Unauthorized", message: "Admin key required" });
+      return;
+    }
+    const rows = await query<{
+      contract_id: string;
+      added_at: Date;
+      name: string | null;
+      symbol: string | null;
+      status: string | null;
+      tvl: string | null;
+    }>(
+      `SELECT w.contract_id, w.added_at, v.name, v.symbol, v.state AS status, v.total_assets AS tvl
+       FROM admin_watchlist w
+       LEFT JOIN vaults v ON w.contract_id = v.contract_id
+       WHERE w.admin_key_id = $1
+       ORDER BY w.added_at DESC`,
+      [adminKeyId],
+    );
+    res.json({
+      watchlist: rows.map((r) => ({
+        contractId: r.contract_id,
+        addedAt: r.added_at,
+        name: r.name,
+        symbol: r.symbol,
+        status: r.status,
+        tvl: r.tvl ?? "0",
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function addToAdminWatchlist(req: Request, res: Response, next: NextFunction) {
+  try {
+    const adminKeyId = req.apiKey?.id;
+    if (!adminKeyId) {
+      res.status(401).json({ error: "Unauthorized", message: "Admin key required" });
+      return;
+    }
+    const parsed = contractAddressSchema.safeParse(req.params["contractId"]);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid contractId format" });
+      return;
+    }
+    const contractId = parsed.data;
+
+    await query(
+      `INSERT INTO admin_watchlist (admin_key_id, contract_id, added_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (admin_key_id, contract_id) DO NOTHING`,
+      [adminKeyId, contractId],
+    );
+
+    await logAdminAudit(req, "add_watchlist", `/api/v1/admin/watchlist/${contractId}`);
+
+    res.json({ success: true, contractId });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeFromAdminWatchlist(req: Request, res: Response, next: NextFunction) {
+  try {
+    const adminKeyId = req.apiKey?.id;
+    if (!adminKeyId) {
+      res.status(401).json({ error: "Unauthorized", message: "Admin key required" });
+      return;
+    }
+    const parsed = contractAddressSchema.safeParse(req.params["contractId"]);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid contractId format" });
+      return;
+    }
+    const contractId = parsed.data;
+
+    await query(
+      "DELETE FROM admin_watchlist WHERE admin_key_id = $1 AND contract_id = $2",
+      [adminKeyId, contractId],
+    );
+
+    await logAdminAudit(req, "remove_watchlist", `/api/v1/admin/watchlist/${contractId}`);
+
+    res.json({ success: true, contractId });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Admin Vault Unlisted Flag (#1285) ────────────────────────────────────────
+export async function toggleVaultUnlisted(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = contractAddressSchema.safeParse(req.params["contractId"]);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid contractId format" });
+      return;
+    }
+    const contractId = parsed.data;
+
+    const unlisted = typeof req.body?.unlisted === "boolean" ? req.body.unlisted : true;
+
+    const result = await query<{ contract_id: string; unlisted: boolean }>(
+      "UPDATE vaults SET unlisted = $1, updated_at = NOW() WHERE contract_id = $2 RETURNING contract_id, unlisted",
+      [unlisted, contractId],
+    );
+
+    if (result.length === 0) {
+      res.status(404).json({ error: "NotFound", message: `Vault ${contractId} not found` });
+      return;
+    }
+
+    await cacheDel(`vault:${contractId}*`);
+    await cacheDel("vaults:list:*");
+
+    await logAdminAudit(req, "toggle_vault_unlisted", `/api/v1/admin/vaults/${contractId}/unlisted`);
+
+    res.json({ success: true, contractId, unlisted: result[0].unlisted });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Admin Featured Vault Ordering (#1286) ──────────────────────────────────
+export async function setVaultFeaturedRank(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = contractAddressSchema.safeParse(req.params["contractId"]);
+    if (!parsed.success) {
+      res.status(400).json({ error: "BadRequest", message: "Invalid contractId format" });
+      return;
+    }
+    const contractId = parsed.data;
+
+    let featuredRank: number | null = null;
+    if (req.body?.featuredRank !== null && req.body?.featuredRank !== undefined) {
+      const parsedRank = Number(req.body.featuredRank);
+      if (!Number.isInteger(parsedRank) || parsedRank < 0) {
+        res.status(400).json({ error: "BadRequest", message: "featuredRank must be a non-negative integer or null" });
+        return;
+      }
+      featuredRank = parsedRank;
+    }
+
+    const result = await query<{ contract_id: string; featured_rank: number | null }>(
+      "UPDATE vaults SET featured_rank = $1, updated_at = NOW() WHERE contract_id = $2 RETURNING contract_id, featured_rank",
+      [featuredRank, contractId],
+    );
+
+    if (result.length === 0) {
+      res.status(404).json({ error: "NotFound", message: `Vault ${contractId} not found` });
+      return;
+    }
+
+    await cacheDel(`vault:${contractId}*`);
+    await cacheDel("vaults:list:*");
+
+    await logAdminAudit(req, "set_vault_featured_rank", `/api/v1/admin/vaults/${contractId}/featured-rank`);
+
+    res.json({ success: true, contractId, featuredRank: result[0].featured_rank });
   } catch (err) {
     next(err);
   }

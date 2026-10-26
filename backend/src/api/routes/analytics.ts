@@ -11,6 +11,7 @@ import {
   getApyRanking,
 } from "../controllers/analytics.js";
 import { validateQuery } from "../middleware/validate.js";
+import { windowSchema } from "../schemas/parseWindow.js";
 
 const contractIdSchema = z
   .string()
@@ -25,10 +26,13 @@ const yieldCorrelationQuerySchema = z.object({
 const topUnderperformingQuerySchema = z.object({
   n: z.coerce.number().int().positive().optional().default(5),
   state: z.string().optional(),
+  // Optional analysis window; shorthand (`7d`) or ISO-8601 (`P7D`) (#1187).
+  window: windowSchema.optional(),
 });
 
 const rankingQuerySchema = z.object({
   state: z.string().optional(),
+  window: windowSchema.optional(),
 });
 
 const groupByQuerySchema = z.object({

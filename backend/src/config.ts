@@ -2,6 +2,29 @@ import "dotenv/config";
 import { z } from "zod";
 import cron from "node-cron";
 
+// Parse RPC_TIMEOUTS_MS: a JSON object of method name -> positive integer ms.
+// Throws on malformed JSON or a value that is not a whole number of at least 1000ms,
+// matching the STELLAR_RPC_TIMEOUT_MS floor.
+export function parseRpcTimeoutOverrides(raw: string): Record<string, number> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("RPC_TIMEOUTS_MS must be a JSON object");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("RPC_TIMEOUTS_MS must be a JSON object");
+  }
+  const overrides: Record<string, number> = {};
+  for (const [method, value] of Object.entries(parsed)) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1000) {
+      throw new Error(`RPC_TIMEOUTS_MS.${method} must be an integer of at least 1000`);
+    }
+    overrides[method] = value;
+  }
+  return overrides;
+}
+
 export const envSchema = z.object({
   PORT: z
     .string()
@@ -23,12 +46,33 @@ export const envSchema = z.object({
     .default("10000")
     .transform((v) => parseInt(v, 10))
     .pipe(z.number().int().min(1000)),
-  STELLAR_NETWORK_PASSPHRASE: z.string().optional(),
-  VAULT_FACTORY_CONTRACT_ID: z.string().default(""),
-  DATABASE_URL: z.string().refine((v) => /^postgres(ql)?:\/\/.+/.test(v), {
-    message:
-      "DATABASE_URL must be a valid PostgreSQL connection string (postgresql://...)",
-  }),
+  // JSON object mapping RPC method names to a timeout in ms (#1207), e.g.
+  // {"getEvents":30000}. Methods not listed fall back to STELLAR_RPC_TIMEOUT_MS.
+  RPC_TIMEOUTS_MS: z
+    .string()
+    .default("{}")
+    .transform((v, ctx) => {
+      try {
+        return parseRpcTimeoutOverrides(v);
+      } catch (err) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: (err as Error).message });
+        return z.NEVER;
+      }
+    }),
+  RPC_DEBUG_LOG: z
+    .string()
+    .default("false"),
+  STELLAR_NETWORK_PASSPHRASE: z
+    .string()
+    .optional(),
+  VAULT_FACTORY_CONTRACT_ID: z
+    .string()
+    .default(""),
+  DATABASE_URL: z
+    .string()
+    .refine((v) => /^postgres(ql)?:\/\/.+/.test(v), {
+      message: "DATABASE_URL must be a valid PostgreSQL connection string (postgresql://...)",
+    }),
   // Optional read replica. SELECT-only (GET handler) queries are routed here to
   // offload the primary. Falls back to DATABASE_URL when unset (#949).
   DATABASE_READ_URL: z
@@ -57,7 +101,22 @@ export const envSchema = z.object({
   LARGE_TRANSFER_THRESHOLD: z.string().default("1000000"),
   INDEXER_BATCH_SIZE: z
     .string()
+    .optional()
+    .transform((v) => v === undefined ? undefined : parseInt(v, 10))
+    .pipe(z.number().int().min(1).optional()),
+  INDEXER_BATCH_LEDGERS: z
+    .string()
     .default("200")
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(1)),
+  INDEXER_BATCH_LEDGERS_MIN: z
+    .string()
+    .default("25")
+    .transform((v) => parseInt(v, 10))
+    .pipe(z.number().int().min(1)),
+  INDEXER_BATCH_LEDGERS_MAX: z
+    .string()
+    .default("3200")
     .transform((v) => parseInt(v, 10))
     .pipe(z.number().int().min(1)),
   INDEXER_LAG_ALERT_LEDGERS: z
@@ -175,6 +234,12 @@ export const envSchema = z.object({
     .transform((v) => parseInt(v, 10))
     .pipe(z.number().int().min(1)),
   SANDBOX_MODE: z
+    .string()
+    .default("false")
+    .transform((v) => ["true", "1", "yes"].includes(v.toLowerCase())),
+  // When true, query keys absent from the route's Zod schema are rejected with
+  // HTTP 422 instead of being silently ignored (#1185).
+  STRICT_QUERY_PARAMS: z
     .string()
     .default("false")
     .transform((v) => ["true", "1", "yes"].includes(v.toLowerCase())),
@@ -334,6 +399,9 @@ export const config = {
       ).toLowerCase() === "true" || process.env.ENABLE_SANDBOX_RESET === "1"
     );
   },
+  get strictQueryParams() {
+    return (process.env.STRICT_QUERY_PARAMS ?? String(parsed.data.STRICT_QUERY_PARAMS)).toLowerCase() === "true" || process.env.STRICT_QUERY_PARAMS === "1";
+  },
   get archiveCron(): string {
     return process.env.ARCHIVE_CRON ?? parsed.data.ARCHIVE_CRON;
   },
@@ -352,9 +420,10 @@ export const config = {
           .filter(Boolean)
       : [],
     rpcTimeoutMs: parsed.data.STELLAR_RPC_TIMEOUT_MS,
-    networkPassphrase:
-      parsed.data.STELLAR_NETWORK_PASSPHRASE ??
-      getDefaultPassphrase(parsed.data.STELLAR_NETWORK),
+    rpcTimeoutsMs: parsed.data.RPC_TIMEOUTS_MS,
+    rpcDebugLog: ["true", "1", "yes"].includes(parsed.data.RPC_DEBUG_LOG.toLowerCase()),
+    networkPassphrase: parsed.data.STELLAR_NETWORK_PASSPHRASE
+      ?? getDefaultPassphrase(parsed.data.STELLAR_NETWORK),
     vaultFactoryContractId: parsed.data.VAULT_FACTORY_CONTRACT_ID,
   },
 
@@ -375,7 +444,9 @@ export const config = {
   indexer: {
     startLedger: parsed.data.INDEXER_START_LEDGER,
     pollIntervalMs: parsed.data.INDEXER_POLL_INTERVAL_MS,
-    batchSize: parsed.data.INDEXER_BATCH_SIZE,
+    batchSize: parsed.data.INDEXER_BATCH_SIZE ?? parsed.data.INDEXER_BATCH_LEDGERS,
+    minBatchSize: parsed.data.INDEXER_BATCH_LEDGERS_MIN,
+    maxBatchSize: parsed.data.INDEXER_BATCH_LEDGERS_MAX,
     lagAlertLedgers: parsed.data.INDEXER_LAG_ALERT_LEDGERS,
   },
 

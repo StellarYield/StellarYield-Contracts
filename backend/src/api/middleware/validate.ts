@@ -1,12 +1,57 @@
 import type { Request, Response, NextFunction } from "express";
-import type { ZodSchema } from "zod";
+import type { ZodSchema, ZodIssue } from "zod";
 import { z } from "zod";
+import { classifyAddress } from "../../utils/address.js";
+import { config } from "../../config.js";
 
-// Stellar address validator: 56-character Strkey starting with 'G'
+export const MUXED_ADDRESS_NOT_SUPPORTED = "MUXED_ADDRESS_NOT_SUPPORTED";
+
+type IssueWithParams = ZodIssue & { params?: { code?: string; httpStatus?: number } };
+
+function sendIssues(res: Response, issues: ZodIssue[]) {
+  const typed = issues as IssueWithParams[];
+  const muxed = typed.find((i) => i.params?.code === MUXED_ADDRESS_NOT_SUPPORTED);
+  if (muxed) {
+    res.status(422).json({
+      code: MUXED_ADDRESS_NOT_SUPPORTED,
+      message: "Muxed addresses (M...) are not supported; use a plain account address (G...)",
+      statusCode: 422,
+    });
+    return;
+  }
+  const status = typed.some((i) => i.params?.httpStatus === 422) ? 422 : 400;
+  res.status(status).json({ error: "ValidationError", issues });
+}
+
+// Stellar address validator: Valid account address (G...) checked via classifyAddress.
+// Muxed (M...) addresses are rejected with a dedicated error code so clients can
+// tell them apart from malformed input (#1188).
 export const stellarAddressSchema = z
   .string()
-  .length(56)
-  .regex(/^G[A-Z2-7]{55}$/, "Invalid Stellar address format");
+  .superRefine((val, ctx) => {
+    const kind = classifyAddress(val);
+    if (kind === "muxed" || val.startsWith("M")) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Muxed addresses are not supported",
+        params: { code: MUXED_ADDRESS_NOT_SUPPORTED, httpStatus: 422 },
+      });
+      return;
+    }
+    if (kind !== "account") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Invalid Stellar address format",
+      });
+    }
+  });
+
+// Stellar contract address validator: Valid contract address (C...) checked via classifyAddress
+export const contractAddressSchema = z
+  .string()
+  .refine((val) => classifyAddress(val) === "contract", {
+    message: "Invalid Stellar contract address format",
+  });
 
 /**
  * Zod transform that normalises a free-text string to Unicode NFC (#1236).
@@ -69,9 +114,7 @@ export function validateBody(schema: ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (!result.success) {
-      res
-        .status(400)
-        .json({ error: "ValidationError", issues: result.error.issues });
+      sendIssues(res, result.error.issues);
       return;
     }
     req.body = result.data;
@@ -79,8 +122,41 @@ export function validateBody(schema: ZodSchema) {
   };
 }
 
+function knownQueryKeys(schema: ZodSchema): Set<string> | null {
+  const s = schema as unknown as {
+    _def?: { typeName?: string; schema?: ZodSchema; shape?: () => Record<string, unknown> };
+    shape?: Record<string, unknown>;
+  };
+  if (s?._def?.typeName === "ZodObject") {
+    const shape = s.shape ?? s._def.shape?.();
+    return new Set(Object.keys(shape ?? {}));
+  }
+  if (s?._def?.schema) {
+    return knownQueryKeys(s._def.schema);
+  }
+  return null;
+}
+
 export function validateQuery(schema: ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
+    // Reject query keys absent from the route's Zod schema when strict mode is
+    // enabled, so typos like `?limt=10` are not silently ignored (#1185).
+    if (config.strictQueryParams) {
+      const known = knownQueryKeys(schema);
+      if (known) {
+        const unknownKeys = Object.keys(req.query).filter((k) => !known.has(k));
+        if (unknownKeys.length > 0) {
+          res.status(422).json({
+            code: "UNKNOWN_QUERY_PARAMS",
+            message: `Unknown query parameters: ${unknownKeys.join(", ")}`,
+            unknownParams: unknownKeys,
+            statusCode: 422,
+          });
+          return;
+        }
+      }
+    }
+
     // Detect duplicate scalar query parameters (#1238).
     // Express parses `?limit=10&limit=500` as `{ limit: ["10", "500"] }`.
     // A schema that expects a scalar (non-array) type would silently use the
@@ -110,9 +186,7 @@ export function validateQuery(schema: ZodSchema) {
 
     const result = schema.safeParse(req.query);
     if (!result.success) {
-      res
-        .status(400)
-        .json({ error: "ValidationError", issues: result.error.issues });
+      sendIssues(res, result.error.issues);
       return;
     }
     req.query = result.data;
@@ -124,9 +198,7 @@ export function validateParams(schema: ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.params);
     if (!result.success) {
-      res
-        .status(400)
-        .json({ error: "ValidationError", issues: result.error.issues });
+      sendIssues(res, result.error.issues);
       return;
     }
     req.params = result.data;

@@ -21,8 +21,22 @@ CREATE TABLE IF NOT EXISTS vaults (
   logo_uri        TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
-  tags            TEXT[] NOT NULL DEFAULT '{}'
+  tags            TEXT[] NOT NULL DEFAULT '{}',
+  unlisted        BOOLEAN NOT NULL DEFAULT FALSE,
+  featured_rank   INTEGER NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_vaults_tags_gin ON vaults USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_vaults_unlisted ON vaults (unlisted) WHERE unlisted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_vaults_featured_rank ON vaults (featured_rank ASC NULLS LAST);
+
+CREATE TABLE IF NOT EXISTS admin_watchlist (
+  admin_key_id INTEGER NOT NULL,
+  contract_id TEXT NOT NULL,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (admin_key_id, contract_id)
+);
+CREATE INDEX IF NOT EXISTS idx_admin_watchlist_key ON admin_watchlist (admin_key_id);
 
 CREATE TABLE IF NOT EXISTS query_benchmarks (
   id           SERIAL PRIMARY KEY,
@@ -87,8 +101,22 @@ CREATE TABLE IF NOT EXISTS indexed_events (
   contract_id     TEXT NOT NULL,
   event_type      TEXT NOT NULL,
   payload         JSONB NOT NULL,
+  tx_index        INT,
+  event_index     INT,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS indexer_dead_letters (
+  id            BIGSERIAL PRIMARY KEY,
+  contract_id   TEXT NOT NULL,
+  ledger        INT NOT NULL,
+  raw_event     JSONB NOT NULL,
+  error_message TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_indexer_dead_letters_created_at
+  ON indexer_dead_letters (created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS indexer_state (
   id              SERIAL PRIMARY KEY,

@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from "vitest";
 
-vi.mock("../db/index.js", () => ({ query: vi.fn().mockResolvedValue([]) }));
+vi.mock("../db/index.js", () => ({ withTransaction: (fn: () => unknown) => fn(), query: vi.fn().mockResolvedValue([]) }));
 vi.mock("../logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -14,8 +14,9 @@ vi.mock("./user.js", () => ({
 vi.mock("./notifications.js", () => ({ NotificationService: vi.fn().mockImplementation(() => ({})) }));
 
 import { rpc, xdr, nativeToScVal } from "@stellar/stellar-sdk";
-import { Indexer, parseDepositEvent, parseYieldDistributedEvent, parseEpochFinalizedEvent, parseCancelFundingEvent, parseEarlyRedemptionProcessedEvent, parseEarlyRedemptionCancelledEvent, parseVaultNameUpdatedEvent } from "./indexer.js";
+import { Indexer, withBackoff, RPC_BACKOFF_MAX_DELAY_MS, parseDepositEvent, parseYieldDistributedEvent, parseEpochFinalizedEvent, parseCancelFundingEvent, parseEarlyRedemptionProcessedEvent, parseEarlyRedemptionCancelledEvent, parseVaultNameUpdatedEvent } from "./indexer.js";
 import { getSorobanRpc } from "./stellar.js";
+import { logger } from "../logger.js";
 
 const VAULT_CONTRACT = "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3B";
 const ACCOUNT = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN";
@@ -86,11 +87,31 @@ describe("Indexer", () => {
     expect(logger.warn).toHaveBeenCalled();
   });
 
-  it("updates lastLedger to the latest ledger from getLatestLedger", async () => {
+  it("advances lastLedger only by the adaptive batch size (#1213)", async () => {
     const events = [
       { ...makeMockEvent("deposit", VAULT_CONTRACT), ledger: 1001 },
       { ...makeMockEvent("deposit", VAULT_CONTRACT), ledger: 1005 },
     ];
+    // Default batch size is 200; start from 0 so the tick spans 1..200.
+    indexer.lastLedger = 0;
+    mockServer.getLatestLedger.mockResolvedValueOnce({ sequence: 1010 });
+    mockServer.getEvents.mockResolvedValueOnce({ events, latestLedger: 1010 });
+    vi.spyOn(indexer as any, "processEvent").mockResolvedValue(undefined);
+
+    await indexer.tick();
+
+    expect(indexer.lastLedger).toBe(200);
+    expect(mockServer.getEvents).toHaveBeenCalledWith(
+      expect.objectContaining({ startLedger: 1, endLedger: 200 }),
+    );
+  });
+
+  it("updates lastLedger to the latest ledger when it fits in one batch", async () => {
+    const events = [
+      { ...makeMockEvent("deposit", VAULT_CONTRACT), ledger: 1001 },
+      { ...makeMockEvent("deposit", VAULT_CONTRACT), ledger: 1005 },
+    ];
+    indexer.lastLedger = 1000;
     mockServer.getLatestLedger.mockResolvedValueOnce({ sequence: 1010 });
     mockServer.getEvents.mockResolvedValueOnce({ events, latestLedger: 1010 });
     vi.spyOn(indexer as any, "processEvent").mockResolvedValue(undefined);
@@ -720,5 +741,53 @@ describe("parseVaultNameUpdatedEvent", () => {
     expect(parseVaultNameUpdatedEvent(null)).toBeNull();
     expect(parseVaultNameUpdatedEvent({})).toBeNull();
     expect(parseVaultNameUpdatedEvent({ topics: [], data: null })).toBeNull();
+  });
+});
+
+describe("withBackoff full jitter (#1204)", () => {
+  const rateLimited = () => new Error("RPC 429 Too Many Requests");
+
+  beforeEach(() => {
+    vi.mocked(logger.warn).mockClear();
+  });
+
+  it("waits a random fraction of the exponential ceiling before each retry", async () => {
+    const fn = vi
+      .fn()
+      .mockRejectedValueOnce(rateLimited())
+      .mockRejectedValueOnce(rateLimited())
+      .mockResolvedValue("ok");
+
+    // Ceilings are 1ms then 2ms; a constant 0.5 source picks half of each.
+    await expect(withBackoff(fn, 5, 1, () => 0.5)).resolves.toBe("ok");
+
+    expect(logger.warn).toHaveBeenNthCalledWith(1, expect.objectContaining({ delayMs: 0.5 }), expect.any(String));
+    expect(logger.warn).toHaveBeenNthCalledWith(2, expect.objectContaining({ delayMs: 1 }), expect.any(String));
+  });
+
+  it("never waits longer than the 30 second cap", async () => {
+    vi.useFakeTimers();
+    try {
+      const fn = vi.fn().mockRejectedValueOnce(rateLimited()).mockResolvedValue("ok");
+
+      const pending = withBackoff(fn, 5, 60_000, () => 0.99);
+      await vi.advanceTimersByTimeAsync(RPC_BACKOFF_MAX_DELAY_MS);
+
+      await expect(pending).resolves.toBe("ok");
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ delayMs: RPC_BACKOFF_MAX_DELAY_MS }),
+        expect.any(String),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not retry non-429 errors", async () => {
+    const fn = vi.fn().mockRejectedValue(new Error("boom"));
+
+    await expect(withBackoff(fn, 5, 1, () => 0.5)).rejects.toThrow("boom");
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

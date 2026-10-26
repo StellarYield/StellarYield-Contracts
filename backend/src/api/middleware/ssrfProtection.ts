@@ -1,6 +1,5 @@
 import { lookup } from "dns/promises";
 import type { Request, Response, NextFunction } from "express";
-import { logger } from "../../logger.js";
 
 function isPrivateIp(ip: string): boolean {
   const v4 = [

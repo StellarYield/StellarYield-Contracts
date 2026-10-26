@@ -154,7 +154,7 @@ export class YieldService {
          WHERE contract_id = v.contract_id
            AND event_type = 'yield_distributed'
            AND (payload->>'epoch')::int = e.epoch
-         ORDER BY created_at DESC
+         ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC
          LIMIT 1
        ) ie ON TRUE
        WHERE v.contract_id = $1${yieldFilterSql}
@@ -247,7 +247,7 @@ export class YieldService {
          WHERE contract_id = v.contract_id
            AND event_type = 'yield_distributed'
            AND (payload->>'epoch')::int = e.epoch
-         ORDER BY created_at DESC
+         ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC
          LIMIT 1
        ) ie ON TRUE
        WHERE ${conditions.join(" AND ")}
@@ -352,7 +352,7 @@ export class YieldService {
          WHERE contract_id = v.contract_id
            AND event_type = 'yield_distributed'
            AND (payload->>'epoch')::int = e.epoch
-         ORDER BY created_at DESC
+         ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC
          LIMIT 1
        ) ie ON TRUE
        WHERE v.contract_id = $1 AND e.epoch = $2`,

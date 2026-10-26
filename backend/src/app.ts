@@ -47,6 +47,8 @@ import { jsonNestingDepthLimit } from "./api/middleware/jsonNestingDepthLimit.js
 import { queryArraySizeLimit } from "./api/middleware/queryArraySizeLimit.js";
 import { webhookHttpsEnforcement } from "./api/middleware/webhookHttpsEnforcement.js";
 import { enforceJsonContentType } from "./api/middleware/enforceJsonContentType.js";
+import { serializeAmounts } from "./utils/serializeAmounts.js";
+import { normalizeTrailingSlash } from "./api/middleware/trailingSlash.js";
 
 // Cache static responses at startup
 function initStaticCache(): void {
@@ -60,7 +62,7 @@ function initStaticCache(): void {
 }
 
 initStaticCache();
-import { httpRequestsTotal, httpRequestDurationSeconds, getMetrics } from "./services/metrics.js";
+import { httpRequestsTotal, httpRequestDurationSeconds, getMetrics, recordHttp5xx } from "./services/metrics.js";
 
 import { setupOpenApiRoutes } from "./services/openapi.js";
 import { schema } from "./graphql/schema.js";
@@ -94,9 +96,11 @@ export function createApp(): Express {
   );
 
   app.use(express.json({ limit: config.requestBodyLimit }));
+  app.set("json replacer", serializeAmounts);
   app.use(enforceJsonContentType());
   app.use(jsonNestingDepthLimit());
   app.use(queryArraySizeLimit());
+  app.use(normalizeTrailingSlash());
 
   const origins = config.allowedOrigins;
   if (origins.length > 0) {
@@ -126,6 +130,11 @@ export function createApp(): Express {
       const route = (req.baseUrl ? `${req.baseUrl}${req.route?.path && req.route.path !== "/" ? req.route.path : ""}` : req.route?.path) || req.path;
       httpRequestsTotal.inc({ method: req.method, route, status: res.statusCode });
       httpRequestDurationSeconds.observe({ method: req.method, route }, durationSeconds);
+      // 5xx error-rate counter (#1091). The `finish` hook is the single place
+      // every completed response passes through, so it sees 5xx replies written
+      // by the error handler as well as by controllers and middleware. Uses the
+      // bare matched route pattern rather than the baseUrl-prefixed one above.
+      recordHttp5xx(req.method, req.route?.path ?? req.path, res.statusCode, req.route !== undefined);
     });
 
     if (config.sandboxMode) {
@@ -179,7 +188,7 @@ export function createApp(): Express {
   // avoid the admin auth middleware consuming /api/v1/admin/feature-flags (#916)
   app.use("/api/v1/admin/feature-flags", authLimiter, featureFlagsRouter);
   app.use("/api/v1/admin", authLimiter, adminRouter);
-  app.use("/api/v1/webhooks", authLimiter, webhooksRouter);
+  app.use("/api/v1/webhooks", authLimiter, webhookHttpsEnforcement(), webhooksRouter);
   // Request body dry run — validation only, never a side effect (#941)
   app.use("/api/v1/validate", publicLimiter, validateRouter);
   // Display-formatting utilities (#1132)

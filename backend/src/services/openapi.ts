@@ -703,6 +703,7 @@ function registerPaths(): void {
         description: "Epochs in ascending epoch order",
         headers: {
           "X-Next-Cursor": { description: "Cursor for the next page. Absent on the last page.", schema: { type: "string" } },
+          "Link": { description: "RFC 8288 Web Linking with rel=\"next\" for pagination.", schema: { type: "string" } },
         },
         content: { "application/json": { schema: z.array(epochSchema) } },
       },

@@ -134,7 +134,7 @@ export async function exportUserData(req: Request, res: Response, next: NextFunc
        FROM indexed_events
        WHERE event_type IN ('yield_claimed', 'yield_claimed_partial')
          AND (payload->>'user' = $1 OR payload->>'address' = $1)
-       ORDER BY created_at DESC`,
+       ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC`,
       [address],
     );
 
@@ -153,7 +153,7 @@ export async function exportUserData(req: Request, res: Response, next: NextFunc
       `SELECT id, ledger, tx_hash, contract_id, event_type, payload, created_at
        FROM indexed_events
        WHERE (payload->>'user' = $1 OR payload->>'address' = $1)
-       ORDER BY created_at DESC`,
+       ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC`,
       [address],
     );
 

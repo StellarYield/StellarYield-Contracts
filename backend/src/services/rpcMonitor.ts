@@ -1,8 +1,8 @@
 import { config } from "../config.js";
 import { logger } from "../logger.js";
 import {
-  rpcCallsTotal,
-  rpcCallDurationSeconds,
+  rpcMonitorCallsTotal,
+  rpcMonitorCallDurationSeconds,
   rpcActiveRequests,
 } from "./metrics.js";
 
@@ -19,14 +19,14 @@ let windowSuccesses = 0;
 export function recordRpcSuccess(method?: string): void {
   windowSuccesses++;
   if (method) {
-    rpcCallsTotal.inc({ method, status: "success" });
+    rpcMonitorCallsTotal.inc({ method, status: "success" });
   }
 }
 
 export function recordRpcError(method?: string): void {
   windowErrors++;
   if (method) {
-    rpcCallsTotal.inc({ method, status: "error" });
+    rpcMonitorCallsTotal.inc({ method, status: "error" });
   }
 }
 
@@ -40,7 +40,7 @@ export function startRpcCall(method: string): () => void {
 
   return () => {
     const durationSeconds = (Date.now() - start) / 1000;
-    rpcCallDurationSeconds.observe({ method }, durationSeconds);
+    rpcMonitorCallDurationSeconds.observe({ method }, durationSeconds);
     rpcActiveRequests.dec();
   };
 }

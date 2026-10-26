@@ -35,6 +35,101 @@ function routeLabel(req: Request): string {
 }
 
 /**
+ * Stable, kebab-case slug for each error code. Problem `type` URIs are built
+ * from these so clients can match on a standard, documented identifier.
+ */
+const PROBLEM_SLUGS: Record<ErrorCode, string> = {
+  [ErrorCode.VAULT_NOT_FOUND]: "vault-not-found",
+  [ErrorCode.USER_NOT_FOUND]: "user-not-found",
+  [ErrorCode.VALIDATION_ERROR]: "validation-error",
+  [ErrorCode.UNAUTHORIZED]: "unauthorized",
+  [ErrorCode.RATE_LIMITED]: "rate-limited",
+  [ErrorCode.RPC_ERROR]: "rpc-error",
+  [ErrorCode.INTERNAL_SERVER_ERROR]: "internal-server-error",
+  [ErrorCode.NOT_FOUND]: "not-found",
+  [ErrorCode.WEBHOOK_INVALID]: "webhook-invalid",
+  [ErrorCode.QUERY_TIMEOUT]: "query-timeout",
+  [ErrorCode.SERVICE_UNAVAILABLE]: "service-unavailable",
+};
+
+const STATUS_TITLES: Record<number, string> = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  403: "Forbidden",
+  404: "Not Found",
+  405: "Method Not Allowed",
+  408: "Request Timeout",
+  409: "Conflict",
+  413: "Payload Too Large",
+  415: "Unsupported Media Type",
+  422: "Unprocessable Entity",
+  429: "Too Many Requests",
+  500: "Internal Server Error",
+  502: "Bad Gateway",
+  503: "Service Unavailable",
+  504: "Gateway Timeout",
+};
+
+/** RFC 7807 `type` URI for an error code (#1178). */
+export function problemTypeForCode(code: ErrorCode): string {
+  return `/problems/${PROBLEM_SLUGS[code] ?? "internal-server-error"}`;
+}
+
+export interface ProblemDetails {
+  type: string;
+  title: string;
+  status: number;
+  detail: string;
+  instance: string;
+  code: ErrorCode;
+  /** @deprecated Use `detail` — kept for backwards compatibility. */
+  message: string;
+  /** @deprecated Use `status` — kept for backwards compatibility. */
+  statusCode: number;
+  /** @deprecated Legacy error name — kept for backwards compatibility. */
+  error?: string;
+}
+
+/**
+ * Builds an RFC 7807 problem-details document. `instance` carries the request
+ * ID so a failure can be correlated with logs and the `X-Request-ID` header.
+ */
+export function buildProblemDetails(
+  code: ErrorCode,
+  detail: string,
+  status: number,
+  req: Request,
+  errorName?: string,
+): ProblemDetails {
+  const requestId = (req as Request & { requestId?: string }).requestId;
+  const problem: ProblemDetails = {
+    type: problemTypeForCode(code),
+    title: STATUS_TITLES[status] ?? "Error",
+    status,
+    detail,
+    instance: requestId ? `/requests/${requestId}` : (req.originalUrl ?? req.path ?? ""),
+    code,
+    message: detail,
+    statusCode: status,
+  };
+  if (errorName) problem.error = errorName;
+  return problem;
+}
+
+function sendProblem(
+  res: Response,
+  code: ErrorCode,
+  detail: string,
+  status: number,
+  req: Request,
+  errorName?: string,
+): void {
+  res.status(status);
+  res.type("application/problem+json");
+  res.json(buildProblemDetails(code, detail, status, req, errorName));
+}
+
+/**
  * The database is unreachable (#1254). A public vault read gets its last stored
  * copy, marked STALE. Anything else gets a 503 with `Retry-After` (#1253).
  */
@@ -44,12 +139,14 @@ function respondDatabaseUnavailable(err: unknown, req: Request, res: Response): 
 
   recordHttpError(routeLabel(req), 503);
   setRetryAfter(res, UNAVAILABLE_RETRY_AFTER_SECONDS);
-  res.status(503).json({
-    code: ErrorCode.SERVICE_UNAVAILABLE,
-    error: "ServiceUnavailable",
-    message: "Service temporarily unavailable, please retry shortly",
-    statusCode: 503,
-  });
+  sendProblem(
+    res,
+    ErrorCode.SERVICE_UNAVAILABLE,
+    "Service temporarily unavailable, please retry shortly",
+    503,
+    req,
+    "ServiceUnavailable",
+  );
 }
 
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
@@ -70,20 +167,19 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
 
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({
-      code: err.code,
-      message: err.message,
-      statusCode: err.statusCode,
-    });
+    sendProblem(res, err.code, err.message, err.statusCode, req);
     return;
   }
 
-  res.status(err.statusCode ?? 500).json({
-    code: ErrorCode.INTERNAL_SERVER_ERROR,
-    error: err.name ?? "InternalServerError",
-    message: err.message ?? "An unexpected error occurred",
-    statusCode: err.statusCode ?? 500,
-  });
+  const status = err.statusCode ?? 500;
+  sendProblem(
+    res,
+    ErrorCode.INTERNAL_SERVER_ERROR,
+    err.message ?? "An unexpected error occurred",
+    status,
+    req,
+    err.name ?? "InternalServerError",
+  );
 };
 
 /**

@@ -1,0 +1,21 @@
+{
+  "latestLedger": 1001,
+  "events": [
+    {
+      "type": "contract",
+      "ledger": 1001,
+      "ledgerClosedAt": "2025-01-01T00:05:00Z",
+      "contractId": "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3BMNOP",
+      "id": "0000001001-yield-0001",
+      "pagingToken": "",
+      "inSuccessfulContractCall": true,
+      "txHash": "bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233445566",
+      "topic": [
+        "AAAADgAAAAl5aWVsZF9kaXMAAAA=",
+        "AAAABQAAAAAAAAAB"
+      ],
+      "value": "AAAAEAAAAAEAAAACAAAABQAAAAAAACcQAAAABQAAAABlU/EA"
+    }
+  ],
+  "cursor": ""
+}

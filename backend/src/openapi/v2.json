@@ -1707,13 +1707,104 @@
                     },
                     "eventsIndexed": {
                       "type": "number"
+                    },
+                    "batchSize": {
+                      "type": "number"
                     }
                   },
                   "required": [
                     "running",
                     "lastLedger",
                     "lastTickAt",
-                    "eventsIndexed"
+                    "eventsIndexed",
+                    "batchSize"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/indexer/dead-letters": {
+      "get": {
+        "summary": "List indexer dead-letter entries (requires API key)",
+        "description": "Events that could not be parsed are set aside here, newest first, so indexing can continue.",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dead-letter entries, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "contract_id": {
+                            "type": "string"
+                          },
+                          "ledger": {
+                            "type": "number"
+                          },
+                          "raw_event": {
+                            "type": "object"
+                          },
+                          "error_message": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "limit": {
+                      "type": "number"
+                    },
+                    "offset": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "total",
+                    "limit",
+                    "offset"
                   ]
                 }
               }
@@ -1876,190 +1967,7 @@
             }
           },
           "400": {
-            "description": "Invalid or ahead-of-cursor start block",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/admin/regulatory/holder-concentration": {
-      "get": {
-        "summary": "Get vault holder concentration report (requires API key)",
-        "tags": [
-          "Admin"
-        ],
-        "parameters": [
-          {
-            "name": "vaultId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "topN",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 10
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Holder concentration report",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "generatedAt": {
-                      "type": "string"
-                    },
-                    "vault": {
-                      "type": "object",
-                      "properties": {
-                        "contractId": {
-                          "type": "string"
-                        },
-                        "name": {
-                          "type": "string"
-                        },
-                        "state": {
-                          "type": "string"
-                        },
-                        "totalSupply": {
-                          "type": "string"
-                        },
-                        "totalValueLocked": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "contractId",
-                        "name",
-                        "state",
-                        "totalSupply",
-                        "totalValueLocked"
-                      ]
-                    },
-                    "holders": {
-                      "type": "object",
-                      "properties": {
-                        "holderCount": {
-                          "type": "number"
-                        },
-                        "trackedShares": {
-                          "type": "string"
-                        },
-                        "coverage": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "holderCount",
-                        "trackedShares",
-                        "coverage"
-                      ]
-                    },
-                    "concentration": {
-                      "type": "object",
-                      "properties": {
-                        "top1SharePct": {
-                          "type": "number"
-                        },
-                        "top5SharePct": {
-                          "type": "number"
-                        },
-                        "top10SharePct": {
-                          "type": "number"
-                        },
-                        "hhi": {
-                          "type": "number"
-                        },
-                        "hhiIndex": {
-                          "type": "number"
-                        },
-                        "riskLevel": {
-                          "type": "string",
-                          "enum": [
-                            "low",
-                            "moderate",
-                            "high"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "top1SharePct",
-                        "top5SharePct",
-                        "top10SharePct",
-                        "hhi",
-                        "hhiIndex",
-                        "riskLevel"
-                      ]
-                    },
-                    "topHolders": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "rank": {
-                            "type": "number"
-                          },
-                          "address": {
-                            "type": "string"
-                          },
-                          "shares": {
-                            "type": "string"
-                          },
-                          "sharePct": {
-                            "type": "number"
-                          },
-                          "valueLocked": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "rank",
-                          "address",
-                          "shares",
-                          "sharePct",
-                          "valueLocked"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "generatedAt",
-                    "vault",
-                    "holders",
-                    "concentration",
-                    "topHolders"
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid vaultId or topN",
+            "description": "The address is not a valid Stellar address",
             "content": {
               "application/json": {
                 "schema": {
@@ -2075,76 +1983,6 @@
                       "type": "number"
                     }
                   }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Vault not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/gdpr/users/{address}/export": {
-      "get": {
-        "summary": "Export all data held for an address (GDPR Art. 20, requires admin API key)",
-        "tags": [
-          "Users"
-        ],
-        "parameters": [
-          {
-            "name": "address",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Machine-readable copy of every record held for the address",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "generatedAt": {
-                      "type": "string"
-                    },
-                    "address": {
-                      "type": "string"
-                    },
-                    "data": {
-                      "type": "object",
-                      "description": "Every category held for the address: profile, positions, shareBalanceSnapshots, redemptionRequests, notificationPreferences, vaultRoles, feeRebates, blacklistedAddresses, events and archivedEvents. Each is an array of records, the profile being a single object.",
-                      "additionalProperties": true
-                    },
-                    "retentionNote": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "generatedAt",
-                    "address",
-                    "data",
-                    "retentionNote"
-                  ]
                 }
               }
             }

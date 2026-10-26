@@ -1,0 +1,22 @@
+{
+  "latestLedger": 1000,
+  "events": [
+    {
+      "type": "contract",
+      "ledger": 1000,
+      "ledgerClosedAt": "2025-01-01T00:00:00Z",
+      "contractId": "CDLZFC3SYJYHZDQA6M57EYUC2XBDA6LQF3M6KFRDZ7TXJYJL2K3BMNOP",
+      "id": "0000001000-deposit-0001",
+      "pagingToken": "",
+      "inSuccessfulContractCall": true,
+      "txHash": "aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233",
+      "topic": [
+        "AAAADgAAAAdkZXBvc2l0AA==",
+        "AAAADgAAADhHQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEyQQ==",
+        "AAAADgAAADhHQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUEyQQ=="
+      ],
+      "value": "AAAAEAAAAAEAAAACAAAABQAAAAAAAAPoAAAABQAAAAAAAAPo"
+    }
+  ],
+  "cursor": ""
+}

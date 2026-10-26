@@ -4,7 +4,8 @@ export type SecurityEventType =
   | "AUTH_FAILURE"
   | "RATE_LIMIT_EXCEEDED"
   | "IP_LOCKOUT"
-  | "IP_NOT_ALLOWED";
+  | "IP_NOT_ALLOWED"
+  | "READ_ONLY_KEY_DENIED";
 
 export async function logSecurityEvent(
   eventType: SecurityEventType,

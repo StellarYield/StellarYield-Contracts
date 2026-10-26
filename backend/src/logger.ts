@@ -23,6 +23,17 @@ export const logger = pino({
   },
 });
 
+// Reduce an RPC endpoint URL to its origin before it is logged (#1206). API
+// tokens are commonly carried in the path, the query or the userinfo, so only
+// the scheme, host and port are kept.
+export function redactRpcUrl(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).origin;
+  } catch {
+    return "[REDACTED]";
+  }
+}
+
 export function maskSensitiveFields(obj: Record<string, unknown>): Record<string, unknown> {
   const masked = { ...obj };
   for (const key of Object.keys(masked)) {

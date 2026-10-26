@@ -1707,14 +1707,82 @@
                     },
                     "eventsIndexed": {
                       "type": "number"
+                    },
+                    "batchSize": {
+                      "type": "number"
                     }
                   },
                   "required": [
                     "running",
                     "lastLedger",
                     "lastTickAt",
-                    "eventsIndexed"
+                    "eventsIndexed",
+                    "batchSize"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/indexer/dead-letters": {
+      "get": {
+        "summary": "List indexer dead-letter entries (requires API key)",
+        "description": "Events that could not be parsed are set aside here, newest first, so indexing can continue.",
+        "tags": [
+          "Admin"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dead-letter entries, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "number" },
+                          "contract_id": { "type": "string" },
+                          "ledger": { "type": "number" },
+                          "raw_event": { "type": "object" },
+                          "error_message": { "type": "string" },
+                          "created_at": { "type": "string" }
+                        }
+                      }
+                    },
+                    "total": { "type": "number" },
+                    "limit": { "type": "number" },
+                    "offset": { "type": "number" }
+                  },
+                  "required": ["data", "total", "limit", "offset"]
                 }
               }
             }

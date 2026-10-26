@@ -2,9 +2,7 @@ import { tvlPubSub } from "./tvlPubSub.js";
 import { xdr, scValToNative } from "@stellar/stellar-sdk";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
-import { decodeSymbol, decodeAddress, decodeVec, decodeI128 } from "../stellar/scval.js";
-import { validateRpcResponse, getEventsSchema } from "./rpcSchemas.js";
-import { query } from "../db/index.js";
+import { query, withTransaction } from "../db/index.js";
 import { userServiceInstance } from "./userSingleton.js";
 import {
   getSorobanRpc,
@@ -21,12 +19,15 @@ import {
   indexerLagSeconds,
   indexerLastLedger,
   indexerProcessingDurationSeconds,
+  indexerUnknownEventsTotal,
 } from "./metrics.js";
 import { cacheDel } from "../cache/redis.js";
 import { sseService } from "./sse.js";
 import { recordRpcSuccess, recordRpcError } from "./rpcMonitor.js";
+import { timedRpcCall } from "./rpcClient.js";
 import { TOPIC_EVENT_TYPES } from "./indexerEventTypes.js";
 import { logSystemAudit } from "./adminAuditLog.js";
+import { recordLedgerAnchor, ledgerToTimestamp } from "./ledgerEstimator.js";
 
 // ── Lightweight trace spans (#827) ────────────────────────────────────────────
 // No external tracing dependency — spans are emitted as structured pino log
@@ -102,10 +103,17 @@ function parseRawEventName(rawEvent: any): { topics: unknown[]; data: unknown } 
   return { topics, data };
 }
 
-async function withBackoff<T>(
+// Upper bound on any single retry wait (#1204).
+export const RPC_BACKOFF_MAX_DELAY_MS = 30_000;
+
+// Full jitter (#1204): each retry waits a random time between 0 and the
+// exponential ceiling, so instances rate-limited together do not retry in
+// lockstep. `random` is injectable so tests can pass a seeded source.
+export async function withBackoff<T>(
   fn: () => Promise<T>,
   retries = 5,
   startDelayMs = 1000,
+  random: () => number = Math.random,
 ): Promise<T> {
   let attempt = 0;
   while (true) {
@@ -120,7 +128,7 @@ async function withBackoff<T>(
         err?.status === 429 ||
         String(err?.message ?? "").includes("429");
       if (!is429 || attempt >= retries) throw err;
-      const delayMs = Math.min(startDelayMs * Math.pow(2, attempt), 60_000);
+      const delayMs = Math.min(random() * startDelayMs * Math.pow(2, attempt), RPC_BACKOFF_MAX_DELAY_MS);
       logger.warn(
         { attempt: attempt + 1, delayMs },
         "RPC 429 rate-limit; retrying with backoff",
@@ -170,6 +178,50 @@ export function decodeValue(ev: any): unknown {
   }
 }
 
+/**
+ * Position of an event within its ledger (#1214): `[txIndex, eventIndex]`.
+ *
+ * The RPC event `id` is `<19-char TOID>-<10-char event index>`; the TOID packs
+ * the ledger sequence, transaction index and operation index. The trailing
+ * number is the index of the event within its transaction. Falls back to the
+ * RPC's explicit `transactionIndex` when the `id` cannot be parsed, and to
+ * `null` when nothing is available (e.g. older fixtures) so reads can fall back
+ * to insertion order.
+ */
+export function eventPosition(ev: any): [number | null, number | null] {
+  const fromField = (v: unknown): number | null => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
+    return null;
+  };
+
+  const explicitTx = fromField(ev?.transactionIndex);
+  let txIndex: number | null = null;
+  let eventIndex: number | null = null;
+
+  const id = typeof ev?.id === "string" ? ev.id : typeof ev?.pagingToken === "string" ? ev.pagingToken : "";
+  const parts = id.split("-");
+  const toidPart = parts[0] ?? "";
+  const eventPart = parts[1] ?? "";
+  if (/^\d+$/.test(toidPart)) {
+    try {
+      const toid = Number(BigInt(toidPart));
+      if (Number.isFinite(toid)) {
+        txIndex = Math.floor(toid / 4096) % 1048576;
+      }
+    } catch {
+      txIndex = null;
+    }
+  }
+  if (/^\d+$/.test(eventPart)) eventIndex = parseInt(eventPart, 10);
+  else if (parts.length === 1 && /^\d+$/.test(id)) eventIndex = parseInt(id, 10);
+
+  if (txIndex === null) txIndex = explicitTx;
+  if (eventIndex === null) eventIndex = 0;
+
+  return [txIndex, eventIndex];
+}
+
 export async function storeIndexedEvent(
   contractId: string,
   eventType: string,
@@ -177,10 +229,11 @@ export async function storeIndexedEvent(
   payload: Record<string, unknown>,
   parsedData?: Record<string, unknown>,
 ): Promise<void> {
+  const [txIndex, eventIndex] = eventPosition(ev);
   await query(
-    `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload, parsed_data)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [ev.ledger, ev.txHash, contractId, eventType, JSON.stringify(payload), parsedData ? JSON.stringify(parsedData) : null],
+    `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload, parsed_data, tx_index, event_index)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [ev.ledger, ev.txHash, contractId, eventType, JSON.stringify(payload), parsedData ? JSON.stringify(parsedData) : null, txIndex, eventIndex],
   );
 }
 
@@ -234,6 +287,12 @@ export class Indexer {
   lastLedger: number;
   private running = false;
   private lastTickAt: Date | null = null;
+  /**
+   * The tick (or backfill) currently in flight, if any. Tracked so `drain()` can
+   * wait for it to finish before shutdown tears down the database pool it writes
+   * through (#1294).
+   */
+  private inFlightTick: Promise<void> | null = null;
   private readonly vaultFactoryContractId: string;
   private watchedContractIds: Set<string>;
   private vaultService: VaultService;
@@ -241,6 +300,12 @@ export class Indexer {
   private notificationService?: NotificationService;
   /** Per-contract pause / event-filter settings, refreshed every cycle. */
   private contractControls = new Map<string, ContractIndexerControl>();
+  /** Topics already warned about during this process lifetime. */
+  private readonly warnedUnknownTopics = new Set<string>();
+  private currentBatchSize: number;
+  private consecutiveFastBatches = 0;
+  private readonly minBatchSize: number;
+  private readonly maxBatchSize: number;
 
   constructor(notificationService?: NotificationService) {
     this.lastLedger = config.indexer.startLedger;
@@ -252,6 +317,11 @@ export class Indexer {
     this.vaultService = new VaultService();
     this.userService = new UserService();
     this.notificationService = notificationService;
+    const minBatchSize = config.indexer.minBatchSize ?? 1;
+    const maxBatchSize = Math.max(minBatchSize, config.indexer.maxBatchSize ?? config.indexer.batchSize);
+    this.minBatchSize = minBatchSize;
+    this.maxBatchSize = maxBatchSize;
+    this.currentBatchSize = Math.max(minBatchSize, Math.min(maxBatchSize, config.indexer.batchSize));
 
     if (!this.vaultFactoryContractId) {
       logger.warn(
@@ -282,22 +352,22 @@ export class Indexer {
       if (!this.vaultFactoryContractId) {
         logger.info("Indexer started in state-only mode (no contract ID configured)");
         while (this.running) {
-          await this.tickStateOnly();
+          await this.track(() => this.tickStateOnly());
           await this.sleepWhileRunning(config.indexer.pollIntervalMs);
         }
         return;
       }
 
       const server = getSorobanRpc();
-      const { sequence: tipLedger } = await withBackoff(() => server.getLatestLedger());
+      const { sequence: tipLedger } = await withBackoff(() => timedRpcCall("getLatestLedger", () => server.getLatestLedger()));
       const gap = tipLedger - this.lastLedger;
 
       if (gap > config.indexer.batchSize) {
-        await this.backfill(tipLedger);
+        await this.track(() => this.backfill(tipLedger));
       }
 
       while (this.running) {
-        await this.tick();
+        await this.track(() => this.tick());
         await this.sleepWhileRunning(config.indexer.pollIntervalMs);
       }
     } catch (err) {
@@ -311,12 +381,43 @@ export class Indexer {
     this.running = false;
   }
 
+  /**
+   * Stop polling and wait for the in-flight tick or backfill to settle (#1294).
+   *
+   * Shutdown drains the indexer before it closes the database pool and job
+   * queue, so a tick that is already mid-flight cannot write through a pool that
+   * has since been ended. Safe to call when nothing is running.
+   */
+  async drain(): Promise<void> {
+    this.stop();
+    const pending = this.inFlightTick;
+    if (pending) await pending;
+  }
+
+  /**
+   * Run a tick/backfill while exposing it through {@link inFlightTick} so
+   * {@link drain} can await it.
+   */
+  private async track<T>(work: () => Promise<T>): Promise<T> {
+    const inFlight = work();
+    const settled = inFlight.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.inFlightTick = settled;
+    try {
+      return await inFlight;
+    } finally {
+      if (this.inFlightTick === settled) this.inFlightTick = null;
+    }
+  }
+
   private async tickStateOnly(): Promise<void> {
     const server = getSorobanRpc();
 
     let latestLedger: number;
     try {
-      const resp = await withBackoff(() => server.getLatestLedger());
+      const resp = await withBackoff(() => timedRpcCall("getLatestLedger", () => server.getLatestLedger()));
       latestLedger = resp.sequence;
     } catch (err) {
       logger.warn({ err }, "RPC error fetching latest ledger during state-only tick");
@@ -331,6 +432,7 @@ export class Indexer {
 
     this.lastLedger = latestLedger;
     await this.saveLastIndexedLedger(latestLedger);
+    await this.recordAnchorsIfNeeded(this.lastLedger, latestLedger, []);
     logger.info({ ledger: latestLedger }, "state-only tick complete");
     this.lastTickAt = new Date();
   }
@@ -341,7 +443,7 @@ export class Indexer {
 
     let latestLedger: number;
     try {
-      const resp = await withBackoff(() => server.getLatestLedger());
+      const resp = await withBackoff(() => timedRpcCall("getLatestLedger", () => server.getLatestLedger()));
       latestLedger = resp.sequence;
     } catch (err) {
       logger.warn({ err }, "RPC error fetching latest ledger during tick");
@@ -365,7 +467,11 @@ export class Indexer {
     }
 
     const from = this.lastLedger + 1;
-    tickSpan.attrs["ledgerRange"] = `${from}-${latestLedger}`;
+    // Cap the fetched range to the adaptive batch size (#1213) so a large
+    // backlog is worked through in bounded chunks whose duration feeds the
+    // tuner. `batchTo` is the last ledger this tick will process.
+    const batchTo = Math.min(latestLedger, this.lastLedger + this.currentBatchSize);
+    tickSpan.attrs["ledgerRange"] = `${from}-${batchTo}`;
 
     await this.loadContractControls();
     await this.replayResumedContracts();
@@ -379,14 +485,13 @@ export class Indexer {
     if (contractIds.length > 0 || this.watchedContractIds.size === 0) {
       const filters = contractIds.map((id) => ({ contractIds: [id] }));
       try {
-        const rawResp = await withBackoff(() =>
-          server.getEvents({ startLedger: from, filters }),
-        );
-        const resp = validateRpcResponse("getEvents", rawResp, getEventsSchema);
+        const params = { startLedger: from, filters };
+        const resp = await withBackoff(() => timedRpcCall("getEvents", () => server.getEvents(params), params));
         events = resp.events;
       } catch (err) {
-        logger.warn({ err, from, to: latestLedger }, "RPC error fetching events during tick");
+        logger.warn({ err, from, to: batchTo }, "RPC error fetching events during tick");
         endBatchTimer();
+        this.tuneBatchSize(0, true);
         finishSpan(tickSpan, { error: true });
         return;
       }
@@ -395,19 +500,37 @@ export class Indexer {
     tickSpan.attrs["eventCount"] = events.length;
 
     logger.info(
-      { from, to: latestLedger, eventCount: events.length },
+      { from, to: batchTo, eventCount: events.length },
       "Indexer tick complete",
     );
 
-    for (const event of events) {
-      await this.processEvent(event, tickSpan);
+    // Events and the cursor commit together (#1210): a failure part-way through
+    // rolls the whole batch back, so the next tick re-fetches the same range.
+    try {
+      await withTransaction(async () => {
+        for (const event of events) {
+          await this.processEvent(event, tickSpan);
+        }
+        await this.saveLastIndexedLedger(latestLedger);
+        await this.recordAnchorsIfNeeded(from, latestLedger, events);
+      });
+    } catch (err) {
+      endBatchTimer();
+      logger.error({ err, from, to: latestLedger }, "Indexer batch failed; rolled back, cursor not advanced");
+      finishSpan(tickSpan, { error: true });
+      return;
     }
-    endBatchTimer();
+
+    // Only tune on a tick that actually advanced the cursor: an idle poll that
+    // found no new ledgers would otherwise inflate the fast-batch streak.
+    if (batchTo > this.lastLedger) {
+      this.tuneBatchSize(batchDurationMs);
+    }
 
     await this.notificationService?.processRetries();
 
     this.lastLedger = latestLedger;
-    await this.persistLastLedger();
+    indexerLastLedger.set(latestLedger);
     this.lastTickAt = new Date();
     finishSpan(tickSpan);
   }
@@ -417,7 +540,6 @@ export class Indexer {
     startLedger?: number,
     onProgress?: (progress: number) => Promise<void>,
   ): Promise<void> {
-    const batchSize = config.indexer.batchSize;
     const server = getSorobanRpc();
     let cursor = startLedger !== undefined ? startLedger : this.lastLedger;
     const initialLedger = cursor;
@@ -433,6 +555,9 @@ export class Indexer {
     const filters = contractIds.map((id) => ({ contractIds: [id] }));
 
     while (cursor < tipLedger) {
+      // Read the adaptive batch size each iteration (#1213) so growth/shrink
+      // within a catch-up run takes effect on the next batch.
+      const batchSize = this.currentBatchSize;
       const batchTo = Math.min(cursor + batchSize, tipLedger);
       const remaining = tipLedger - batchTo;
 
@@ -443,23 +568,26 @@ export class Indexer {
 
       const endBatchTimer = indexerProcessingDurationSeconds.startTimer();
       try {
-        const rawResp = await withBackoff(() =>
-          server.getEvents({ startLedger: cursor + 1, filters }),
-        );
-        const resp = validateRpcResponse("getEvents", rawResp, getEventsSchema);
+        const params = { startLedger: cursor + 1, filters };
+        const resp = await withBackoff(() => timedRpcCall("getEvents", () => server.getEvents(params), params));
 
-        for (const event of resp.events) {
-          logger.debug(
-            { contractId: event.contractId, type: event.type, ledger: event.ledger },
-            "Backfill event",
-          );
-          await this.processEvent(event);
-        }
+        // Each backfill batch commits its events and cursor atomically (#1210).
+        await withTransaction(async () => {
+          for (const event of resp.events) {
+            logger.debug(
+              { contractId: event.contractId, type: event.type, ledger: event.ledger },
+              "Backfill event",
+            );
+            await this.processEvent(event);
+          }
+          await this.saveLastIndexedLedger(batchTo);
+          await this.recordAnchorsIfNeeded(cursor + 1, batchTo, resp.events);
+        });
         endBatchTimer();
 
         cursor = batchTo;
         this.lastLedger = cursor;
-        await this.persistLastLedger();
+        indexerLastLedger.set(cursor);
         this.lastTickAt = new Date();
 
         batchCount++;
@@ -469,6 +597,7 @@ export class Indexer {
         }
       } catch (err) {
         endBatchTimer();
+        this.tuneBatchSize(0, true);
         logger.warn({ err, from: cursor + 1, to: batchTo }, "RPC error during backfill batch");
         break;
       }
@@ -498,6 +627,19 @@ export class Indexer {
       if (await this._processEventInner(event)) {
         indexerEventsProcessedTotal.inc();
       }
+    } catch (err) {
+      // #1211: a malformed event must not abort the batch. Set it aside for
+      // inspection and let the caller continue with the remaining events.
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      try {
+        await this.storeDeadLetter(event, errorMessage);
+      } catch (deadLetterErr) {
+        logger.error(
+          { err: deadLetterErr, contractId: event?.contractId ?? "", ledger: event?.ledger ?? 0 },
+          "Failed to store indexer dead letter",
+        );
+      }
+      eventSpan.attrs["error"] = true;
     } finally {
       finishSpan(eventSpan);
     }
@@ -578,10 +720,8 @@ export class Indexer {
       const batchTo = Math.min(cursor + config.indexer.batchSize, toLedger);
       const endBatchTimer = indexerProcessingDurationSeconds.startTimer();
       try {
-        const rawResp = await withBackoff(() =>
-          server.getEvents({ startLedger: cursor + 1, filters }),
-        );
-        const resp = validateRpcResponse("getEvents", rawResp, getEventsSchema);
+        const params = { startLedger: cursor + 1, filters };
+        const resp = await withBackoff(() => timedRpcCall("getEvents", () => server.getEvents(params), params));
         for (const event of resp.events) {
           // Events past the global cursor are picked up by the regular tick.
           if ((event.ledger ?? 0) > toLedger) continue;
@@ -655,8 +795,8 @@ export class Indexer {
       const feeResult = await this.handleYieldDistributed(event.contractId ?? "", yieldDist);
       // Store payload with netYield so GET /epochs can read it via lateral join (#792)
       await query(
-        `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload)
-         VALUES ($1, $2, $3, 'yield_distributed', $4)
+        `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload, tx_index, event_index)
+         VALUES ($1, $2, $3, 'yield_distributed', $4, $5, $6)
          ON CONFLICT DO NOTHING`,
         [
           event.ledger ?? 0,
@@ -668,6 +808,7 @@ export class Indexer {
             netYield: feeResult.netYield,
             operatorFee: feeResult.operatorFee,
           }),
+          ...eventPosition(event),
         ],
       );
       const parsedData = await this.handleYieldDistributed(event.contractId ?? "", yieldDist);
@@ -1107,7 +1248,37 @@ export class Indexer {
       return true;
     }
 
+    const topic = eventTopicName(event);
+    if (topic === null || Object.hasOwn(TOPIC_EVENT_TYPES, topic)) {
+      const errorMessage = topic === null
+        ? "Unable to decode event topic"
+        : `Unable to parse recognized event topic: ${topic}`;
+      await this.storeDeadLetter(event, errorMessage);
+    } else {
+      const contractId = event?.contractId ?? "";
+      indexerUnknownEventsTotal.inc({ contract_id: contractId, topic });
+      if (!this.warnedUnknownTopics.has(topic)) {
+        this.warnedUnknownTopics.add(topic);
+        logger.warn({ contractId, topic }, "Unknown indexer event topic");
+      }
+    }
+
     return false;
+  }
+
+  private async storeDeadLetter(event: any, errorMessage: string): Promise<void> {
+    const rawEvent = JSON.stringify(event, (_key, value) =>
+      typeof value === "bigint" ? value.toString() : value,
+    );
+    await query(
+      `INSERT INTO indexer_dead_letters (contract_id, ledger, raw_event, error_message)
+       VALUES ($1, $2, $3, $4)`,
+      [event?.contractId ?? "", event?.ledger ?? 0, rawEvent, errorMessage],
+    );
+    logger.warn(
+      { contractId: event?.contractId ?? "", ledger: event?.ledger ?? 0, errorMessage },
+      "Indexer event moved to dead-letter table",
+    );
   }
 
   private async handleMetadataUpdated(
@@ -2143,9 +2314,10 @@ export class Indexer {
     eventType: string,
     parsedData?: Record<string, unknown>,
   ): Promise<void> {
+    const [txIndex, eventIndex] = eventPosition(event);
     await query(
-      `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload, parsed_data)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload, parsed_data, tx_index, event_index)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT DO NOTHING`,
       [
         event.ledger ?? 0,
@@ -2154,13 +2326,10 @@ export class Indexer {
         eventType,
         JSON.stringify(event),
         parsedData ? JSON.stringify(parsedData) : null,
+        txIndex,
+        eventIndex,
       ],
     );
-  }
-
-  private async persistLastLedger(): Promise<void> {
-    await this.saveLastIndexedLedger(this.lastLedger);
-    indexerLastLedger.set(this.lastLedger);
   }
 
   async getLastIndexedLedger(): Promise<number> {
@@ -2203,6 +2372,27 @@ export class Indexer {
        ON CONFLICT (id) DO UPDATE SET start_ledger = EXCLUDED.start_ledger, updated_at = NOW()`,
       [startBlock],
     );
+  }
+
+  /**
+   * Populate ledger_anchors every 1000 ledgers.
+   */
+  async recordAnchorsIfNeeded(fromLedger: number, toLedger: number, events: any[]): Promise<void> {
+    const startThousand = Math.ceil(fromLedger / 1000) * 1000;
+    for (let seq = startThousand; seq <= toLedger; seq += 1000) {
+      if (seq <= 0) continue;
+      let closedAt: Date | null = null;
+      for (const ev of events) {
+        if (ev.ledger === seq && typeof ev.ledgerClosedAt === "string") {
+          closedAt = new Date(ev.ledgerClosedAt);
+          break;
+        }
+      }
+      if (!closedAt) {
+        closedAt = new Date();
+      }
+      await recordLedgerAnchor(seq, closedAt);
+    }
   }
 
   private async sleepWhileRunning(ms: number): Promise<void> {

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { xdr } from "@stellar/stellar-sdk";
 
 vi.mock("../db/index.js", () => ({
+  withTransaction: (fn: () => unknown) => fn(),
   query: vi.fn(),
   pool: {},
   readPool: null,

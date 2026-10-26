@@ -12,6 +12,7 @@ function makeRes() {
   return {
     json: vi.fn().mockReturnThis(),
     status: vi.fn().mockReturnThis(),
+    type: vi.fn().mockReturnThis(),
   };
 }
 

@@ -466,7 +466,7 @@ export class NotificationService {
       });
       const durationMs = Date.now() - start;
       return { delivered: response.ok, statusCode: response.status, durationMs };
-    } catch (err) {
+    } catch {
       const durationMs = Date.now() - start;
       return { delivered: false, statusCode: null, durationMs };
     }

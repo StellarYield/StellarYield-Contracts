@@ -554,7 +554,7 @@ export class UserService {
        FROM indexed_events
        WHERE event_type IN ('yield_claimed', 'yield_claimed_partial')
          AND (payload->>'user' = $1 OR payload->>'address' = $1)
-       ORDER BY (payload->>'timestamp')::numeric DESC NULLS LAST, created_at DESC
+       ORDER BY (payload->>'timestamp')::numeric DESC NULLS LAST, ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC
        LIMIT $2 OFFSET $3`,
       [address, pageSize, offset],
     );
@@ -830,7 +830,7 @@ export class UserService {
        FROM indexed_events ie
        WHERE ie.event_type = 'deposit'
          AND (ie.payload->>'caller' = $1 OR ie.payload->>'receiver' = $1)
-       ORDER BY ie.created_at ASC
+       ORDER BY ie.ledger ASC, ie.tx_index ASC NULLS LAST, ie.event_index ASC NULLS LAST, ie.id ASC
        LIMIT 1`,
       [address],
     );
@@ -873,7 +873,7 @@ export class UserService {
       params.push(to);
     }
 
-    queryStr += ` ORDER BY created_at DESC`;
+    queryStr += ` ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC`;
 
     const rows = await query<{
       contract_id: string;
