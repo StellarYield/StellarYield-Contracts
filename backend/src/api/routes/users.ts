@@ -9,6 +9,7 @@ import {
   getUserIncomeForecast,
   getUserKyc,
   getUserKycHistory,
+  getUserLifetimeYield,
   getUserPortfolio,
   getUserPortfolioAllocation,
   getUserPortfolioDiversification,

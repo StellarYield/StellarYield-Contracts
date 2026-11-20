@@ -6,6 +6,7 @@ vi.mock("../logger.js", () => ({
 }));
 
 import { query } from "../db/index.js";
+import { withFakeClock } from "../test/withFakeClock.js";
 import { setJobQueueDepth } from "./metrics.js";
 import {
   fetchJobQueueDepth,
@@ -78,24 +79,25 @@ describe("pg-boss queue depth gauges (#1093)", () => {
   });
 
   it("publishes a sample on start and every 30s afterwards", async () => {
-    vi.useFakeTimers();
-    mockQuery.mockResolvedValue([{ created: "1", active: "0", failed: "0" }]);
+    await withFakeClock("2025-01-01T00:00:00.000Z", async () => {
+      mockQuery.mockResolvedValue([{ created: "1", active: "0", failed: "0" }]);
 
-    const poller = new JobQueueDepthPoller();
-    poller.start();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(depthSampleCount()).toBe(1);
-    expect(await scrapeGauges()).toContain("pgboss_jobs_created 1");
+      const poller = new JobQueueDepthPoller();
+      poller.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(depthSampleCount()).toBe(1);
+      expect(await scrapeGauges()).toContain("pgboss_jobs_created 1");
 
-    mockQuery.mockResolvedValue([{ created: "5", active: "2", failed: "4" }]);
-    await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS);
-    expect(depthSampleCount()).toBe(2);
-    expect(await scrapeGauges()).toContain("pgboss_jobs_created 5");
-    expect(await scrapeGauges()).toContain("pgboss_jobs_failed 4");
+      mockQuery.mockResolvedValue([{ created: "5", active: "2", failed: "4" }]);
+      await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS);
+      expect(depthSampleCount()).toBe(2);
+      expect(await scrapeGauges()).toContain("pgboss_jobs_created 5");
+      expect(await scrapeGauges()).toContain("pgboss_jobs_failed 4");
 
-    poller.stop();
-    await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS * 3);
-    expect(depthSampleCount()).toBe(2);
+      poller.stop();
+      await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS * 3);
+      expect(depthSampleCount()).toBe(2);
+    });
   });
 
   it("polls every 30 seconds", () => {
@@ -103,37 +105,38 @@ describe("pg-boss queue depth gauges (#1093)", () => {
   });
 
   it("skips a tick while the previous sample is still in flight", async () => {
-    vi.useFakeTimers();
-    let release: (() => void) | undefined;
-    let calls = 0;
-    mockQuery.mockImplementation(() => {
-      calls += 1;
-      // Only the first sample hangs; anything after it (including the metric
-      // scrapes) resolves immediately.
-      if (calls > 1) return Promise.resolve([{ created: "0", active: "0", failed: "0" }]);
-      return new Promise((resolve) => {
-        release = () => resolve([{ created: "1", active: "1", failed: "1" }]);
+    await withFakeClock("2025-01-01T00:00:00.000Z", async () => {
+      let release: (() => void) | undefined;
+      let calls = 0;
+      mockQuery.mockImplementation(() => {
+        calls += 1;
+        // Only the first sample hangs; anything after it (including the metric
+        // scrapes) resolves immediately.
+        if (calls > 1) return Promise.resolve([{ created: "0", active: "0", failed: "0" }]);
+        return new Promise((resolve) => {
+          release = () => resolve([{ created: "1", active: "1", failed: "1" }]);
+        });
       });
+
+      const poller = new JobQueueDepthPoller();
+      poller.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(depthSampleCount()).toBe(1);
+
+      // A slow database must not stack up overlapping count queries.
+      await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS);
+      expect(depthSampleCount()).toBe(1);
+
+      release?.();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await scrapeGauges()).toContain("pgboss_jobs_failed 1");
+
+      // The next tick is sampled normally again.
+      await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS);
+      expect(depthSampleCount()).toBe(2);
+
+      poller.stop();
     });
-
-    const poller = new JobQueueDepthPoller();
-    poller.start();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(depthSampleCount()).toBe(1);
-
-    // A slow database must not stack up overlapping count queries.
-    await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS);
-    expect(depthSampleCount()).toBe(1);
-
-    release?.();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(await scrapeGauges()).toContain("pgboss_jobs_failed 1");
-
-    // The next tick is sampled normally again.
-    await vi.advanceTimersByTimeAsync(JOB_QUEUE_DEPTH_POLL_INTERVAL_MS);
-    expect(depthSampleCount()).toBe(2);
-
-    poller.stop();
   });
 
   it("keeps the last sample when the query fails", async () => {

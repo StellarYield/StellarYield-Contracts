@@ -21,8 +21,22 @@ CREATE TABLE IF NOT EXISTS vaults (
   logo_uri        TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW(),
-  tags            TEXT[] NOT NULL DEFAULT '{}'
+  tags            TEXT[] NOT NULL DEFAULT '{}',
+  unlisted        BOOLEAN NOT NULL DEFAULT FALSE,
+  featured_rank   INTEGER NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_vaults_tags_gin ON vaults USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_vaults_unlisted ON vaults (unlisted) WHERE unlisted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_vaults_featured_rank ON vaults (featured_rank ASC NULLS LAST);
+
+CREATE TABLE IF NOT EXISTS admin_watchlist (
+  admin_key_id INTEGER NOT NULL,
+  contract_id TEXT NOT NULL,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (admin_key_id, contract_id)
+);
+CREATE INDEX IF NOT EXISTS idx_admin_watchlist_key ON admin_watchlist (admin_key_id);
 
 CREATE TABLE IF NOT EXISTS query_benchmarks (
   id           SERIAL PRIMARY KEY,

@@ -287,6 +287,12 @@ export class Indexer {
   lastLedger: number;
   private running = false;
   private lastTickAt: Date | null = null;
+  /**
+   * The tick (or backfill) currently in flight, if any. Tracked so `drain()` can
+   * wait for it to finish before shutdown tears down the database pool it writes
+   * through (#1294).
+   */
+  private inFlightTick: Promise<void> | null = null;
   private readonly vaultFactoryContractId: string;
   private watchedContractIds: Set<string>;
   private vaultService: VaultService;
@@ -346,7 +352,7 @@ export class Indexer {
       if (!this.vaultFactoryContractId) {
         logger.info("Indexer started in state-only mode (no contract ID configured)");
         while (this.running) {
-          await this.tickStateOnly();
+          await this.track(() => this.tickStateOnly());
           await this.sleepWhileRunning(config.indexer.pollIntervalMs);
         }
         return;
@@ -356,12 +362,12 @@ export class Indexer {
       const { sequence: tipLedger } = await withBackoff(() => timedRpcCall("getLatestLedger", () => server.getLatestLedger()));
       const gap = tipLedger - this.lastLedger;
 
-      if (gap > this.currentBatchSize) {
-        await this.backfill(tipLedger);
+      if (gap > config.indexer.batchSize) {
+        await this.track(() => this.backfill(tipLedger));
       }
 
       while (this.running) {
-        await this.tick();
+        await this.track(() => this.tick());
         await this.sleepWhileRunning(config.indexer.pollIntervalMs);
       }
     } catch (err) {
@@ -375,43 +381,34 @@ export class Indexer {
     this.running = false;
   }
 
-  /** Current adaptive ledger batch size (#1213). Exposed for the admin API. */
-  getBatchSize(): number {
-    return this.currentBatchSize;
+  /**
+   * Stop polling and wait for the in-flight tick or backfill to settle (#1294).
+   *
+   * Shutdown drains the indexer before it closes the database pool and job
+   * queue, so a tick that is already mid-flight cannot write through a pool that
+   * has since been ended. Safe to call when nothing is running.
+   */
+  async drain(): Promise<void> {
+    this.stop();
+    const pending = this.inFlightTick;
+    if (pending) await pending;
   }
 
   /**
-   * Adapt the batch size to observed throughput (#1213).
-   *
-   * While catching up the RPC is the bottleneck, so a fast batch (under one
-   * second) signals headroom: after three in a row the batch doubles, capped at
-   * `maxBatchSize`. A slow batch — or a failed/timed-out fetch, which is the
-   * usual symptom of asking for too much at the chain tip — resets the fast
-   * streak and halves the batch, floored at `minBatchSize`.
+   * Run a tick/backfill while exposing it through {@link inFlightTick} so
+   * {@link drain} can await it.
    */
-  private tuneBatchSize(durationMs: number, failed = false): void {
-    if (failed || durationMs >= 1000) {
-      this.consecutiveFastBatches = 0;
-      const shrunk = Math.max(this.minBatchSize, Math.floor(this.currentBatchSize / 2));
-      if (shrunk !== this.currentBatchSize) {
-        logger.info(
-          { from: this.currentBatchSize, to: shrunk, durationMs, failed },
-          "Indexer batch size reduced",
-        );
-      }
-      this.currentBatchSize = shrunk;
-      return;
-    }
-
-    this.consecutiveFastBatches += 1;
-    if (this.consecutiveFastBatches >= 3 && this.currentBatchSize < this.maxBatchSize) {
-      const grown = Math.min(this.maxBatchSize, this.currentBatchSize * 2);
-      logger.info(
-        { from: this.currentBatchSize, to: grown, durationMs },
-        "Indexer batch size increased",
-      );
-      this.currentBatchSize = grown;
-      this.consecutiveFastBatches = 0;
+  private async track<T>(work: () => Promise<T>): Promise<T> {
+    const inFlight = work();
+    const settled = inFlight.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.inFlightTick = settled;
+    try {
+      return await inFlight;
+    } finally {
+      if (this.inFlightTick === settled) this.inFlightTick = null;
     }
   }
 
@@ -972,7 +969,7 @@ export class Indexer {
 
     const yieldClaimed = parseYieldClaimedEvent(event);
     if (yieldClaimed) {
-      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimed.user, yieldClaimed.epoch);
+      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimed.user, yieldClaimed.epoch, yieldClaimed.amount);
       await query(
         `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload)
          VALUES ($1, $2, $3, 'yield_claimed', $4)
@@ -993,7 +990,7 @@ export class Indexer {
 
     const yieldClaimedPartial = parseYieldClaimedPartialEvent(event);
     if (yieldClaimedPartial) {
-      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimedPartial.user, yieldClaimedPartial.epoch);
+      await this.handleYieldClaimed(event.contractId ?? "", yieldClaimedPartial.user, yieldClaimedPartial.epoch, yieldClaimedPartial.claimed);
       await query(
         `INSERT INTO indexed_events (ledger, tx_hash, contract_id, event_type, payload)
          VALUES ($1, $2, $3, 'yield_claimed_partial', $4)
@@ -1723,7 +1720,36 @@ export class Indexer {
     logger.info({ contractId }, "Processed vault_removed event — vault archived");
   }
 
-  private async handleYieldClaimed(contractId: string, userAddress: string, epoch: number): Promise<void> {
+  private async handleYieldClaimed(contractId: string, userAddress: string, epoch: number, amount: bigint | string = "0"): Promise<void> {
+    const vaultRow = await query<{ id: number }>(
+      `SELECT id FROM vaults WHERE contract_id = $1 LIMIT 1`,
+      [contractId],
+    );
+    if (vaultRow.length === 0) {
+      logger.warn({ contractId, userAddress, epoch }, "yield_claimed for unknown vault — skipping snapshot update");
+      return;
+    }
+
+    const vaultId = vaultRow[0].id;
+    const claimedAmount = typeof amount === "bigint" ? amount.toString() : String(amount ?? "0");
+    await query(
+      `INSERT INTO share_balance_snapshots (vault_id, user_address, epoch, shares, recorded_at, cumulative_yield_claimed)
+       VALUES ($1, $2, $3, 0, NOW(), 0)
+       ON CONFLICT (user_address, vault_id, epoch) DO NOTHING`,
+      [vaultId, userAddress, epoch],
+    );
+
+    // Additive updates are the correctness invariant for lifetime yield totals.
+    // The cumulative value must remain monotonic and atomic with the event write;
+    // the duplicate replay guard in #1174 prevents the same claim from being added twice.
+    await query(
+      `UPDATE share_balance_snapshots
+       SET cumulative_yield_claimed = cumulative_yield_claimed + $1,
+           recorded_at = NOW()
+       WHERE user_address = $2 AND vault_id = $3 AND epoch = $4`,
+      [claimedAmount, userAddress, vaultId, epoch],
+    );
+
     await query(
       `UPDATE user_vault_positions uvp
        SET last_claimed_epoch = GREATEST(last_claimed_epoch, $1), updated_at = NOW()
@@ -1734,7 +1760,7 @@ export class Indexer {
       [epoch, contractId, userAddress],
     );
     await cacheDel(`pending-yield:${contractId}:${userAddress}`);
-    logger.info({ contractId, userAddress, epoch }, "Processed yield_claimed event");
+    logger.info({ contractId, userAddress, epoch, claimedAmount }, "Processed yield_claimed event");
 
     // Check if epoch is now fully claimed and fire webhook (#819)
     try {
@@ -2532,21 +2558,15 @@ export function parseDepositEvent(rawEvent: unknown): ParsedDepositEvent | null 
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "deposit") return null;
 
-    const caller = String(scValToNative(parsedTopics[1]) ?? "");
-    const receiver = String(scValToNative(parsedTopics[2]) ?? "");
+    const caller = decodeAddress(parsedTopics[1]);
+    const receiver = decodeAddress(parsedTopics[2]);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const assets = decodeBigInt(arr[0]);
-    const shares = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const assets = decodeI128(dataVec[0]);
+    const shares = decodeI128(dataVec[1]);
 
     return { caller, receiver, assets, shares };
   } catch {
@@ -2578,22 +2598,16 @@ export function parseWithdrawEvent(rawEvent: unknown): ParsedWithdrawEvent | nul
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "withdraw") return null;
 
-    const caller = String(scValToNative(parsedTopics[1]) ?? "");
-    const receiver = String(scValToNative(parsedTopics[2]) ?? "");
-    const owner = String(scValToNative(parsedTopics[3]) ?? "");
+    const caller = decodeAddress(parsedTopics[1]);
+    const receiver = decodeAddress(parsedTopics[2]);
+    const owner = decodeAddress(parsedTopics[3]);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const assets = decodeBigInt(arr[0]);
-    const shares = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const assets = decodeI128(dataVec[0]);
+    const shares = decodeI128(dataVec[1]);
 
     return { caller, receiver, owner, assets, shares };
   } catch {
@@ -2623,20 +2637,14 @@ export function parseYieldDistributedEvent(rawEvent: unknown): ParsedYieldDistri
       ? xdr.ScVal.fromXDR(value, "base64")
       : value;
 
-    let eventName: string;
-    try {
-      eventName = String(scValToNative(parsedTopics[0]) ?? "");
-    } catch {
-      return null;
-    }
+    const eventName = decodeSymbol(parsedTopics[0]);
     if (eventName !== "yield_dis") return null;
 
     const epoch = Number(scValToNative(parsedTopics[1]) ?? 0);
 
-    const data = scValToNative(parsedValue as xdr.ScVal);
-    const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
-    const amount = decodeBigInt(arr[0]);
-    const timestamp = decodeBigInt(arr[1]);
+    const dataVec = decodeVec(parsedValue as xdr.ScVal);
+    const amount = decodeI128(dataVec[0]);
+    const timestamp = decodeI128(dataVec[1]);
 
     return { epoch, amount, timestamp };
   } catch {
@@ -2947,11 +2955,10 @@ export function parseEarlyRedemptionProcessedEvent(rawEvent: unknown): ParsedEar
     if (eventName !== "erq_done" && eventName !== "early_redemption_processed") return null;
 
     const user = String(scValToNative(parsedTopics[1]) ?? "");
-
     const data = scValToNative(parsedValue as xdr.ScVal);
     const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
     const requestId = Number(decodeBigInt(arr[0]));
-    const netAssets = decodeBigInt(arr[1]);
+    const netAssets = decodeBigInt(arr[1] ?? 0n);
 
     return { user, requestId, netAssets };
   } catch {
@@ -2962,7 +2969,6 @@ export function parseEarlyRedemptionProcessedEvent(rawEvent: unknown): ParsedEar
 export interface ParsedEarlyRedemptionCancelledEvent {
   user: string;
   requestId: number;
-  shares: bigint;
 }
 
 export function parseEarlyRedemptionCancelledEvent(rawEvent: unknown): ParsedEarlyRedemptionCancelledEvent | null {
@@ -2990,13 +2996,11 @@ export function parseEarlyRedemptionCancelledEvent(rawEvent: unknown): ParsedEar
     if (eventName !== "erq_can" && eventName !== "erq_can2" && eventName !== "early_redemption_cancelled") return null;
 
     const user = String(scValToNative(parsedTopics[1]) ?? "");
-
     const data = scValToNative(parsedValue as xdr.ScVal);
     const arr = Array.isArray(data) ? data : Object.values((data as Record<string, unknown>) ?? {});
     const requestId = Number(decodeBigInt(arr[0]));
-    const shares = decodeBigInt(arr[1]);
 
-    return { user, requestId, shares };
+    return { user, requestId };
   } catch {
     return null;
   }

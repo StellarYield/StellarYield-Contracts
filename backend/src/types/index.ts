@@ -40,6 +40,12 @@ export interface Vault {
    * matured vault with no recorded supplyAtMaturity baseline.
    */
   redeemedPct?: number;
+  /** #1285 – flag to hide vault from public listings */
+  unlisted?: boolean;
+  /** #1286 – priority ordering rank for default listings */
+  featuredRank?: number | null;
+  /** #1283 – admin tags on the vault */
+  tags?: string[];
 }
 
 export interface VaultOperator {

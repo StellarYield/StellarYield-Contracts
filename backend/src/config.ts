@@ -237,6 +237,12 @@ export const envSchema = z.object({
     .string()
     .default("false")
     .transform((v) => ["true", "1", "yes"].includes(v.toLowerCase())),
+  // When true, query keys absent from the route's Zod schema are rejected with
+  // HTTP 422 instead of being silently ignored (#1185).
+  STRICT_QUERY_PARAMS: z
+    .string()
+    .default("false")
+    .transform((v) => ["true", "1", "yes"].includes(v.toLowerCase())),
   ENABLE_SANDBOX_RESET: z
     .string()
     .default("false")
@@ -392,6 +398,9 @@ export const config = {
         String(parsed.data.ENABLE_SANDBOX_RESET)
       ).toLowerCase() === "true" || process.env.ENABLE_SANDBOX_RESET === "1"
     );
+  },
+  get strictQueryParams() {
+    return (process.env.STRICT_QUERY_PARAMS ?? String(parsed.data.STRICT_QUERY_PARAMS)).toLowerCase() === "true" || process.env.STRICT_QUERY_PARAMS === "1";
   },
   get archiveCron(): string {
     return process.env.ARCHIVE_CRON ?? parsed.data.ARCHIVE_CRON;

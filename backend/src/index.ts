@@ -2,7 +2,9 @@ import "./instrumentation.js";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { logger } from "./logger.js";
-import { warmUpPool } from "./db/index.js";
+import { warmUpPool, closePool } from "./db/index.js";
+import { closeRedis } from "./cache/redis.js";
+import { shutdown as runShutdown, type ShutdownDeps } from "./shutdown.js";
 import { indexer } from "./services/indexerSingleton.js";
 import { jobQueue } from "./services/jobQueue.js";
 import { EventsPruner } from "./services/eventsPruner.js";
@@ -24,6 +26,11 @@ const jobQueueDepthPoller = new JobQueueDepthPoller();
 // under load (#951).
 await warmUpPool();
 
+// Network passphrase validation (#1197): confirm the RPC server is on the
+// expected network before starting the indexer. Exits with code 1 on mismatch
+// to prevent indexing events from the wrong network.
+await validateNetworkPassphrase();
+
 const server = app.listen(config.port, async () => {
   logger.info(
     { port: config.port, env: config.nodeEnv, network: config.stellar.network },
@@ -42,17 +49,35 @@ const server = app.listen(config.port, async () => {
   startRpcHealthProbes();
 });
 
-async function shutdown(): Promise<void> {
-  logger.info("Shutting down");
-  indexer.stop();
-  pruner.stop();
-  jobQueueDepthPoller.stop();
-  stopRpcHealthProbes();
-  await jobQueue.stop();
-  server.close(() => {
-    logger.info("StellarYield backend stopped");
-  });
+/**
+ * Ordered teardown (#1294): stop accepting requests, then drain the indexer and
+ * job queue before closing Redis and the database pool. Runs through
+ * `runShutdown` so the sequence is a single, testable source of truth.
+ */
+const shutdownDeps: ShutdownDeps = {
+  stopListening: () =>
+    new Promise<void>((resolve) => {
+      server.close(() => resolve());
+    }),
+  drainIndexer: async () => {
+    // Auxiliary pollers stop alongside the indexer; neither should keep writing
+    // while the indexer drains.
+    pruner.stop();
+    jobQueueDepthPoller.stop();
+    await indexer.drain();
+  },
+  flushJobs: () => jobQueue.stop(),
+  closeRedis: () => closeRedis(),
+  closePool: () => closePool(),
+};
+
+let shuttingDown = false;
+async function handleSignal(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info({ signal }, `Received ${signal}, shutting down`);
+  await runShutdown(shutdownDeps);
 }
 
-process.on("SIGTERM", () => void shutdown());
-process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void handleSignal("SIGTERM"));
+process.on("SIGINT", () => void handleSignal("SIGINT"));

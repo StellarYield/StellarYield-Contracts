@@ -328,11 +328,20 @@ export async function warmUpPool(): Promise<void> {
   }
 }
 
-process.on("SIGTERM", async () => {
-  logger.info("Shutting down database pool");
+/**
+ * End the primary pool (and the read replica, when configured) exactly once.
+ *
+ * Idempotent: shutdown may be triggered by both SIGTERM and SIGINT, and the
+ * ordered shutdown orchestrator (#1294) calls this as its final step so the pool
+ * is only closed after the indexer and job queue have drained.
+ */
+let poolClosed = false;
+export async function closePool(): Promise<void> {
+  if (poolClosed) return;
+  poolClosed = true;
   await pool.end();
   if (readPool !== pool) await readPool.end();
-});
+}
 
 // ── Pool exhaustion alerting (#828) ───────────────────────────────────────────
 // Every 10 s, log at error level if the number of queued connection requests

@@ -12,6 +12,7 @@ import {
 import { getWebhookStream } from "../controllers/webhooks-stream.js";
 import { requireApiKey } from "../middleware/auth.js";
 import { validateBody, validateParams } from "../middleware/validate.js";
+import { idempotency } from "../middleware/idempotency.js";
 import { sseLimitPerIp } from "../middleware/sseLimitPerIp.js";
 import { KNOWN_EVENTS } from "../../services/notificationEvents.js";
 
@@ -51,7 +52,7 @@ export const webhooksRouter = Router();
 
 webhooksRouter.use(requireApiKey());
 
-webhooksRouter.post("/", validateBody(createWebhookSchema), createWebhook);
+webhooksRouter.post("/", idempotency(), validateBody(createWebhookSchema), createWebhook);
 webhooksRouter.get("/", listWebhooks);
 webhooksRouter.get("/:id/stream", sseLimitPerIp(), validateParams(webhookParamsSchema), getWebhookStream);
 webhooksRouter.delete("/:id", validateParams(webhookParamsSchema), deleteWebhook);

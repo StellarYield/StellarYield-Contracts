@@ -43,6 +43,7 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       q,
       filter,
       fields,
+      tag,
     } = req.query as unknown as {
       page: number;
       pageSize: number;
@@ -58,6 +59,7 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       q?: string;
       filter?: string;
       fields?: string;
+      tag?: string;
     };
 
     let parsedFilter: any | undefined;
@@ -87,6 +89,10 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       }
     }
 
+    const isAdmin = req.apiKey?.role === "admin";
+    const effectiveTag = isAdmin ? tag : undefined;
+    const isDefaultSort = !sort;
+
     const result = await vaultService.listVaults({
       page,
       pageSize,
@@ -102,6 +108,8 @@ export async function listVaults(req: Request, res: Response, next: NextFunction
       q,
       filter: parsedFilter,
       fields: fieldsArray,
+      tag: effectiveTag,
+      isDefaultSort,
       // A key restricted to some vaults only lists those (#1243).
       contractIds: req.apiKey?.allowedContractIds ?? undefined,
     });
