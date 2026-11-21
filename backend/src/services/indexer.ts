@@ -27,7 +27,8 @@ import { recordRpcSuccess, recordRpcError } from "./rpcMonitor.js";
 import { timedRpcCall } from "./rpcClient.js";
 import { TOPIC_EVENT_TYPES } from "./indexerEventTypes.js";
 import { logSystemAudit } from "./adminAuditLog.js";
-import { recordLedgerAnchor, ledgerToTimestamp } from "./ledgerEstimator.js";
+import { recordLedgerAnchor } from "./ledgerEstimator.js";
+import { decodeAddress, decodeI128, decodeVec } from "../stellar/scval.js";
 
 // ── Lightweight trace spans (#827) ────────────────────────────────────────────
 // No external tracing dependency — spans are emitted as structured pino log
@@ -331,6 +332,30 @@ export class Indexer {
     }
   }
 
+  getBatchSize(): number {
+    return this.currentBatchSize;
+  }
+
+  private tuneBatchSize(durationMs: number, failure = false): void {
+    if (failure) {
+      this.currentBatchSize = Math.max(this.minBatchSize, Math.floor(this.currentBatchSize / 2));
+      this.consecutiveFastBatches = 0;
+      return;
+    }
+    if (durationMs < 500) {
+      this.consecutiveFastBatches += 1;
+      if (this.consecutiveFastBatches >= 3) {
+        this.currentBatchSize = Math.min(this.maxBatchSize, this.currentBatchSize * 2);
+        this.consecutiveFastBatches = 0;
+      }
+    } else if (durationMs > 5000) {
+      this.currentBatchSize = Math.max(this.minBatchSize, Math.floor(this.currentBatchSize / 2));
+      this.consecutiveFastBatches = 0;
+    } else {
+      this.consecutiveFastBatches = 0;
+    }
+  }
+
   async start(): Promise<void> {
     this.running = true;
 
@@ -476,7 +501,9 @@ export class Indexer {
     await this.loadContractControls();
     await this.replayResumedContracts();
 
+    const batchStartedAt = Date.now();
     const endBatchTimer = indexerProcessingDurationSeconds.startTimer();
+    const batchDurationMs = () => Date.now() - batchStartedAt;
     const contractIds = this.activeContractIds();
 
     let events: any[] = [];
@@ -524,7 +551,7 @@ export class Indexer {
     // Only tune on a tick that actually advanced the cursor: an idle poll that
     // found no new ledgers would otherwise inflate the fast-batch streak.
     if (batchTo > this.lastLedger) {
-      this.tuneBatchSize(batchDurationMs);
+      this.tuneBatchSize(batchDurationMs());
     }
 
     await this.notificationService?.processRetries();

@@ -104,6 +104,30 @@ EXPECTED_APY_BPS="${EXPECTED_APY_BPS:-0}"          # basis points; 0 = unset
 MIN_DEPOSIT="${MIN_DEPOSIT:-0}"                    # 0 = no minimum
 FUNDING_DEADLINE="${FUNDING_DEADLINE:-0}"          # 0 = no deadline
 
+I128_MAX="170141183460469231731687303715884105727"
+
+validate_positive_i128() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+        die "Invalid $var_name '$value': must be a positive integer string in base units."
+    fi
+    if [[ "$value" == "0" ]] || [[ "$value" =~ ^- ]]; then
+        die "Invalid $var_name '$value': must be greater than zero."
+    fi
+    if (( ${#value} > ${#I128_MAX} )) ||
+       { (( ${#value} == ${#I128_MAX} )) && [[ "$value" > "$I128_MAX" ]]; }; then
+        die "Invalid $var_name '$value': exceeds the i128 maximum ($I128_MAX)."
+    fi
+}
+
+# Validate all amount arguments before any Stellar CLI invocation.
+validate_positive_i128 FUNDING_TARGET
+validate_positive_i128 MAX_DEPOSIT
+validate_positive_i128 MIN_DEPOSIT
+validate_positive_i128 EXIT_FEE_BPS
+validate_positive_i128 EXPECTED_APY_BPS
+
 echo ""
 info "Factory:        $FACTORY_ADDRESS"
 info "Network:        $NETWORK"

@@ -282,47 +282,6 @@ export function updatePgPoolMetrics(
   }
 }
 
-// Missing metric declarations that are referenced in functions below
-let sseConnections = 0;
-
-export const http5xxTotal = new client.Counter({
-  name: "http_5xx_total",
-  help: "Total number of 5xx HTTP responses",
-  labelNames: ["method", "route"] as const,
-  registers: [register],
-});
-
-export const sseActiveConnections = new client.Gauge({
-  name: "sse_active_connections",
-  help: "Number of active SSE connections",
-  registers: [register],
-});
-
-export const pgbossJobsCreated = new client.Gauge({
-  name: "pgboss_jobs_created",
-  help: "Number of pg-boss jobs in created state",
-  registers: [register],
-});
-
-export const pgbossJobsActive = new client.Gauge({
-  name: "pgboss_jobs_active",
-  help: "Number of pg-boss jobs in active state",
-  registers: [register],
-});
-
-export const pgbossJobsFailed = new client.Gauge({
-  name: "pgboss_jobs_failed",
-  help: "Number of pg-boss jobs in failed state",
-  registers: [register],
-});
-
-export const httpErrorsTotal = new client.Counter({
-  name: "http_errors_total",
-  help: "Total number of HTTP error responses",
-  labelNames: ["statusClass", "route"] as const,
-  registers: [register],
-});
-
 // ── RPC metrics (#new) ────────────────────────────────────────────────────────
 
 export const rpcMonitorCallsTotal = new client.Counter({
