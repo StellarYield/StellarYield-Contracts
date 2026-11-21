@@ -100,7 +100,7 @@ export function createApp(): Express {
   app.use(enforceJsonContentType());
   app.use(jsonNestingDepthLimit());
   app.use(queryArraySizeLimit());
-  app.use(normalizeTrailingSlash());
+  app.use(normalizeTrailingSlash);
 
   const origins = config.allowedOrigins;
   if (origins.length > 0) {

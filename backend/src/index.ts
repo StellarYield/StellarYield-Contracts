@@ -11,7 +11,9 @@ import { EventsPruner } from "./services/eventsPruner.js";
 import { JobQueueDepthPoller } from "./services/jobQueueDepthPoller.js";
 import { runDeploymentBenchmarksIfNeeded } from "./services/queryBenchmarks.js";
 import { registerProcessErrorHandlers } from "./services/processErrors.js";
-import { startRpcHealthProbes, stopRpcHealthProbes } from "./services/rpcHealth.js";
+import { startRpcHealthProbes } from "./services/rpcHealth.js";
+import { EventSignatureValidator } from "./services/eventSignatureValidator.js";
+import { validateNetworkPassphrase } from "./services/networkValidation.js";
 
 // Registered before any startup work, so a rejection in warmUpPool or the listen callback is logged at fatal level (#1249).
 registerProcessErrorHandlers();
@@ -20,6 +22,7 @@ const app = createApp();
 const pruner = new EventsPruner();
 // pg-boss queue depth gauges for /metrics (#1093)
 const jobQueueDepthPoller = new JobQueueDepthPoller();
+const eventSignatureValidator = new EventSignatureValidator();
 
 // Establish the configured number of pool connections before we start accepting
 // traffic, so cold-start requests don't time out waiting on connection setup
@@ -46,6 +49,7 @@ const server = app.listen(config.port, async () => {
   void indexer.start();
   pruner.start();
   jobQueueDepthPoller.start();
+  eventSignatureValidator.start();
   startRpcHealthProbes();
 });
 
@@ -64,6 +68,7 @@ const shutdownDeps: ShutdownDeps = {
     // while the indexer drains.
     pruner.stop();
     jobQueueDepthPoller.stop();
+    eventSignatureValidator.stop();
     await indexer.drain();
   },
   flushJobs: () => jobQueue.stop(),

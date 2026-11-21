@@ -1563,6 +1563,78 @@ export async function getSimilarVaults(req: Request, res: Response, next: NextFu
 }
 
 /**
+ * GET /api/v1/vaults/:contractId/performance-vs-peers?timeframe=30d
+ */
+export async function getVaultPerformanceVsPeers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contractId = String(req.params["contractId"]);
+    const rows = await query<{
+      contract_id: string;
+      total_assets: string | null;
+      expected_apy: number | null;
+    }>(
+      `SELECT contract_id, total_assets, expected_apy
+         FROM vaults
+        WHERE contract_id = $1
+           OR (
+             total_assets IS NOT NULL
+             AND total_assets::numeric >= (
+               SELECT total_assets::numeric * 0.5
+                 FROM vaults
+                WHERE contract_id = $1
+                  AND total_assets IS NOT NULL
+             )
+             AND total_assets::numeric <= (
+               SELECT total_assets::numeric * 2
+                 FROM vaults
+                WHERE contract_id = $1
+                  AND total_assets IS NOT NULL
+             )
+           )`,
+      [contractId],
+    );
+
+    const target = rows.find((row) => row.contract_id === contractId);
+    if (!target) {
+      res.status(404).json({ error: "NotFound", message: "Vault not found" });
+      return;
+    }
+
+    const peers = rows.filter((row) =>
+      row.contract_id !== contractId &&
+      row.total_assets !== null &&
+      row.expected_apy !== null,
+    );
+    const targetApy = target.expected_apy ?? 0;
+    const peerApys = peers.map((row) => row.expected_apy ?? 0);
+    const sorted = [...peerApys].sort((a, b) => a - b);
+    let peerMedianApy = 0;
+    if (sorted.length > 0) {
+      const middle = Math.floor(sorted.length / 2);
+      peerMedianApy = sorted.length % 2 === 1
+        ? sorted[middle]
+        : (sorted[middle - 1] + sorted[middle]) / 2;
+    }
+    const outperformCount = peerApys.filter((apy) => targetApy > apy).length;
+    const percentile = peerApys.length === 0
+      ? 100
+      : Math.round((outperformCount / peerApys.length) * 10000) / 100;
+    const rank = peerApys.filter((apy) => apy > targetApy).length + 1;
+
+    setCacheHeaders(res);
+    res.json({
+      contractId,
+      vaultApy: targetApy,
+      peerMedianApy,
+      percentile,
+      rank,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * GET /api/v1/vaults/:contractId/fees
  *
  * Returns operator fee summary for a vault:

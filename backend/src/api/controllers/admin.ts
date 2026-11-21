@@ -3,8 +3,6 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { Request, Response, NextFunction } from "express";
 import Cursor from "pg-cursor";
 import { stringify } from "csv-stringify";
@@ -20,7 +18,7 @@ import { findApiKeysExpiringWithin, type ApiKeyListRow } from "../../services/ap
 import { sseManager } from "../../services/sseManager.js";
 import { logger } from "../../logger.js";
 import { createAdminSessionToken, INVALID_CREDENTIALS_RESPONSE, refreshAdminSessionToken } from "../middleware/auth.js";
-import { getApiKeyUsage } from "../../cache/redis.js";
+import { getApiKeyUsage, cacheDel } from "../../cache/redis.js";
 import { logAdminAudit } from "../../services/adminAuditLog.js";
 import { logSecurityEvent } from "../../services/securityLogger.js";
 import { generateWebhookSecret, secretRotationWindowHours } from "../../services/webhookSignature.js";
@@ -1002,7 +1000,7 @@ export async function replayWebhookDelivery(req: Request, res: Response, next: N
 
 export async function getAdminEvents(req: Request, res: Response, next: NextFunction) {
   try {
-    const { contractId, eventType } = req.query as Record<string, string | undefined>;
+    const { contractId, eventType, filter } = req.query as Record<string, string | undefined>;
     const params: any[] = [];
     const where: string[] = [];
 
@@ -1013,6 +1011,9 @@ export async function getAdminEvents(req: Request, res: Response, next: NextFunc
     if (eventType) {
       params.push(eventType);
       where.push(`event_type = $${params.length}`);
+    }
+    if (filter === "invalid_signatures") {
+      where.push("signature_valid = FALSE");
     }
 
     const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
@@ -1025,9 +1026,10 @@ export async function getAdminEvents(req: Request, res: Response, next: NextFunc
       contract_id: string;
       event_type: string;
       payload: unknown;
+      signature_valid: boolean;
       created_at: Date;
     }>(
-      `SELECT id, ledger, tx_hash, contract_id, event_type, payload, created_at
+      `SELECT id, ledger, tx_hash, contract_id, event_type, payload, signature_valid, created_at
        FROM indexed_events
        ${whereClause}
        ORDER BY ledger DESC, tx_index DESC NULLS LAST, event_index DESC NULLS LAST, id DESC

@@ -5,7 +5,6 @@ import { timedRpcCall, tryRpcEndpoints } from "./rpcClient.js";
 import type { VaultState } from "../types/index.js";
 import {
   validateRpcResponse,
-  getLatestLedgerSchema,
   simulateTransactionSchema,
 } from "./rpcSchemas.js";
 
@@ -90,21 +89,22 @@ async function simulateRead<T>(
         timedRpcCall("simulateTransaction", () => server.simulateTransaction(tx)),
         timeoutPromise,
       ]);
-      const validatedResult = validateRpcResponse("simulateTransaction", rawResult, simulateTransactionSchema);
+      const validatedResult = validateRpcResponse("simulateTransaction", result, simulateTransactionSchema);
       return validatedResult;
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
     }
   });
 
-  if (rpc.Api.isSimulationError(sim)) {
+  const simulation = sim as unknown as rpc.Api.SimulateTransactionResponse;
+  if (rpc.Api.isSimulationError(simulation)) {
     throw new Error(`Simulation error for ${method}: ${sim.error}`);
   }
-  if (!rpc.Api.isSimulationSuccess(sim)) {
+  if (!rpc.Api.isSimulationSuccess(simulation)) {
     throw new Error(`Unexpected simulation response for ${method}`);
   }
 
-  const retval = (sim as rpc.Api.SimulateTransactionSuccessResponse).result?.retval;
+  const retval = (sim as unknown as rpc.Api.SimulateTransactionSuccessResponse).result?.retval;
   if (retval === undefined || retval === null) {
     throw new Error(`No return value from ${method}`);
   }

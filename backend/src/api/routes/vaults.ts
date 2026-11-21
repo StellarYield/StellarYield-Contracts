@@ -53,24 +53,15 @@ import {
   validateVaultMetadata,
   getDepositDistribution,
   getVaultCohorts,
-  getHoldingDuration,
-  getVaultSnapshotWithRatios,
-  getFundingVelocity,
-  getRedemptionQueueEta,
-  getMaturityCountdown,
-  getRedemptionStats,
-  getRedemptionCancellationRate,
-  getHolderRetention,
+  getVaultPerformanceVsPeers,
 } from "../controllers/vaults.js";
 import {
   translateSimulationError,
   simulateFundingProgress,
   simulateMultiOperation,
 } from "../controllers/simulate.js";
-import { validateParams, validateQuery, validateBody } from "../middleware/validate.js";
-import { requireApiKey, enforceApiKeyContractScope, optionalApiKey } from "../middleware/auth.js";
 import { validateParams, validateQuery, validateBody, nfcStringSchema, contractAddressSchema } from "../middleware/validate.js";
-import { requireApiKey, enforceApiKeyContractScope } from "../middleware/auth.js";
+import { requireApiKey, enforceApiKeyContractScope, optionalApiKey } from "../middleware/auth.js";
 import { simulateLimiter } from "../middleware/rateLimit.js";
 import { captureForStaleFallback } from "../middleware/staleResponse.js";
 import { parseVaultSort } from "../../services/vault.js";
@@ -190,6 +181,7 @@ const searchVaultsQuerySchema = z.object({
   q: z
     .string()
     .max(200, "Search query must be at most 200 characters")
+    // eslint-disable-next-line no-control-regex
     .regex(/^[^\x00-\x1f\x7f]*$/, "Search query must not contain control characters")
     .optional(),
   category: z.string().optional(),
@@ -395,6 +387,15 @@ vaultsRouter.get("/:contractId/report", validateParams(vaultParamsSchema), getVa
 vaultsRouter.get("/:contractId/epochs/:epoch/breakdown", validateParams(vaultParamsSchema), getEpochBreakdown);
 // Similar vaults by category and TVL proximity: GET /api/v1/vaults/:contractId/similar
 vaultsRouter.get("/:contractId/similar", validateParams(vaultParamsSchema), getSimilarVaults);
+const performanceVsPeersQuerySchema = z.object({
+  timeframe: z.enum(["7d", "30d", "90d", "365d"]).default("30d"),
+});
+vaultsRouter.get(
+  "/:contractId/performance-vs-peers",
+  validateParams(vaultParamsSchema),
+  validateQuery(performanceVsPeersQuerySchema),
+  getVaultPerformanceVsPeers,
+);
 // Transfer fees query: GET /api/v1/vaults/:contractId/transfer-fees?from=&to= (#1076)
 vaultsRouter.get("/:contractId/transfer-fees", validateParams(vaultParamsSchema), getVaultTransferFees);
 // Transfer leaderboard: GET /api/v1/vaults/:contractId/transfer-leaderboard?limit=10 (#1075)
