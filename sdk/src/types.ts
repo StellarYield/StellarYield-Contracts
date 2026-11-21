@@ -105,3 +105,51 @@ export interface SingleRwaVaultInitParams {
   rwa_category: string;
   expected_apy: number;
 }
+
+/** `single_rwa_vault::ClaimCostHint` */
+export interface ClaimCostHint {
+  current_epoch: number;
+  last_claimed_epoch: number;
+  epochs_scanned: number;
+  unclaimed_epochs: number;
+}
+
+/** `single_rwa_vault::ClaimYieldRangePreview` */
+export interface ClaimYieldRangePreview {
+  claimable_yield: bigint;
+  epochs_scanned: number;
+}
+
+/** `single_rwa_vault::PendingYieldEpoch` */
+export interface PendingYieldEpoch {
+  epoch: number;
+  pending: bigint;
+}
+
+/** `single_rwa_vault::DepositCheckResult` */
+export interface DepositCheckResult {
+  user: string;
+  status_code: number;
+  expected_shares: bigint;
+}
+
+/** `single_rwa_vault::CanRedeemResult` */
+export interface CanRedeemResult {
+  ok: boolean;
+  reason?: string;
+}
+
+/** `single_rwa_vault::EarlyRedemptionPrecheckReason` */
+export type EarlyRedemptionPrecheckReason =
+  | "NotActive"
+  | "Frozen"
+  | "Blacklisted"
+  | "NotKYC"
+  | "InsufficientShares"
+  | "FeeTooHigh";
+
+/** `single_rwa_vault::EarlyRedemptionPrecheckResult` */
+export type EarlyRedemptionPrecheckResult =
+  | { ok: true }
+  | { ok: false; reason: EarlyRedemptionPrecheckReason };
+
