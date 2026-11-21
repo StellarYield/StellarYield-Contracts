@@ -68,6 +68,7 @@ export const envSchema = z.object({
   VAULT_FACTORY_CONTRACT_ID: z
     .string()
     .default(""),
+  STELLAR_EVENT_SIGNING_KEY: z.string().optional(),
   DATABASE_URL: z
     .string()
     .refine((v) => /^postgres(ql)?:\/\/.+/.test(v), {
@@ -409,6 +410,9 @@ export const config = {
     return ["true", "1", "yes"].includes(
       (process.env.DRY_RUN ?? String(parsed.data.DRY_RUN)).toLowerCase(),
     );
+  },
+  get stellarEventSigningKey(): string | undefined {
+    return process.env.STELLAR_EVENT_SIGNING_KEY ?? parsed.data.STELLAR_EVENT_SIGNING_KEY;
   },
 
   stellar: {

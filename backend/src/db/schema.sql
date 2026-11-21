@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS indexed_events (
   contract_id     TEXT NOT NULL,
   event_type      TEXT NOT NULL,
   payload         JSONB NOT NULL,
+  signature_valid BOOLEAN NOT NULL DEFAULT TRUE,
   tx_index        INT,
   event_index     INT,
   created_at      TIMESTAMPTZ DEFAULT NOW()

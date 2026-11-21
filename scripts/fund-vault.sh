@@ -94,6 +94,17 @@ prompt SOURCE_ACCOUNT   "Stellar CLI key name for signing" "default"
 prompt DEPOSIT_AMOUNT   "Deposit amount in stroops (1 USDC = 10000000)" "100000000"
 prompt RECEIVER_ADDRESS "Receiver address for vault shares" "$DEPOSITOR"
 
+# Validate contract IDs locally before any network call.
+validate_contract_id() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    if [[ ! "$value" =~ ^C[A-Z2-7]{55}$ ]]; then
+        die "Invalid $var_name '$value': must be a 56-character Stellar contract ID starting with C and containing only base32 characters (A-Z, 2-7)."
+    fi
+}
+
+validate_contract_id VAULT_ADDRESS
+
 # Approve expiry — current ledger + ~30 days worth of ledgers (5s per ledger)
 # Approximate: 30 * 24 * 3600 / 5 = 518400 ledgers ahead
 EXPIRY_LEDGER="${EXPIRY_LEDGER:-}"

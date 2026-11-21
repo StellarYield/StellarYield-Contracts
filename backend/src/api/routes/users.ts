@@ -9,7 +9,6 @@ import {
   getUserIncomeForecast,
   getUserKyc,
   getUserKycHistory,
-  getUserLifetimeYield,
   getUserPortfolio,
   getUserPortfolioAllocation,
   getUserPortfolioDiversification,
@@ -63,6 +62,7 @@ const searchQuerySchema = z.object({
     .string()
     .min(4, "Search query must be at least 4 characters long")
     .max(200, "Search query must be at most 200 characters")
+    // eslint-disable-next-line no-control-regex
     .regex(/^[^\x00-\x1f\x7f]*$/, "Search query must not contain control characters"),
 });
 
