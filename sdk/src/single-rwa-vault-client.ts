@@ -313,6 +313,18 @@ export class SingleRwaVaultClient {
   expectedApy(): SorobanOperation {
     return this.call("expected_apy");
   }
+  getVaultOverview(): SorobanOperation {
+    return this.call("get_vault_overview");
+  }
+  getUserOverview(user: string): SorobanOperation {
+    return this.call("get_user_overview", scAddress(user));
+  }
+  getYieldReconciliation(): SorobanOperation {
+    return this.call("get_yield_reconciliation");
+  }
+  getVaultHealth(): SorobanOperation {
+    return this.call("get_vault_health");
+  }
   setFundingTarget(caller: string, target: bigint): SorobanOperation {
     return this.call("set_funding_target", scAddress(caller), scI128(target));
   }

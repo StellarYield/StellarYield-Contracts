@@ -339,9 +339,12 @@ impl SingleRWAVault {
         client.has_approved(&coop, &user)
     }
 
+    /// Canonical getter for the zkMe verifier address.
+    /// Alias: `get_zkme_verifier`.
     pub fn zkme_verifier(e: &Env) -> Address {
         get_zkme_verifier(e)
     }
+    /// Alias for canonical `zkme_verifier()`. Use `zkme_verifier()` in new integrations.
     pub fn get_zkme_verifier(e: &Env) -> Address {
         get_zkme_verifier(e)
     }
@@ -1778,10 +1781,12 @@ impl SingleRWAVault {
         vested_amount - already_claimed
     }
 
+    /// Canonical getter for the current epoch number.
+    /// Alias: `get_current_epoch`.
     pub fn current_epoch(e: &Env) -> u32 {
         get_current_epoch(e)
     }
-    /// Alias getter for integrations expecting `get_*` naming.
+    /// Alias for canonical `current_epoch()`.
     pub fn get_current_epoch(e: &Env) -> u32 {
         get_current_epoch(e)
     }
@@ -2133,10 +2138,12 @@ impl SingleRWAVault {
     ///   if the underlying RWA term is extended.
     /// - **Maturity Check**: Clients should compare this value with the current
     ///   ledger timestamp to determine if the term has ended.
+    /// Canonical getter for vault maturity date timestamp.
+    /// Alias: `get_maturity_date`.
     pub fn maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
     }
-    /// Alias getter for integrations expecting `get_*` naming.
+    /// Alias for canonical `maturity_date()`.
     pub fn get_maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
     }
@@ -2369,9 +2376,12 @@ impl SingleRWAVault {
     ///   `Active` states to ensure position sizes remain manageable.
     /// - **Units**: Expressed in the vault's underlying asset units, consistent
     ///   with `decimals()`.
+    /// Canonical getter for minimum deposit amount.
+    /// Alias: `get_min_deposit`.
     pub fn min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
+    /// Alias for canonical `min_deposit()`.
     pub fn get_min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
@@ -3357,7 +3367,8 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    /// Returns true if the vault is currently paused.
+    /// Canonical getter for paused status.
+    /// Aliases: `is_paused`, `is_pause`.
     ///
     /// When paused, all state-changing operations except for `unpause` and
     /// `emergency_withdraw` are blocked.
@@ -3365,12 +3376,12 @@ impl SingleRWAVault {
         get_paused(e)
     }
 
-    /// Alias for `paused()`. Returns true if the vault is currently paused.
+    /// Alias for canonical `paused()`. Returns true if the vault is currently paused.
     pub fn is_paused(e: &Env) -> bool {
         get_paused(e)
     }
 
-    /// Alias for `paused()`. Returns true if the vault is currently paused.
+    /// Alias for canonical `paused()`. Returns true if the vault is currently paused.
     pub fn is_pause(e: &Env) -> bool {
         get_paused(e)
     }
