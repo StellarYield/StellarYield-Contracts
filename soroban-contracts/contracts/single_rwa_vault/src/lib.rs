@@ -79,6 +79,8 @@ mod test_token;
 #[cfg(test)]
 mod test_vault_state_guards;
 #[cfg(test)]
+mod test_versioning_and_guards;
+#[cfg(test)]
 mod test_withdraw;
 #[cfg(test)]
 mod test_yield_shortfall;
@@ -359,6 +361,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
+        require_valid_address(e, &verifier);
         let old = get_zkme_verifier(e);
         put_zkme_verifier(e, verifier.clone());
         emit_zkme_verifier_updated(e, caller, old, verifier);
@@ -2956,6 +2959,7 @@ impl SingleRWAVault {
     ) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &addr);
         put_role(e, addr.clone(), role.clone(), false);
         if role == Role::FullOperator {
             emit_operator_removed(e, caller.clone(), addr.clone(), reason.clone());
@@ -3197,6 +3201,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
+        require_valid_address(e, &address);
         put_blacklisted(e, &address, status);
         emit_address_blacklisted(e, address, status);
         bump_instance(e);
@@ -3320,6 +3325,7 @@ impl SingleRWAVault {
     pub fn set_transfer_exempt(e: &Env, caller: Address, address: Address, exempt: bool) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &address);
         put_transfer_exempt(e, &address, exempt);
         emit_transfer_exemption_set(e, address, exempt);
         bump_instance(e);
@@ -3835,12 +3841,6 @@ impl SingleRWAVault {
         get_escrowed_shares(e, &id)
     }
 
-    /// Returns the vault's current asset token balance.
-    /// Allows frontends to verify vault solvency before submitting transactions.
-    pub fn vault_asset_balance(e: &Env) -> i128 {
-        asset_balance_of_vault(e)
-    }
-
     pub fn transfer(e: &Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
         require_lock_up_elapsed(e, &from);
@@ -3988,10 +3988,17 @@ impl SingleRWAVault {
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Validates that an address is not the zero-equivalent (contract's own address).
-/// This prevents null-like semantics where the contract address is used as a placeholder.
-fn require_valid_address(_e: &Env, _addr: &Address) {
-    // No-op for now to avoid blocking contract's own address which is used as a KYC bypass.
+/// Validates that an address is not the Stellar null address (all-zero account
+/// key, `GAAA…WHF`).  The contract's own address is intentionally allowed: it
+/// is used as the zkMe KYC-bypass sentinel (see `is_kyc_verified`).
+fn require_valid_address(e: &Env, addr: &Address) {
+    let zero = Address::from_str(
+        e,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    if addr == &zero {
+        panic_with_error!(e, Error::ZeroAddress);
+    }
 }
 
 /// A tiny helper reduces duplicated panic/error messages and centralizes formatting.
