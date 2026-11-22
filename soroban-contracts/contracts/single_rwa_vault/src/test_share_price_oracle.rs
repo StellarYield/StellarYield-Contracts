@@ -56,6 +56,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address) {
     let vault_id = env.register(
         SingleRWAVault,
         (InitParams {
+            max_investors: 0,
             asset: token_id.clone(),
             share_name: String::from_str(env, "Oracle Share"),
             share_symbol: String::from_str(env, "OS"),
