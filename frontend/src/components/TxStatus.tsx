@@ -16,7 +16,7 @@ export function TxStatus({ state, onDismiss }: { state: TxState; onDismiss: () =
 
   if (state.stage === "error") {
     return (
-      <Notice tone="danger">
+      <Notice tone="danger" role="alert">
         <div className="stack" style={{ gap: 8, flex: 1 }}>
           <strong>{state.action ? `${state.action} failed` : "Transaction failed"}</strong>
           <span>{state.error}</span>
@@ -28,36 +28,36 @@ export function TxStatus({ state, onDismiss }: { state: TxState; onDismiss: () =
     );
   }
 
-  if (state.stage === "success") {
-    const explorer = EXPLORERS[config.network];
-    return (
-      <Notice tone="accent">
-        <div className="stack" style={{ gap: 8, flex: 1 }}>
-          <strong>{state.action ? `${state.action} confirmed` : "Confirmed"}</strong>
-          {state.hash && explorer ? (
-            <a
-              href={`${explorer}/${state.hash}`}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: 13 }}
-            >
-              View transaction ↗
-            </a>
-          ) : null}
-          <button className="link-button" onClick={onDismiss} style={{ alignSelf: "flex-start" }}>
-            Dismiss
-          </button>
-        </div>
-      </Notice>
-    );
-  }
-
+  const explorer = EXPLORERS[config.network];
   return (
-    <Notice tone="info">
-      <span className="notice-row">
-        <Spinner />
-        <span>{STAGE_LABELS[state.stage]}</span>
-      </span>
-    </Notice>
+    <div aria-live="polite" aria-atomic="true">
+      {state.stage === "success" ? (
+        <Notice tone="accent">
+          <div className="stack" style={{ gap: 8, flex: 1 }}>
+            <strong>{state.action ? `${state.action} confirmed` : "Confirmed"}</strong>
+            {state.hash && explorer ? (
+              <a
+                href={`${explorer}/${state.hash}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ fontSize: 13 }}
+              >
+                View transaction ↗
+              </a>
+            ) : null}
+            <button className="link-button" onClick={onDismiss} style={{ alignSelf: "flex-start" }}>
+              Dismiss
+            </button>
+          </div>
+        </Notice>
+      ) : (
+        <Notice tone="info">
+          <span className="notice-row">
+            <Spinner />
+            <span>{STAGE_LABELS[state.stage]}</span>
+          </span>
+        </Notice>
+      )}
+    </div>
   );
 }
