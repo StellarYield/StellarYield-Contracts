@@ -34,13 +34,35 @@ export function VaultDetail({
     );
   }
 
-  if (error || !vault) {
+  if (error) {
     return (
       <div className="page section-tight stack" style={{ gap: 20 }}>
         <button className="link-button" onClick={onBack} style={{ alignSelf: "flex-start" }}>
           ← All vaults
         </button>
-        <Notice tone="danger">{error ?? "Vault could not be loaded."}</Notice>
+        <Notice tone="danger">{error}</Notice>
+      </div>
+    );
+  }
+
+  if (!vault) {
+    return (
+      <div className="page section-tight stack" style={{ gap: 20 }}>
+        <button className="link-button" onClick={onBack} style={{ alignSelf: "flex-start" }}>
+          ← All vaults
+        </button>
+        <Card>
+          <div className="stack" style={{ gap: 12 }}>
+            <h1 style={{ fontSize: 30 }}>Vault not found</h1>
+            <p className="muted" style={{ fontSize: 15 }}>
+              We could not find a vault with that ID. It may have been mistyped or
+              retired.
+            </p>
+            <button className="btn btn-soft" onClick={onBack} style={{ alignSelf: "flex-start" }}>
+              Back to vaults
+            </button>
+          </div>
+        </Card>
       </div>
     );
   }
