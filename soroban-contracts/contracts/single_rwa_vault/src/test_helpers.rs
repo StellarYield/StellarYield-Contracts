@@ -360,5 +360,6 @@ fn default_params(
         timelock_delay: 172800u64,  // 48 hours
         yield_vesting_period: 0u64, // Default to 0 for instant claiming (backward compatibility)
         lock_up_period: 0u64,       // Default to 0 for no lock-up (backward compatibility)
+        max_investors: 0,           // unlimited by default
     }
 }

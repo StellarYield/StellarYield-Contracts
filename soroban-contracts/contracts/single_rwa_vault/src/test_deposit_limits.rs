@@ -366,7 +366,10 @@ fn test_small_over_target_deposit_is_rejected_without_mutating_state() {
         ctx.vault().deposit(&user_b, &50_000_001i128, &user_b);
     }));
 
-    assert!(result.is_err(), "overshooting the funding target should fail");
+    assert!(
+        result.is_err(),
+        "overshooting the funding target should fail"
+    );
     assert_eq!(ctx.vault().vault_state(), crate::VaultState::Funding);
     assert_eq!(ctx.vault().total_assets(), 50_000_000i128);
     assert_eq!(ctx.vault().balance(&user_a), 50_000_000i128);

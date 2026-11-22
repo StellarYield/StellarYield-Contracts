@@ -59,6 +59,8 @@ mod test_lifecycle;
 #[cfg(test)]
 mod test_lock_up;
 #[cfg(test)]
+mod test_monitoring;
+#[cfg(test)]
 mod test_multiple_deposit_times;
 #[cfg(test)]
 mod test_multisig_emergency;
@@ -3833,12 +3835,6 @@ impl SingleRWAVault {
 
     pub fn escrowed_balance(e: &Env, id: Address) -> i128 {
         get_escrowed_shares(e, &id)
-    }
-
-    /// Returns the vault's current asset token balance.
-    /// Allows frontends to verify vault solvency before submitting transactions.
-    pub fn vault_asset_balance(e: &Env) -> i128 {
-        asset_balance_of_vault(e)
     }
 
     pub fn transfer(e: &Env, from: Address, to: Address, amount: i128) {
