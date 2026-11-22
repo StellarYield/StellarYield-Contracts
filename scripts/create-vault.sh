@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./scripts/create-vault.sh [--non-interactive]
+#   ./scripts/create-vault.sh --help
 #
 # Environment variables (all prompted if not set):
 #   FACTORY_ADDRESS  — contract ID of the deployed vault factory
@@ -31,41 +32,60 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACT_DIR="$SCRIPT_DIR/../soroban-contracts"
 ENV_FILE="$CONTRACT_DIR/.env.testnet"
 
+source "$SCRIPT_DIR/lib/common.sh"
+
 NETWORK="${NETWORK:-testnet}"
 NON_INTERACTIVE=false
-[[ "${1:-}" == "--non-interactive" ]] && NON_INTERACTIVE=true
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+Usage: ./scripts/create-vault.sh [--non-interactive]
+       ./scripts/create-vault.sh --help
 
-info()    { echo "[INFO]  $*"; }
-success() { echo "[OK]    $*"; }
-die()     { echo "[ERROR] $*" >&2; exit 1; }
+Creates a SingleRWA vault through the deployed VaultFactory.
 
-prompt() {
-    local var_name="$1"
-    local prompt_text="$2"
-    local default="${3:-}"
-    local value
+Required environment variables (prompted if not set):
+  FACTORY_ADDRESS   Contract ID of the deployed vault factory
+  OPERATOR_ADDRESS  Stellar address granted the operator role
+  VAULT_NAME        Vault display name
+  VAULT_SYMBOL      Vault share token symbol
+  RWA_NAME          Underlying asset name
+  RWA_SYMBOL        Underlying asset symbol
+  RWA_DOCUMENT_URI  IPFS or HTTPS link to the RWA document
+  MATURITY_DATE     Unix timestamp (seconds) for vault maturity
 
-    if [[ -n "${!var_name:-}" ]]; then
-        return
-    fi
+Optional environment variables:
+  NETWORK           Stellar network (default: testnet)
+  SOURCE_ACCOUNT    Stellar CLI key name used to sign (default: default)
+  ADMIN_ADDRESS     Stellar address used as the default operator
+  DEFAULT_ASSET     Deposit asset contract ID used as the default ASSET
+  ASSET             Deposit asset contract ID
+  FUNDING_TARGET    Minimum deposit in stroops (default: 1000000000)
+  MAX_DEPOSIT       Per-user deposit cap in stroops (default: 0)
+  EXIT_FEE_BPS      Early-redemption fee in basis points (default: 100)
+  RWA_CATEGORY      Underlying asset category (default: Government Debt)
+  EXPECTED_APY_BPS  Expected APY in basis points (default: 0)
+  MIN_DEPOSIT       Minimum deposit per user in stroops (default: 0)
+  FUNDING_DEADLINE  Funding deadline Unix timestamp (default: 0)
 
-    if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        [[ -n "$default" ]] && printf -v "$var_name" '%s' "$default" && return
-        die "Required variable '$var_name' not set and running non-interactively."
-    fi
+Options:
+  --non-interactive  Fail instead of prompting for missing variables.
+  -h, --help         Show this message and exit.
 
-    local display_default=""
-    [[ -n "$default" ]] && display_default=" [$default]"
-
-    read -rp "${prompt_text}${display_default}: " value
-    value="${value:-$default}"
-    [[ -z "$value" ]] && die "'$var_name' cannot be empty."
-    printf -v "$var_name" '%s' "$value"
+Example:
+  FACTORY_ADDRESS=C... OPERATOR_ADDRESS=G... MATURITY_DATE=1800000000 \\
+    ./scripts/create-vault.sh --non-interactive
+EOF
 }
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --non-interactive) NON_INTERACTIVE=true ;;
+        *) die "Unknown option '$1'. Try --help." ;;
+    esac
+    shift
+done
 
 # ---------------------------------------------------------------------------
 # Pre-flight
