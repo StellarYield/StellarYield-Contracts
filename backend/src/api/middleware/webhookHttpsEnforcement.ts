@@ -1,6 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import { config } from "../../config.js";
 
+/** Request body shape this middleware inspects. `url` is validated below. */
+interface WebhookRegistrationBody {
+  url?: unknown;
+}
+
 export function webhookHttpsEnforcement() {
   return (req: Request, res: Response, next: NextFunction): void => {
     const isProduction = config.nodeEnv === "production";
@@ -15,7 +20,7 @@ export function webhookHttpsEnforcement() {
       return;
     }
 
-    const body = req.body as any;
+    const body: WebhookRegistrationBody | null | undefined = req.body;
     if (!body || typeof body !== "object") {
       next();
       return;

@@ -2,6 +2,9 @@ import type { Request, Response, NextFunction } from "express";
 import { config } from "../../config.js";
 import { logger } from "../../logger.js";
 
+type WriteCallback = (error?: Error | null) => void;
+type EndCallback = () => void;
+
 export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
   const maxBytes = maxMb * 1024 * 1024;
   const warnBytes = maxBytes * 0.8;
@@ -66,7 +69,11 @@ export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
       return originalSetHeader(name, value);
     };
 
-    res.write = function (chunk: any, encoding?: any, callback?: any): boolean {
+    res.write = function (
+      chunk: unknown,
+      encoding?: BufferEncoding | WriteCallback,
+      callback?: WriteCallback,
+    ): boolean {
       if (errorHandled) {
         return false;
       }
@@ -80,7 +87,7 @@ export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
         const len = Buffer.isBuffer(chunk)
           ? chunk.length
           : typeof chunk === "string"
-            ? Buffer.byteLength(chunk, (typeof encoding === "string" ? encoding : "utf8") as BufferEncoding)
+            ? Buffer.byteLength(chunk, typeof encoding === "string" ? encoding : "utf8")
             : 0;
         bytesWritten += len;
       }
@@ -93,10 +100,19 @@ export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
         return false;
       }
 
-      return originalWrite(chunk, encoding, callback);
-    } as any;
+      // Node takes either (chunk, callback) or (chunk, encoding, callback), so
+      // forward whichever form was called. An omitted encoding is passed as
+      // "utf8", the same default Node applies.
+      return typeof encoding === "function"
+        ? originalWrite(chunk, encoding)
+        : originalWrite(chunk, encoding ?? "utf8", callback);
+    };
 
-    res.end = function (chunk?: any, encoding?: any, callback?: any): Response {
+    res.end = function (
+      chunk?: unknown,
+      encoding?: BufferEncoding | EndCallback,
+      callback?: EndCallback,
+    ): Response {
       if (errorHandled) {
         return res;
       }
@@ -110,7 +126,7 @@ export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
         const len = Buffer.isBuffer(chunk)
           ? chunk.length
           : typeof chunk === "string"
-            ? Buffer.byteLength(chunk, (typeof encoding === "string" ? encoding : "utf8") as BufferEncoding)
+            ? Buffer.byteLength(chunk, typeof encoding === "string" ? encoding : "utf8")
             : 0;
         bytesWritten += len;
       }
@@ -123,8 +139,10 @@ export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
         return res;
       }
 
-      return originalEnd(chunk, encoding, callback);
-    } as any;
+      return typeof encoding === "function"
+        ? originalEnd(chunk, encoding)
+        : originalEnd(chunk, encoding ?? "utf8", callback);
+    };
 
     next();
   };
