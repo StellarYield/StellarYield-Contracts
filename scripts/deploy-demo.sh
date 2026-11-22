@@ -10,15 +10,18 @@
 #
 # Usage:
 #   ./scripts/deploy-demo.sh
+#   ./scripts/deploy-demo.sh --help
 #
 # Optional environment variables (all have working defaults):
 #   NETWORK          stellar network                      (default: testnet)
 #   SOURCE_ACCOUNT   stellar-cli key name for the deployer(default: sy-deployer)
+#   ISSUER_ACCOUNT   stellar-cli key name for the demo token issuer (default: sy-usdc-issuer)
 #   ASSET            existing SEP-41 token contract ID    (default: issue a demo USDC)
 #   DEMO_ACCOUNT     extra G... address to fund + make operator (default: none)
 #   VAULT_NAME / VAULT_SYMBOL / RWA_NAME / RWA_SYMBOL / RWA_CATEGORY
 #   RWA_DOCUMENT_URI / EXPECTED_APY_BPS / FUNDING_TARGET / MIN_DEPOSIT
 #   MAX_DEPOSIT_PER_USER / EXIT_FEE_BPS / MATURITY_DAYS / FUNDING_DEADLINE_DAYS
+#   MINT_AMOUNT      demo token amount in smallest units   (default: 100000000000)
 #
 # Re-running is safe: existing keys are reused rather than regenerated.
 # =============================================================================
@@ -30,6 +33,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONTRACT_DIR="$REPO_ROOT/soroban-contracts"
 ENV_FILE="$CONTRACT_DIR/.env.demo"
 FRONTEND_ENV="$REPO_ROOT/frontend/.env"
+
+source "$SCRIPT_DIR/lib/common.sh"
 
 NETWORK="${NETWORK:-testnet}"
 SOURCE_ACCOUNT="${SOURCE_ACCOUNT:-sy-deployer}"
@@ -51,9 +56,53 @@ MATURITY_DAYS="${MATURITY_DAYS:-90}"
 FUNDING_DEADLINE_DAYS="${FUNDING_DEADLINE_DAYS:-7}"
 MINT_AMOUNT="${MINT_AMOUNT:-100000000000}"           # 10,000 USDC
 
-info()    { printf '\033[1;34m[INFO]\033[0m  %s\n' "$*"; }
-success() { printf '\033[1;32m[OK]\033[0m    %s\n' "$*"; }
-die()     { printf '\033[1;31m[ERROR]\033[0m %s\n' "$*" >&2; exit 1; }
+usage() {
+    cat <<EOF
+Usage: ./scripts/deploy-demo.sh
+       ./scripts/deploy-demo.sh --help
+
+Builds and deploys a complete testnet demo: deployer key, demo asset, factory,
+vault, KYC bypass, operator role, and frontend/.env.
+
+Required environment variables:
+  None. Every value has a working default.
+
+Optional environment variables:
+  NETWORK               Stellar network (default: testnet)
+  SOURCE_ACCOUNT        Stellar CLI key name for the deployer (default: sy-deployer)
+  ISSUER_ACCOUNT        Stellar CLI key name for the demo asset issuer (default: sy-usdc-issuer)
+  ASSET                 Existing SEP-41 token contract ID (default: issue a demo USDC)
+  DEMO_ACCOUNT          Extra G... address to fund and make an operator (default: none)
+  VAULT_NAME            Vault display name (default: US Treasury 6-Month Bill)
+  VAULT_SYMBOL          Vault share token symbol (default: syUSTB)
+  RWA_NAME              Underlying asset name (default: VAULT_NAME)
+  RWA_SYMBOL            Underlying asset symbol (default: USTB6M)
+  RWA_CATEGORY          Underlying asset category (default: Government Debt)
+  RWA_DOCUMENT_URI      IPFS or HTTPS RWA document URI
+  EXPECTED_APY_BPS      Expected APY in basis points (default: 512)
+  FUNDING_TARGET        Funding target in stroops (default: 1000000000)
+  MIN_DEPOSIT           Minimum deposit in stroops (default: 10000000)
+  MAX_DEPOSIT_PER_USER  Per-user deposit cap in stroops (default: 0)
+  EXIT_FEE_BPS          Early-redemption fee in basis points (default: 200)
+  MATURITY_DAYS         Vault maturity in days from now (default: 90)
+  FUNDING_DEADLINE_DAYS Funding deadline in days from now (default: 7)
+  MINT_AMOUNT           Demo token amount in smallest units (default: 100000000000)
+
+Options:
+  -h, --help  Show this message and exit.
+
+Example:
+  DEMO_ACCOUNT=G... NETWORK=testnet ./scripts/deploy-demo.sh
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        *) die "Unknown option '$1'. Try --help." ;;
+    esac
+    shift
+done
 
 # ---------------------------------------------------------------------------
 # Pre-flight
