@@ -31,7 +31,7 @@ Request validation failed (invalid parameters, missing required fields, etc).
 Authentication required but not provided or invalid.
 
 ### RATE_LIMITED (429)
-Too many requests. Rate limit exceeded for this endpoint.
+Too many requests. Rate limit exceeded for this endpoint. See [rate-limits.md](./rate-limits.md) for tier limits, response headers, and `429` response details.
 
 ### RPC_ERROR (500)
 Failed to communicate with the Stellar blockchain RPC node.
