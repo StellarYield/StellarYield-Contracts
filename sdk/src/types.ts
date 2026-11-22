@@ -105,3 +105,46 @@ export interface SingleRwaVaultInitParams {
   rwa_category: string;
   expected_apy: number;
 }
+
+/** `single_rwa_vault::VaultOverview` */
+export interface VaultOverview {
+  state: VaultState;
+  paused: boolean;
+  asset: string;
+  total_assets: bigint;
+  total_supply: bigint;
+  current_epoch: number;
+  maturity_date: bigint;
+}
+
+/** `single_rwa_vault::UserOverview` */
+export interface UserOverview {
+  share_balance: bigint;
+  pending_yield: bigint;
+  total_deposited: bigint;
+  is_blacklisted: boolean;
+  is_kyc_verified: boolean;
+}
+
+/** `single_rwa_vault::YieldReconciliation` */
+export interface YieldReconciliation {
+  total_yield_distributed: bigint;
+  total_yield_claimed: bigint;
+  total_yield_unclaimed: bigint;
+  vault_asset_balance: bigint;
+  total_principal_deposited: bigint;
+  balance_discrepancy: bigint;
+}
+
+/** `single_rwa_vault::VaultHealth` */
+export interface VaultHealth {
+  state: VaultState;
+  paused: boolean;
+  total_supply: bigint;
+  total_assets: bigint;
+  share_price: bigint;
+  current_epoch: number;
+  time_to_maturity: bigint;
+  funding_progress: bigint;
+  investor_count: number;
+}

@@ -52,3 +52,14 @@ pub fn run_migrations(e: &Env, from_version: u32) {
 ## Factory
 
 The `VaultFactory` follows the same pattern with its own `ContractVersion` and `StorageSchemaVersion`. Migrate the factory by calling its `migrate` function before deploying new vaults with an updated schema.
+
+## Canonical Getter Functions and Deprecations
+
+The following getter pairs in `single_rwa_vault` have designated canonical names. Alias functions are kept for backwards compatibility but should be avoided in new integrations:
+
+- `paused`: Canonical (aliases: `is_paused`, `is_pause`)
+- `zkme_verifier`: Canonical (alias: `get_zkme_verifier`)
+- `current_epoch`: Canonical (alias: `get_current_epoch`)
+- `maturity_date`: Canonical (alias: `get_maturity_date`)
+- `min_deposit`: Canonical (alias: `get_min_deposit`)
+
