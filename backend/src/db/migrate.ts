@@ -3,6 +3,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { pool } from "./index.js";
+import { logger } from "../logger.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, "migrations");
@@ -34,7 +35,7 @@ export async function applyMigrations(dbPool: pg.Pool): Promise<void> {
 
   for (const file of files) {
     if (appliedSet.has(file)) {
-      console.log(`  skip ${file} (already applied)`);
+      logger.info({ file }, "Skipping migration (already applied)");
       continue;
     }
 
@@ -45,7 +46,7 @@ export async function applyMigrations(dbPool: pg.Pool): Promise<void> {
       await client.query(sql);
       await client.query("INSERT INTO migrations (name) VALUES ($1)", [file]);
       await client.query("COMMIT");
-      console.log(`  applied ${file}`);
+      logger.info({ file }, "Applied migration");
     } catch (err) {
       await client.query("ROLLBACK");
       throw err;
@@ -54,7 +55,7 @@ export async function applyMigrations(dbPool: pg.Pool): Promise<void> {
     }
   }
 
-  console.log("Migration complete.");
+  logger.info("Migration complete.");
 }
 
 /**
@@ -91,7 +92,7 @@ export async function revertMigrations(dbPool: pg.Pool): Promise<void> {
     END
     $$;
   `);
-  console.log("Migration revert complete.");
+  logger.info("Migration revert complete.");
 }
 
 const isDirectScriptRun = (() => {
@@ -105,7 +106,8 @@ if (isDirectScriptRun) {
       await pool.end();
     })
     .catch((err) => {
-      console.error("Migration failed:", err);
-      process.exit(1);
+      logger.error({ err }, "Migration failed");
+      // Flush the async logger transport before exiting so the failure is not lost.
+      logger.flush(() => process.exit(1));
     });
 }
