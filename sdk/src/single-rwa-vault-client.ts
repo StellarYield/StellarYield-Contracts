@@ -313,48 +313,18 @@ export class SingleRwaVaultClient {
   expectedApy(): SorobanOperation {
     return this.call("expected_apy");
   }
-
-  // --- Capacity views ---
-  maxDepositHeadroom(user: string): SorobanOperation {
-    return this.call("max_deposit_headroom", scAddress(user));
+  getVaultOverview(): SorobanOperation {
+    return this.call("get_vault_overview");
   }
-  lockUpRemaining(user: string): SorobanOperation {
-    return this.call("lock_up_remaining", scAddress(user));
+  getUserOverview(user: string): SorobanOperation {
+    return this.call("get_user_overview", scAddress(user));
   }
-  sharePriceBps(): SorobanOperation {
-    return this.call("share_price_bps");
+  getYieldReconciliation(): SorobanOperation {
+    return this.call("get_yield_reconciliation");
   }
-
-  // --- Claim preview views ---
-  pendingYieldBreakdown(user: string, maxEpochs = 50): SorobanOperation {
-    return this.call("pending_yield_breakdown", scAddress(user), scU32(maxEpochs));
+  getVaultHealth(): SorobanOperation {
+    return this.call("get_vault_health");
   }
-  previewClaimYieldRange(user: string, start: number, end: number): SorobanOperation {
-    return this.call(
-      "preview_claim_yield_range",
-      scAddress(user),
-      scU32(start),
-      scU32(end),
-    );
-  }
-  estimateClaimCostHint(user: string): SorobanOperation {
-    return this.call("estimate_claim_cost_hint", scAddress(user));
-  }
-
-  // --- Eligibility views ---
-  canDeposit(user: string, amount: bigint): SorobanOperation {
-    return this.call("can_deposit", scAddress(user), scI128(amount));
-  }
-  canRedeem(user: string, shares: bigint): SorobanOperation {
-    return this.call("can_redeem", scAddress(user), scI128(shares));
-  }
-  canWithdraw(user: string, assets: bigint): SorobanOperation {
-    return this.call("can_withdraw", scAddress(user), scI128(assets));
-  }
-  canRequestEarlyRedemption(user: string, shares: bigint): SorobanOperation {
-    return this.call("can_request_early_redemption", scAddress(user), scI128(shares));
-  }
-
   setFundingTarget(caller: string, target: bigint): SorobanOperation {
     return this.call("set_funding_target", scAddress(caller), scI128(target));
   }

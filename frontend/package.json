@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "vitest run",
     "//vercel-build": "Vercel prefers this over `build`. The app depends on ../sdk via a file: link, and that package publishes from dist/ which is gitignored — so the SDK must be installed and compiled before Vite runs.",
     "vercel-build": "cd ../sdk && npm ci && npm run build && cd ../frontend && tsc -b && vite build",
     "preview": "vite preview",
@@ -13,8 +14,8 @@
   },
   "dependencies": {
     "@stellar/freighter-api": "^3.1.0",
-    "@stellaryield/sdk": "file:../sdk",
     "@stellar/stellar-sdk": "^14.0.0",
+    "@stellaryield/sdk": "file:../sdk",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -23,6 +24,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^3.2.7"
   }
 }

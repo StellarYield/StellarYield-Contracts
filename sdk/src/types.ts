@@ -106,50 +106,45 @@ export interface SingleRwaVaultInitParams {
   expected_apy: number;
 }
 
-/** `single_rwa_vault::ClaimCostHint` */
-export interface ClaimCostHint {
+/** `single_rwa_vault::VaultOverview` */
+export interface VaultOverview {
+  state: VaultState;
+  paused: boolean;
+  asset: string;
+  total_assets: bigint;
+  total_supply: bigint;
   current_epoch: number;
-  last_claimed_epoch: number;
-  epochs_scanned: number;
-  unclaimed_epochs: number;
+  maturity_date: bigint;
 }
 
-/** `single_rwa_vault::ClaimYieldRangePreview` */
-export interface ClaimYieldRangePreview {
-  claimable_yield: bigint;
-  epochs_scanned: number;
+/** `single_rwa_vault::UserOverview` */
+export interface UserOverview {
+  share_balance: bigint;
+  pending_yield: bigint;
+  total_deposited: bigint;
+  is_blacklisted: boolean;
+  is_kyc_verified: boolean;
 }
 
-/** `single_rwa_vault::PendingYieldEpoch` */
-export interface PendingYieldEpoch {
-  epoch: number;
-  pending: bigint;
+/** `single_rwa_vault::YieldReconciliation` */
+export interface YieldReconciliation {
+  total_yield_distributed: bigint;
+  total_yield_claimed: bigint;
+  total_yield_unclaimed: bigint;
+  vault_asset_balance: bigint;
+  total_principal_deposited: bigint;
+  balance_discrepancy: bigint;
 }
 
-/** `single_rwa_vault::DepositCheckResult` */
-export interface DepositCheckResult {
-  user: string;
-  status_code: number;
-  expected_shares: bigint;
+/** `single_rwa_vault::VaultHealth` */
+export interface VaultHealth {
+  state: VaultState;
+  paused: boolean;
+  total_supply: bigint;
+  total_assets: bigint;
+  share_price: bigint;
+  current_epoch: number;
+  time_to_maturity: bigint;
+  funding_progress: bigint;
+  investor_count: number;
 }
-
-/** `single_rwa_vault::CanRedeemResult` */
-export interface CanRedeemResult {
-  ok: boolean;
-  reason?: string;
-}
-
-/** `single_rwa_vault::EarlyRedemptionPrecheckReason` */
-export type EarlyRedemptionPrecheckReason =
-  | "NotActive"
-  | "Frozen"
-  | "Blacklisted"
-  | "NotKYC"
-  | "InsufficientShares"
-  | "FeeTooHigh";
-
-/** `single_rwa_vault::EarlyRedemptionPrecheckResult` */
-export type EarlyRedemptionPrecheckResult =
-  | { ok: true }
-  | { ok: false; reason: EarlyRedemptionPrecheckReason };
-
