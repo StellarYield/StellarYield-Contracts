@@ -315,7 +315,9 @@ pub fn emit_early_redemption_rejected_v2(
     );
 }
 
-/// Emitted by `transfer_admin`.
+/// Admin-transfer event constructor. Not emitted by this contract:
+/// `transfer_admin` always reverts with `TimelockAdminOnly`.
+// No callers in this crate, so the function is unused in non-test builds.
 #[allow(dead_code)]
 pub fn emit_admin_transferred(e: &Env, old_admin: Address, new_admin: Address) {
     e.events()
@@ -427,7 +429,9 @@ pub fn emit_action_proposed(
     );
 }
 
-/// Emitted when a timelock action is executed.
+/// Timelock action-executed event constructor.
+// No callers in this crate yet (`execute_action` does not emit it), so the
+// function is unused in non-test builds.
 #[allow(dead_code)]
 pub fn emit_action_executed(e: &Env, action_id: u32, action_type: crate::types::ActionType) {
     e.events()

@@ -417,6 +417,8 @@ pub fn bump_allowance(e: &Env, owner: &Address, spender: &Address) {
 /// as unclaimed and allow a second payout.  Bumping every related key on every
 /// write keeps the TTL well above the BALANCE_LIFETIME_THRESHOLD (~60 days)
 /// and eliminates that class of bug.
+// No callers in this crate yet, so the TTL bump described above is not currently
+// applied by any write path.
 #[allow(dead_code)]
 pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
     let epoch_keys = [
@@ -1161,6 +1163,7 @@ pub fn put_timelock_action(e: &Env, action_id: u32, action: crate::types::Timelo
     e.storage().instance().set(&Key::TlkAct(action_id), &action);
 }
 
+// No callers in this crate yet; kept as the existence check for timelock actions.
 #[allow(dead_code)]
 pub fn has_timelock_action(e: &Env, action_id: u32) -> bool {
     e.storage().instance().has(&Key::TlkAct(action_id))

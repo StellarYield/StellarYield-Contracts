@@ -938,6 +938,9 @@ impl VaultFactory {
     // Internal: deploy + initialise a vault
     // ─────────────────────────────────────────────────────────────────
 
+    // Takes the vault parameters flattened (20 arguments in total) so each public
+    // entry point can forward its arguments directly without an intermediate
+    // struct. Exceeds clippy's `too-many-arguments-threshold` of 12 (clippy.toml).
     #[allow(clippy::too_many_arguments)]
     fn _create_single_rwa_vault(
         e: &Env,

@@ -1134,8 +1134,7 @@ impl SingleRWAVault {
         const MAX_BATCH: u32 = 50;
         let mut results: Vec<DepositCheckResult> = Vec::new(e);
 
-        #[allow(clippy::unnecessary_cast)]
-        let actual_len = users.len().min(amounts.len()) as u32;
+        let actual_len = users.len().min(amounts.len());
         if actual_len == 0 {
             return results;
         }
@@ -3156,6 +3155,7 @@ impl SingleRWAVault {
     }
 
     /// Internal emergency withdraw function (bypasses timelock when paused).
+    // No callers in this crate; the public `emergency_withdraw` does not route through it.
     #[allow(dead_code)]
     fn emergency_withdraw_internal(e: &Env, recipient: Address, amount: i128) {
         require_positive(e, amount);
