@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same label, role, expiry, description and scope as the old one, rather than
   a `-rotated-<timestamp>` label. A label may hold at most two active keys, so a
   second rotation waits for the first grace period to end.
+- `sendEmail` (`backend/src/services/email.ts`) rejects a malformed recipient
+  with a `TypeError` before any SMTP call. It no longer rethrows transport
+  failures: they are logged at `error` and the call resolves. The notification
+  worker already caught these errors, so its behaviour does not change.
 
 ### Deprecated
 
