@@ -9,6 +9,8 @@ mod types;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
+mod test_access_control;
+#[cfg(test)]
 mod test_factory_migration;
 #[cfg(test)]
 mod tests;
