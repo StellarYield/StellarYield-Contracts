@@ -8,16 +8,25 @@ export interface SanctionsCheckResult {
   blacklistedAddresses: string[];
 }
 
+/** An object entry in a JSON sanctions list; the address may sit under any of these keys. */
+interface SanctionsListEntry {
+  address?: unknown;
+  id?: unknown;
+  account?: unknown;
+}
+
 export function parseSanctionsContent(content: string): Set<string> {
   const addresses = new Set<string>();
   try {
-    const parsed = JSON.parse(content);
+    const parsed: unknown = JSON.parse(content);
     if (Array.isArray(parsed)) {
-      for (const item of parsed) {
+      const items: unknown[] = parsed;
+      for (const item of items) {
         if (typeof item === "string") {
           addresses.add(item.trim());
         } else if (item && typeof item === "object") {
-          const addr = (item as any).address || (item as any).id || (item as any).account;
+          const entry = item as SanctionsListEntry;
+          const addr = entry.address || entry.id || entry.account;
           if (typeof addr === "string") addresses.add(addr.trim());
         }
       }
