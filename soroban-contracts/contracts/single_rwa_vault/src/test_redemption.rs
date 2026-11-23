@@ -787,6 +787,289 @@ fn test_claim_yield_distributed_after_early_full_redemption_panics() {
     let shares = v.balance(&ctx.user);
 
     // User requests early redemption of ALL shares BEFORE any yield is distributed.
+    let _ = v.request_early_redemption(&ctx.user, &shares);
+
+    // Live balance is now zero (shares are moved to escrow).
+    assert_eq!(v.balance(&ctx.user), 0);
+
+    // Distribute yield AFTER shares are in escrow — user has no live balance.
+    let yield_amount = 100_000i128;
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.operator, yield_amount);
+    v.distribute_yield(&ctx.operator, &yield_amount);
+
+    // No pending yield exists because the distribution found user's balance = 0.
+    let pending = v.pending_yield(&ctx.user);
+    assert_eq!(pending, 0, "no yield should be recorded for a zero balance");
+
+    // Attempting to claim yield must panic with Error::NoYieldToClaim (#9).
+    v.claim_yield(&ctx.user);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests — next_redemption_request_id across request, cancel, and reject flows
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// next_redemption_request_id returns 1 when no requests have been made yet,
+/// then increments by 1 for each subsequent request.
+#[test]
+fn test_next_redemption_request_id_increments_with_each_request() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let deposit_amount = 1_000_000i128;
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Before any requests, next_redemption_request_id should return 1
+    assert_eq!(vault.next_redemption_request_id(), 1u32);
+
+    // Create first request
+    let shares_to_redeem = 100_000i128;
+    let request_id_1 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_1, 1u32);
+
+    // After first request, next ID should be 2
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Fund more shares for additional requests
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    // Create second request
+    let request_id_2 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_2, 2u32);
+
+    // After second request, next ID should be 3
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+
+    // Fund more shares for third request
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    // Create third request
+    let request_id_3 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_3, 3u32);
+
+    // After third request, next ID should be 4
+    assert_eq!(vault.next_redemption_request_id(), 4u32);
+}
+
+/// next_redemption_request_id continues to increment even after a request is cancelled.
+/// Cancelling a request does NOT decrement the counter or recycle IDs.
+#[test]
+fn test_next_redemption_request_id_persists_after_cancel() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let deposit_amount = 2_000_000i128;
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Create first request
+    let shares_to_redeem = 500_000i128;
+    let request_id_1 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_1, 1u32);
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Cancel the first request
+    vault.cancel_early_redemption(&user, &request_id_1);
+
+    // next_redemption_request_id should still be 2 (not reset to 1)
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Create second request — should get ID 2
+    let request_id_2 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_2, 2u32);
+
+    // next_redemption_request_id should now be 3
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+
+    // Cancel the second request
+    vault.cancel_early_redemption(&user, &request_id_2);
+
+    // next_redemption_request_id should still be 3 (not affected by cancellation)
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+}
+
+/// next_redemption_request_id continues to increment even after a request is rejected
+/// by the operator. Rejecting a request does NOT decrement the counter or recycle IDs.
+#[test]
+fn test_next_redemption_request_id_persists_after_reject() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+    let operator = Address::generate(&env);
+
+    let deposit_amount = 2_000_000i128;
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Grant LifecycleManager role to operator
+    vault.grant_role(&admin, &operator, &Role::LifecycleManager);
+
+    // Create first request
+    let shares_to_redeem = 500_000i128;
+    let request_id_1 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_1, 1u32);
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Operator rejects the first request
+    let reason = String::from_str(&env, "Insufficient liquidity");
+    vault.reject_early_redemption(&operator, &request_id_1, &reason);
+
+    // next_redemption_request_id should still be 2 (not reset to 1)
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Create second request — should get ID 2
+    let request_id_2 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_2, 2u32);
+
+    // next_redemption_request_id should now be 3
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+
+    // Operator rejects the second request
+    vault.reject_early_redemption(&operator, &request_id_2, &reason);
+
+    // next_redemption_request_id should still be 3 (not affected by rejection)
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+}
+
+/// next_redemption_request_id continues to increment after a request is processed
+/// (approved). Processing a request consumes the ID permanently.
+#[test]
+fn test_next_redemption_request_id_increments_after_process() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+
+    let deposit_amount = 2_000_000i128;
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+
+    // Create first request
+    let shares_to_redeem = 500_000i128;
+    let request_id_1 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_1, 1u32);
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Process (approve) the first request
+    vault.process_early_redemption(&admin, &request_id_1);
+
+    // next_redemption_request_id should still be 2 (not affected by processing)
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Fund more shares for second request
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    // Create second request — should get ID 2
+    let request_id_2 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_2, 2u32);
+
+    // next_redemption_request_id should now be 3
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+
+    // Process the second request
+    vault.process_early_redemption(&admin, &request_id_2);
+
+    // next_redemption_request_id should still be 3 (not affected by processing)
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+}
+
+/// next_redemption_request_id maintains monotonic increment across mixed operations:
+/// request, cancel, reject, process. All operations preserve the counter value and
+/// IDs are never recycled.
+#[test]
+fn test_next_redemption_request_id_monotonic_across_mixed_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&env);
+    let user = Address::generate(&env);
+    let operator = Address::generate(&env);
+
+    let deposit_amount = 5_000_000i128;
+    fund_user(&env, &vault_id, &token_id, &zkme_id, &user, deposit_amount);
+
+    activate(&env, &vault_id, &admin);
+
+    let vault = SingleRWAVaultClient::new(&env, &vault_id);
+    vault.grant_role(&admin, &operator, &Role::LifecycleManager);
+
+    let shares_to_redeem = 500_000i128;
+
+    // Initial state: counter = 0, next_id = 1
+    assert_eq!(vault.next_redemption_request_id(), 1u32);
+
+    // Request 1
+    let request_id_1 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_1, 1u32);
+    assert_eq!(vault.next_redemption_request_id(), 2u32);
+
+    // Request 2
+    let request_id_2 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_2, 2u32);
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+
+    // Cancel request 1 — counter stays at 2
+    vault.cancel_early_redemption(&user, &request_id_1);
+    assert_eq!(vault.next_redemption_request_id(), 3u32);
+
+    // Request 3
+    let request_id_3 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_3, 3u32);
+    assert_eq!(vault.next_redemption_request_id(), 4u32);
+
+    // Reject request 2 — counter stays at 3
+    let reason = String::from_str(&env, "Rejected");
+    vault.reject_early_redemption(&operator, &request_id_2, &reason);
+    assert_eq!(vault.next_redemption_request_id(), 4u32);
+
+    // Request 4
+    let request_id_4 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_4, 4u32);
+    assert_eq!(vault.next_redemption_request_id(), 5u32);
+
+    // Process request 3 — counter stays at 4
+    vault.process_early_redemption(&admin, &request_id_3);
+    assert_eq!(vault.next_redemption_request_id(), 5u32);
+
+    // Request 5
+    let request_id_5 = vault.request_early_redemption(&user, &shares_to_redeem);
+    assert_eq!(request_id_5, 5u32);
+    assert_eq!(vault.next_redemption_request_id(), 6u32);
+
+    // Process request 4 — counter stays at 5
+    vault.process_early_redemption(&admin, &request_id_4);
+    assert_eq!(vault.next_redemption_request_id(), 6u32);
+
+    // Cancel request 5 — counter stays at 5
+    vault.cancel_early_redemption(&user, &request_id_5);
+    assert_eq!(vault.next_redemption_request_id(), 6u32);
+
+    // Final verification: IDs were strictly increasing from 1 to 5,
+    // and next_redemption_request_id is now 6
+    assert_eq!(vault.next_redemption_request_id(), 6u32);
+}
     // After this: user's live balance = 0 (shares are in escrow).
     let _ = v.request_early_redemption(&ctx.user, &shares);
     assert_eq!(v.balance(&ctx.user), 0, "user live balance must be zero");
