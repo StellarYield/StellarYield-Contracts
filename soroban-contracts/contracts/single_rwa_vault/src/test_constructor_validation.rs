@@ -33,7 +33,6 @@ fn get_valid_params(e: &Env) -> InitParams {
         timelock_delay: 172800u64, // 48 hours
         yield_vesting_period: 0u64,
         lock_up_period: 0u64,
-        max_investors: 0,
     }
 }
 
@@ -160,8 +159,6 @@ fn test_constructor_minimal_config() {
         timelock_delay: 0,
         yield_vesting_period: 0u64,
         lock_up_period: 0u64,
-
-        max_investors: 0,
     };
 
     // Must not panic during registration.
@@ -222,8 +219,6 @@ fn test_constructor_maximum_config() {
         timelock_delay: u64::MAX / 2,
         yield_vesting_period: u64::MAX / 2,
         lock_up_period: 0u64,
-
-        max_investors: 0,
     };
 
     // Must not panic during registration.

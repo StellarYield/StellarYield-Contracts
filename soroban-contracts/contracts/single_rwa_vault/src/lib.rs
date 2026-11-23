@@ -51,6 +51,8 @@ mod test_freeze_flags;
 #[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
+mod test_guard_errors;
+#[cfg(test)]
 mod test_helpers;
 #[cfg(test)]
 mod test_inflation_attack;
