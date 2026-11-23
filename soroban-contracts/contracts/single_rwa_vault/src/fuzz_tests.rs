@@ -72,7 +72,7 @@ fn setup() -> TestCtx {
     let vault_id = env.register(
         SingleRWAVault,
         (InitParams {
-            max_investors: 0,
+            max_investors: 0u32,
             asset: token_id.clone(),
             share_name: String::from_str(&env, "Fuzz Share"),
             share_symbol: String::from_str(&env, "FZ"),
@@ -95,6 +95,8 @@ fn setup() -> TestCtx {
             timelock_delay: 172800u64, // 48 hours
             yield_vesting_period: 0u64,
             lock_up_period: 0u64,
+
+            max_investors: 0,
         },),
     );
 

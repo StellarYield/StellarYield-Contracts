@@ -46,7 +46,7 @@ fn deploy(funding_deadline: u64) -> Ctx {
     let kyc_id = env.register(AlwaysApproveZkme, ());
 
     let params = InitParams {
-        max_investors: 0,
+        max_investors: 0u32,
         asset: asset_id.clone(),
         share_name: String::from_str(&env, "StellarYield Bond Share"),
         share_symbol: String::from_str(&env, "syBOND"),
@@ -69,6 +69,8 @@ fn deploy(funding_deadline: u64) -> Ctx {
         timelock_delay: 172800u64, // 48 hours
         yield_vesting_period: 0u64,
         lock_up_period: 0u64,
+
+        max_investors: 0,
     };
 
     let vault_id = env.register(SingleRWAVault, (params,));

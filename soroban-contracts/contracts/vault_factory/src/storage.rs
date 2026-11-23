@@ -181,6 +181,9 @@ pub fn put_vault_wasm_hash(e: &Env, val: BytesN<32>) {
 pub fn get_aggregator_vault(e: &Env) -> Option<Address> {
     e.storage().instance().get(&DataKey::AggregatorVault)
 }
+// No caller yet: aggregator vaults are unsupported (`create_aggregator_vault`
+// returns `NotSupported`), so nothing writes this slot. Kept as the write
+// counterpart to `get_aggregator_vault`.
 #[allow(dead_code)]
 pub fn put_aggregator_vault(e: &Env, val: Address) {
     e.storage().instance().set(&DataKey::AggregatorVault, &val);

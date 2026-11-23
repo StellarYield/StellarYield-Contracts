@@ -71,7 +71,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
     let vault_id = env.register(
         SingleRWAVault,
         (InitParams {
-            max_investors: 0,
+            max_investors: 0u32,
             asset: token_id.clone(),
             share_name: String::from_str(env, "Test Share"),
             share_symbol: String::from_str(env, "TS"),
@@ -94,6 +94,8 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             timelock_delay: 172800u64,
             yield_vesting_period: 0u64,
             lock_up_period: 0u64,
+
+            max_investors: 0,
         },),
     );
 

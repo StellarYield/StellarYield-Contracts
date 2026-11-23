@@ -2,9 +2,8 @@
 
 use soroban_sdk::contracterror;
 
-// `export = false`: the enum has more variants than the 50-case limit for
-// contract-spec error enums, so spec export is disabled. The TryFrom/From
-// conversions used by `panic_with_error!` are still generated.
+// Spec export is disabled: the enum has more variants than the 50-case limit
+// allowed by ScSpecUdtUnionV0, so spec generation would panic at compile time.
 #[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {

@@ -338,7 +338,7 @@ fn default_params(
     cooperator: Address,
 ) -> InitParams {
     InitParams {
-        max_investors: 0,
+        max_investors: 0u32,
         asset,
         share_name: String::from_str(env, "StellarYield Bond Share"),
         share_symbol: String::from_str(env, "syBOND"),
@@ -361,5 +361,6 @@ fn default_params(
         timelock_delay: 172800u64,  // 48 hours
         yield_vesting_period: 0u64, // Default to 0 for instant claiming (backward compatibility)
         lock_up_period: 0u64,       // Default to 0 for no lock-up (backward compatibility)
+        max_investors: 0,           // unlimited by default
     }
 }
