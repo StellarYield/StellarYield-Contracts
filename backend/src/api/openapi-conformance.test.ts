@@ -180,6 +180,9 @@ const VAULT = {
   logoUri: "https://example.com/logo.png",
   createdAt: new Date("2026-01-15T00:00:00.000Z"),
   updatedAt: new Date("2026-09-20T00:00:00.000Z"),
+  lastIndexedLedger: 12345678,
+  lastIndexedAt: new Date("2026-09-20T00:00:00.000Z"),
+  decimalsMismatch: false,
 };
 
 function makeRes() {
