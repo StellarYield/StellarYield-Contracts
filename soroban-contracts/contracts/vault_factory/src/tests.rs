@@ -61,6 +61,84 @@ pub fn setup_factory(e: &Env) -> (Address, Address) {
     (factory_id, admin)
 }
 
+fn zero_address(e: &Env) -> Address {
+    Address::from_str(
+        e,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    )
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_constructor_rejects_zero_default_asset() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let verifier = Address::generate(&e);
+    let cooperator = Address::generate(&e);
+    let wasm_hash = BytesN::<32>::from_array(&e, &[0u8; 32]);
+
+    e.register(
+        VaultFactory,
+        (
+            admin,
+            zero_address(&e),
+            verifier,
+            cooperator,
+            wasm_hash,
+        ),
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")]
+fn test_constructor_rejects_zero_default_verifier() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let asset = Address::generate(&e);
+    let cooperator = Address::generate(&e);
+    let wasm_hash = BytesN::<32>::from_array(&e, &[0u8; 32]);
+
+    e.register(
+        VaultFactory,
+        (
+            admin,
+            asset,
+            zero_address(&e),
+            cooperator,
+            wasm_hash,
+        ),
+    );
+}
+
+#[test]
+fn test_constructor_stores_all_defaults() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let asset = Address::generate(&e);
+    let verifier = Address::generate(&e);
+    let cooperator = Address::generate(&e);
+    let wasm_hash = BytesN::<32>::from_array(&e, &[7u8; 32]);
+
+    let factory_id = e.register(
+        VaultFactory,
+        (
+            admin.clone(),
+            asset.clone(),
+            verifier.clone(),
+            cooperator.clone(),
+            wasm_hash.clone(),
+        ),
+    );
+    let client = VaultFactoryClient::new(&e, &factory_id);
+
+    assert_eq!(client.admin(), admin);
+    assert_eq!(client.default_asset(), asset);
+    assert_eq!(client.default_zkme_verifier(), verifier);
+    assert_eq!(client.default_cooperator(), cooperator);
+    assert_eq!(client.vault_wasm_hash(), wasm_hash);
+    assert_eq!(client.default_operator_fee_bps(), 200);
+}
+
 /// Setup a test context with factory and necessary addresses.
 #[allow(dead_code)]
 pub fn setup_test_context() -> TestContext {
