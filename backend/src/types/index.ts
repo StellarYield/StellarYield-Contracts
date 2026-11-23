@@ -32,6 +32,9 @@ export interface Vault {
   logoUri: string | null;
   createdAt: Date;
   updatedAt: Date;
+  lastIndexedLedger: number | null;
+  lastIndexedAt: string | null;
+  decimalsMismatch: boolean;
   /** #1274 – post-maturity settlement status. null until vault reaches Matured state. */
   settlementStatus: "not_started" | "in_progress" | "complete" | null;
   /**

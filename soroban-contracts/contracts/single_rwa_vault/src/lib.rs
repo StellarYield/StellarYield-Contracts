@@ -21,6 +21,8 @@ mod test_burn_snapshot;
 #[cfg(test)]
 mod test_burn_yield_accounting;
 #[cfg(test)]
+mod test_can_deposit;
+#[cfg(test)]
 mod test_can_redeem;
 #[cfg(test)]
 mod test_claim_cursor;
@@ -1183,7 +1185,9 @@ impl SingleRWAVault {
 
             let mut status_code = 0u32;
 
-            if assets < min_dep {
+            if !Self::is_kyc_verified(e, user.clone()) {
+                status_code = Error::NotKYCVerified as u32;
+            } else if assets < min_dep {
                 status_code = Error::BelowMinimumDeposit as u32;
             } else if max_dep > 0 {
                 let already = get_user_deposited(e, &user);

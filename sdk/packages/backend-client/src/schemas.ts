@@ -29,6 +29,9 @@ export const VaultSchema = z.object({
   logoUri: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  lastIndexedLedger: z.number().nullable(),
+  lastIndexedAt: z.string().nullable(),
+  decimalsMismatch: z.boolean(),
 });
 
 export type Vault = z.infer<typeof VaultSchema>;

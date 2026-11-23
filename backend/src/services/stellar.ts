@@ -418,6 +418,17 @@ export async function readAsset(contractId: string): Promise<string> {
   return typeof raw === "string" ? raw : String(Object.values(raw)[0] ?? "");
 }
 
+export async function readVaultDecimals(contractId: string): Promise<number | null> {
+  try {
+    const value = await simulateRead<number>(contractId, "decimals");
+    const decimals = Number(value);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) return null;
+    return decimals;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Read the maximum deposit allowed per user from the contract.
  * Returns null on simulation error (e.g. vault types that don't expose it).

@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS vaults (
   total_shares_ever_burned NUMERIC NOT NULL DEFAULT 0,
   early_redemption_fee_bps INT DEFAULT 0,
   operator_fee_bps INT DEFAULT 0,
+  decimals        INT NULL CHECK (decimals IS NULL OR (decimals >= 0 AND decimals <= 18)),
+  decimals_mismatch BOOLEAN NOT NULL DEFAULT FALSE,
   expected_apy    INT,
   maturity_date   TIMESTAMPTZ,
   rwa_category    TEXT,
