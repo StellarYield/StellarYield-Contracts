@@ -96,6 +96,8 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             timelock_delay: 172800u64, // 48 hours
             yield_vesting_period: 0u64,
             lock_up_period: 0u64,
+
+            max_investors: 0,
         },),
     );
 

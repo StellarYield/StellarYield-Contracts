@@ -59,6 +59,8 @@ mod test_lifecycle;
 #[cfg(test)]
 mod test_lock_up;
 #[cfg(test)]
+mod test_monitoring;
+#[cfg(test)]
 mod test_multiple_deposit_times;
 #[cfg(test)]
 mod test_multisig_emergency;
