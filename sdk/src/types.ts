@@ -148,3 +148,15 @@ export interface VaultHealth {
   funding_progress: bigint;
   investor_count: number;
 }
+
+/** `single_rwa_vault::EpochData` (one element of `get_epoch_range`). */
+export interface EpochData {
+  epoch: number;
+  yield_amount: bigint;
+  total_shares: bigint;
+  yield_per_share: bigint;
+  timestamp: bigint;
+}
+
+/** Result of `get_epoch_range`: `EpochData` for each epoch in the requested range. */
+export type EpochRange = EpochData[];
