@@ -34,7 +34,6 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         timelock_delay: 0u64,
         yield_vesting_period: 0u64,
         lock_up_period: 0u64,
-        max_investors: 0,
     }
 }
 
