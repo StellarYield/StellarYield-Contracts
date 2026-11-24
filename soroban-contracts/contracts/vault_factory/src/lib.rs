@@ -102,14 +102,20 @@ impl VaultFactory {
         bump_instance(e);
     }
 
+    /// Returns the storage schema version currently persisted in instance storage.
+    /// Read-only and callable by anyone; compare with the latest version to decide
+    /// whether `migrate` is needed.
     pub fn storage_schema_version(e: &Env) -> u32 {
         get_storage_schema_version(e)
     }
 
+    /// Returns the contract version recorded in instance storage (0 if never recorded).
+    /// Read-only and callable by anyone.
     pub fn contract_version(e: &Env) -> u32 {
         get_contract_version(e)
     }
 
+    /// Alias of `contract_version`; returns the same value. Read-only and callable by anyone.
     pub fn version(e: &Env) -> u32 {
         get_contract_version(e)
     }
@@ -347,6 +353,9 @@ impl VaultFactory {
         bump_instance(e);
     }
 
+    /// Marks a registered vault active or inactive. Admin only; requires a current storage schema.
+    /// Errors: `NotAuthorized` (non-admin), `MigrationRequired` (outdated schema),
+    /// `VaultNotFound` (unregistered vault).
     pub fn set_vault_status(e: &Env, caller: Address, vault: Address, active: bool) {
         caller.require_auth();
         require_current_schema(e);
@@ -398,6 +407,8 @@ impl VaultFactory {
         result
     }
 
+    /// Returns the stored `VaultInfo` for `vault`, or `None` if it is not registered.
+    /// Read-only and callable by anyone.
     pub fn get_vault_info(e: &Env, vault: Address) -> Option<VaultInfo> {
         get_vault_info(e, &vault)
     }
@@ -454,6 +465,7 @@ impl VaultFactory {
         results
     }
 
+    /// Returns `true` if `vault` is registered with this factory. Read-only and callable by anyone.
     pub fn is_registered_vault(e: &Env, vault: Address) -> bool {
         get_vault_info(e, &vault).is_some()
     }
@@ -665,6 +677,8 @@ impl VaultFactory {
         result
     }
 
+    /// Returns the configured aggregator vault, or `None` if none has been set.
+    /// Read-only and callable by anyone.
     pub fn aggregator_vault(e: &Env) -> Option<Address> {
         get_aggregator_vault(e)
     }
@@ -764,6 +778,9 @@ impl VaultFactory {
     // Admin functions
     // ─────────────────────────────────────────────────────────────────
 
+    /// Transfers the admin role to `new_admin`. Admin only; requires a current storage schema.
+    /// Errors: `NotAuthorized` (non-admin), `InvalidInitParams` (`new_admin` is the
+    /// factory itself), `MigrationRequired`.
     pub fn transfer_admin(e: &Env, caller: Address, new_admin: Address) {
         caller.require_auth();
         require_current_schema(e);
@@ -819,6 +836,10 @@ impl VaultFactory {
         bump_instance(e);
     }
 
+    /// Updates the factory-wide default asset, zkMe verifier, and cooperator.
+    /// Admin only; requires a current schema.
+    /// Errors: `NotAuthorized` (non-admin), `InvalidInitParams` (any address is the
+    /// factory itself), `MigrationRequired`.
     pub fn set_defaults(
         e: &Env,
         caller: Address,
@@ -839,6 +860,8 @@ impl VaultFactory {
         bump_instance(e);
     }
 
+    /// Replaces the WASM hash used to deploy new vaults. Admin only.
+    /// Errors: `NotAuthorized` (non-admin), `InvalidWasmHash` (all-zero hash).
     pub fn set_vault_wasm_hash(e: &Env, caller: Address, hash: BytesN<32>) {
         caller.require_auth();
         require_admin(e, &caller);
@@ -851,15 +874,20 @@ impl VaultFactory {
         bump_instance(e);
     }
 
+    /// Returns the current factory admin address. Read-only and callable by anyone.
     pub fn admin(e: &Env) -> Address {
         get_admin(e)
     }
+    /// Returns `true` if `account` holds the `FullOperator` role. Read-only and callable by anyone.
+    /// The admin is not counted unless it also holds that role.
     pub fn is_operator(e: &Env, account: Address) -> bool {
         get_operator(e, &account)
     }
+    /// Returns the default underlying asset applied to new vaults. Read-only; panics if never set.
     pub fn default_asset(e: &Env) -> Address {
         get_default_asset(e)
     }
+    /// Returns the default zkMe verifier applied to new vaults. Read-only; panics if never set.
     pub fn default_zkme_verifier(e: &Env) -> Address {
         get_default_zkme_verifier(e)
     }
@@ -903,6 +931,7 @@ impl VaultFactory {
         get_default_cooperator(e)
     }
 
+    /// Returns the WASM hash used to deploy new vaults. Read-only; panics if never set.
     pub fn vault_wasm_hash(e: &Env) -> BytesN<32> {
         get_vault_wasm_hash(e)
     }
@@ -911,6 +940,9 @@ impl VaultFactory {
     // Internal: deploy + initialise a vault
     // ─────────────────────────────────────────────────────────────────
 
+    // Takes the vault parameters flattened (20 arguments in total) so each public
+    // entry point can forward its arguments directly without an intermediate
+    // struct. Exceeds clippy's `too-many-arguments-threshold` of 12 (clippy.toml).
     #[allow(clippy::too_many_arguments)]
     fn _create_single_rwa_vault(
         e: &Env,

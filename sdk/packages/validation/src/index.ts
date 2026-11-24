@@ -95,6 +95,9 @@ export const VaultSchema = z.object({
   logoUri: z.string().nullable(),
   createdAt: isoDate,
   updatedAt: isoDate,
+  lastIndexedLedger: z.number().int().nullable(),
+  lastIndexedAt: isoDate.nullable(),
+  decimalsMismatch: z.boolean(),
 });
 
 /** A single yield-distribution epoch for a vault. */

@@ -36,6 +36,9 @@ export interface ApiVault {
   createdAt: string;
   /** ISO-8601 timestamp. */
   updatedAt: string;
+  lastIndexedLedger: number | null;
+  lastIndexedAt: string | null;
+  decimalsMismatch: boolean;
 }
 
 /**

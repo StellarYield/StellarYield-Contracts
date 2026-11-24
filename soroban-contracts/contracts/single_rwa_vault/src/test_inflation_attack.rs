@@ -11,6 +11,7 @@ use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 
 fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
     InitParams {
+        max_investors: 0u32,
         asset: asset.clone(),
         share_name: String::from_str(env, "Vault Share"),
         share_symbol: String::from_str(env, "VS"),

@@ -151,7 +151,10 @@ export interface paths {
                          *           "description": "Tokenized short-term US Treasury bills",
                          *           "logoUri": "https://example.com/logo.png",
                          *           "createdAt": "2026-01-15T00:00:00.000Z",
-                         *           "updatedAt": "2026-09-20T00:00:00.000Z"
+                         *           "updatedAt": "2026-09-20T00:00:00.000Z",
+                         *           "lastIndexedLedger": 12345678,
+                         *           "lastIndexedAt": "2026-09-20T00:00:00.000Z",
+                         *           "decimalsMismatch": false
                          *         }
                          *       ],
                          *       "total": 1,
@@ -447,7 +450,10 @@ export interface components {
          *       "fundingProgress": 20.5,
          *       "rwaCategory": "Government Debt",
          *       "createdAt": "2026-01-15T00:00:00.000Z",
-         *       "updatedAt": "2026-09-20T00:00:00.000Z"
+         *       "updatedAt": "2026-09-20T00:00:00.000Z",
+         *       "lastIndexedLedger": 12345678,
+         *       "lastIndexedAt": "2026-09-20T00:00:00.000Z",
+         *       "decimalsMismatch": false
          *     }
          */
         Vault: {
@@ -472,6 +478,10 @@ export interface components {
             totalAssets: string;
             /** @example 950000000000 */
             totalSupply: string;
+            /** @example 960000000000 */
+            totalSharesEverMinted?: string;
+            /** @example 10000000000 */
+            totalSharesEverBurned?: string;
             /** @example 42 */
             depositorCount: number;
             /** @example 5000000000000 */
@@ -480,12 +490,34 @@ export interface components {
             fundingDeadline?: string | null;
             /** @example 20.5 */
             fundingProgress?: number | null;
+            /** @example 10000000 */
+            minDeposit?: string | null;
+            /** @example 100000000000 */
+            maxDepositPerUser?: string | null;
+            /** @example CDVBDO2GW7445HWUITG6E437GZERAUYBG4X5HZRQC2ZEFMV3Y5HGDY52 */
+            zkmeVerifier?: string | null;
+            /** @example US Treasury Bill */
+            rwaName?: string | null;
+            /** @example USTB */
+            rwaSymbol?: string | null;
+            /** @example https://example.com/docs/tbill.pdf */
+            rwaDocumentUri?: string | null;
             /** @example Government Debt */
             rwaCategory?: string | null;
+            /** @example Tokenized short-term US Treasury bills */
+            description?: string | null;
+            /** @example https://example.com/logo.png */
+            logoUri?: string | null;
             /** @example 2026-01-15T00:00:00.000Z */
             createdAt: string;
             /** @example 2026-09-20T00:00:00.000Z */
             updatedAt: string;
+            /** @example 12345678 */
+            lastIndexedLedger: number | null;
+            /** @example 2026-09-20T00:00:00.000Z */
+            lastIndexedAt: string | null;
+            /** @example false */
+            decimalsMismatch: boolean;
         };
         /**
          * @example {
