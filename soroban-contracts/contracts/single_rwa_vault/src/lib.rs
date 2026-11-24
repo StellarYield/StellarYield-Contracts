@@ -37,6 +37,10 @@ mod test_convert_erc4626;
 #[cfg(test)]
 mod test_deposit_limits;
 #[cfg(test)]
+mod test_dust_preview;
+#[cfg(test)]
+mod test_timelock_errors;
+#[cfg(test)]
 mod test_epoch_activity;
 #[cfg(test)]
 mod test_epoch_history;
