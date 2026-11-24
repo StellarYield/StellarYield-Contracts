@@ -1522,3 +1522,118 @@ fn test_default_operator_fee_bps_returns_constructor_default() {
         "default_operator_fee_bps must return 200 (2%) as set in the constructor"
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #1375 — VaultAlreadyExists on duplicate name and symbol creation
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Seed the registry with one vault ("Test Vault" / "TV") and return the
+/// client, operator (admin), and a snapshot of the registry.
+fn setup_duplicate_case(
+    e: &Env,
+) -> (
+    VaultFactoryClient<'_>,
+    Address,
+    soroban_sdk::Vec<Address>,
+) {
+    e.mock_all_auths();
+    let (factory_id, admin) = setup_factory(e);
+    inject_vault(e, &factory_id, true);
+    let client = VaultFactoryClient::new(e, &factory_id);
+    let snapshot = client.get_all_vaults();
+    assert_eq!(snapshot.len(), 1);
+    (client, admin, snapshot)
+}
+
+fn duplicate_params(e: &Env) -> crate::types::BatchVaultParams {
+    crate::types::BatchVaultParams {
+        asset: Address::generate(e),
+        name: String::from_str(e, "Test Vault"),
+        symbol: String::from_str(e, "TV"),
+        rwa_name: String::from_str(e, "RWA"),
+        rwa_symbol: String::from_str(e, "R"),
+        rwa_document_uri: String::from_str(e, "https://example.com"),
+        rwa_category: String::from_str(e, "Bond"),
+        expected_apy: 500,
+        maturity_date: e.ledger().timestamp() + 1_000_000,
+        funding_deadline: 0,
+        funding_target: 0,
+        min_deposit: 0,
+        max_deposit_per_user: 0,
+        early_redemption_fee_bps: 200,
+        share_decimals: None,
+        vault_admin: None,
+        zkme_verifier: None,
+        cooperator: None,
+        max_investors: None,
+    }
+}
+
+fn assert_registry_unchanged(client: &VaultFactoryClient<'_>, snapshot: &soroban_sdk::Vec<Address>) {
+    assert_eq!(client.get_all_vaults(), snapshot.clone());
+    assert_eq!(client.get_vault_count(), snapshot.len());
+}
+
+#[test]
+fn test_create_single_rwa_vault_rejects_duplicate_name_symbol() {
+    let e = Env::default();
+    let (client, admin, snapshot) = setup_duplicate_case(&e);
+    let p = duplicate_params(&e);
+
+    let res = client.try_create_single_rwa_vault(
+        &admin,
+        &p.asset,
+        &p.name,
+        &p.symbol,
+        &p.rwa_name,
+        &p.rwa_symbol,
+        &p.rwa_document_uri,
+        &p.maturity_date,
+    );
+    assert_eq!(res, Err(Ok(crate::errors::Error::VaultAlreadyExists)));
+    assert_registry_unchanged(&client, &snapshot);
+}
+
+#[test]
+fn test_create_single_rwa_vault_full_rejects_duplicate_name_symbol() {
+    let e = Env::default();
+    let (client, admin, snapshot) = setup_duplicate_case(&e);
+
+    let res = client.try_create_single_rwa_vault_full(&admin, &duplicate_params(&e));
+    assert_eq!(res, Err(Ok(crate::errors::Error::VaultAlreadyExists)));
+    assert_registry_unchanged(&client, &snapshot);
+}
+
+#[test]
+fn test_create_single_rwa_vault_batch_rejects_duplicate_name_symbol() {
+    let e = Env::default();
+    let (client, admin, snapshot) = setup_duplicate_case(&e);
+
+    let res = client.try_create_single_rwa_vault_batch(&admin, &duplicate_params(&e));
+    assert_eq!(res, Err(Ok(crate::errors::Error::VaultAlreadyExists)));
+    assert_registry_unchanged(&client, &snapshot);
+}
+
+#[test]
+fn test_batch_create_vaults_rejects_duplicate_name_symbol() {
+    let e = Env::default();
+    let (client, admin, snapshot) = setup_duplicate_case(&e);
+
+    let mut params: soroban_sdk::Vec<crate::types::BatchVaultParams> = soroban_sdk::Vec::new(&e);
+    params.push_back(duplicate_params(&e));
+
+    let res = client.try_batch_create_vaults(&admin, &params);
+    assert_eq!(res, Err(Ok(crate::errors::Error::VaultAlreadyExists)));
+    assert_registry_unchanged(&client, &snapshot);
+}
+
+#[test]
+fn test_create_aggregator_vault_rejects_duplicate_name_symbol() {
+    let e = Env::default();
+    let (client, admin, snapshot) = setup_duplicate_case(&e);
+    let p = duplicate_params(&e);
+
+    let res = client.try_create_aggregator_vault(&admin, &p.asset, &p.name, &p.symbol);
+    assert_eq!(res, Err(Ok(crate::errors::Error::VaultAlreadyExists)));
+    assert_registry_unchanged(&client, &snapshot);
+}

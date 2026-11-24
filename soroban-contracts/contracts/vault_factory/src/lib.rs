@@ -312,9 +312,10 @@ impl VaultFactory {
         e: &Env,
         _caller: Address,
         _asset: Address,
-        _name: String,
-        _symbol: String,
+        name: String,
+        symbol: String,
     ) -> Address {
+        require_unique_name_symbol(e, &name, &symbol);
         panic_with_error!(e, Error::NotSupported);
     }
 
@@ -969,6 +970,7 @@ impl VaultFactory {
         max_investors: Option<u32>,
     ) -> Address {
         // --- Validation ---
+        require_unique_name_symbol(e, &name, &symbol);
         if asset == e.current_contract_address() {
             panic_with_error!(e, Error::InvalidInitParams);
         }
@@ -1147,4 +1149,12 @@ fn require_current_schema(e: &Env) {
 
 fn panic_not_found(e: &Env) -> ! {
     panic_with_error!(e, Error::VaultNotFound);
+}
+
+/// Panics with `VaultAlreadyExists` if a registered vault already uses the
+/// given `name` and `symbol` pair.
+fn require_unique_name_symbol(e: &Env, name: &String, symbol: &String) {
+    if VaultFactory::vault_exists_by_name_symbol(e, name.clone(), symbol.clone()).is_some() {
+        panic_with_error!(e, Error::VaultAlreadyExists);
+    }
 }
