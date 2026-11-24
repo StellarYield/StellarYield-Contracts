@@ -68,13 +68,14 @@ export function Badge({
 export function Notice({
   children,
   tone = "neutral",
+  ...rest
 }: {
   children: ReactNode;
   tone?: "neutral" | "accent" | "info" | "warn" | "danger";
-}) {
+} & React.HTMLAttributes<HTMLDivElement>) {
   const cls = tone === "neutral" ? "notice" : `notice notice-${tone}`;
   return (
-    <div className={cls}>
+    <div className={cls} {...rest}>
       <div className="notice-body">{children}</div>
     </div>
   );
@@ -106,6 +107,8 @@ export function AmountInput({
   placeholder = "0.00",
   disabled,
   onMax,
+  id,
+  maxLabel,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -113,10 +116,13 @@ export function AmountInput({
   placeholder?: string;
   disabled?: boolean;
   onMax?: () => void;
+  id?: string;
+  maxLabel?: string;
 }) {
   return (
     <div className="input-wrap">
       <input
+        id={id}
         inputMode="decimal"
         value={value}
         placeholder={placeholder}
@@ -124,7 +130,12 @@ export function AmountInput({
         onChange={(e) => onChange(e.target.value)}
       />
       {onMax ? (
-        <button type="button" className="btn btn-soft btn-sm" onClick={onMax}>
+        <button
+          type="button"
+          className="btn btn-soft btn-sm"
+          onClick={onMax}
+          aria-label={maxLabel}
+        >
           Max
         </button>
       ) : null}

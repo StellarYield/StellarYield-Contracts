@@ -21,6 +21,8 @@ mod test_burn_snapshot;
 #[cfg(test)]
 mod test_burn_yield_accounting;
 #[cfg(test)]
+mod test_can_deposit;
+#[cfg(test)]
 mod test_can_redeem;
 #[cfg(test)]
 mod test_claim_cursor;
@@ -51,6 +53,8 @@ mod test_freeze_flags;
 #[cfg(test)]
 mod test_funding_deadline;
 #[cfg(test)]
+mod test_guard_errors;
+#[cfg(test)]
 mod test_helpers;
 #[cfg(test)]
 mod test_inflation_attack;
@@ -58,6 +62,8 @@ mod test_inflation_attack;
 mod test_lifecycle;
 #[cfg(test)]
 mod test_lock_up;
+#[cfg(test)]
+mod test_monitoring;
 #[cfg(test)]
 mod test_multiple_deposit_times;
 #[cfg(test)]
@@ -78,6 +84,8 @@ mod test_share_price_oracle;
 mod test_token;
 #[cfg(test)]
 mod test_vault_state_guards;
+#[cfg(test)]
+mod test_versioning_and_guards;
 #[cfg(test)]
 mod test_withdraw;
 #[cfg(test)]
@@ -339,9 +347,12 @@ impl SingleRWAVault {
         client.has_approved(&coop, &user)
     }
 
+    /// Canonical getter for the zkMe verifier address.
+    /// Alias: `get_zkme_verifier`.
     pub fn zkme_verifier(e: &Env) -> Address {
         get_zkme_verifier(e)
     }
+    /// Alias for canonical `zkme_verifier()`. Use `zkme_verifier()` in new integrations.
     pub fn get_zkme_verifier(e: &Env) -> Address {
         get_zkme_verifier(e)
     }
@@ -356,6 +367,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
+        require_valid_address(e, &verifier);
         let old = get_zkme_verifier(e);
         put_zkme_verifier(e, verifier.clone());
         emit_zkme_verifier_updated(e, caller, old, verifier);
@@ -1131,8 +1143,7 @@ impl SingleRWAVault {
         const MAX_BATCH: u32 = 50;
         let mut results: Vec<DepositCheckResult> = Vec::new(e);
 
-        #[allow(clippy::unnecessary_cast)]
-        let actual_len = users.len().min(amounts.len()) as u32;
+        let actual_len = users.len().min(amounts.len());
         if actual_len == 0 {
             return results;
         }
@@ -1174,7 +1185,9 @@ impl SingleRWAVault {
 
             let mut status_code = 0u32;
 
-            if assets < min_dep {
+            if !Self::is_kyc_verified(e, user.clone()) {
+                status_code = Error::NotKYCVerified as u32;
+            } else if assets < min_dep {
                 status_code = Error::BelowMinimumDeposit as u32;
             } else if max_dep > 0 {
                 let already = get_user_deposited(e, &user);
@@ -1778,10 +1791,12 @@ impl SingleRWAVault {
         vested_amount - already_claimed
     }
 
+    /// Canonical getter for the current epoch number.
+    /// Alias: `get_current_epoch`.
     pub fn current_epoch(e: &Env) -> u32 {
         get_current_epoch(e)
     }
-    /// Alias getter for integrations expecting `get_*` naming.
+    /// Alias for canonical `current_epoch()`.
     pub fn get_current_epoch(e: &Env) -> u32 {
         get_current_epoch(e)
     }
@@ -2133,10 +2148,12 @@ impl SingleRWAVault {
     ///   if the underlying RWA term is extended.
     /// - **Maturity Check**: Clients should compare this value with the current
     ///   ledger timestamp to determine if the term has ended.
+    /// Canonical getter for vault maturity date timestamp.
+    /// Alias: `get_maturity_date`.
     pub fn maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
     }
-    /// Alias getter for integrations expecting `get_*` naming.
+    /// Alias for canonical `maturity_date()`.
     pub fn get_maturity_date(e: &Env) -> u64 {
         get_maturity_date(e)
     }
@@ -2369,9 +2386,12 @@ impl SingleRWAVault {
     ///   `Active` states to ensure position sizes remain manageable.
     /// - **Units**: Expressed in the vault's underlying asset units, consistent
     ///   with `decimals()`.
+    /// Canonical getter for minimum deposit amount.
+    /// Alias: `get_min_deposit`.
     pub fn min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
+    /// Alias for canonical `min_deposit()`.
     pub fn get_min_deposit(e: &Env) -> i128 {
         get_min_deposit(e)
     }
@@ -2946,6 +2966,7 @@ impl SingleRWAVault {
     ) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &addr);
         put_role(e, addr.clone(), role.clone(), false);
         if role == Role::FullOperator {
             emit_operator_removed(e, caller.clone(), addr.clone(), reason.clone());
@@ -3146,6 +3167,7 @@ impl SingleRWAVault {
     }
 
     /// Internal emergency withdraw function (bypasses timelock when paused).
+    // No callers in this crate; the public `emergency_withdraw` does not route through it.
     #[allow(dead_code)]
     fn emergency_withdraw_internal(e: &Env, recipient: Address, amount: i128) {
         require_positive(e, amount);
@@ -3187,6 +3209,7 @@ impl SingleRWAVault {
         caller.require_auth();
         // ComplianceOfficer role required — also passes for FullOperator and admin.
         require_role(e, &caller, Role::ComplianceOfficer);
+        require_valid_address(e, &address);
         put_blacklisted(e, &address, status);
         emit_address_blacklisted(e, address, status);
         bump_instance(e);
@@ -3310,6 +3333,7 @@ impl SingleRWAVault {
     pub fn set_transfer_exempt(e: &Env, caller: Address, address: Address, exempt: bool) {
         caller.require_auth();
         require_admin(e, &caller);
+        require_valid_address(e, &address);
         put_transfer_exempt(e, &address, exempt);
         emit_transfer_exemption_set(e, address, exempt);
         bump_instance(e);
@@ -3357,7 +3381,8 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    /// Returns true if the vault is currently paused.
+    /// Canonical getter for paused status.
+    /// Aliases: `is_paused`, `is_pause`.
     ///
     /// When paused, all state-changing operations except for `unpause` and
     /// `emergency_withdraw` are blocked.
@@ -3365,12 +3390,12 @@ impl SingleRWAVault {
         get_paused(e)
     }
 
-    /// Alias for `paused()`. Returns true if the vault is currently paused.
+    /// Alias for canonical `paused()`. Returns true if the vault is currently paused.
     pub fn is_paused(e: &Env) -> bool {
         get_paused(e)
     }
 
-    /// Alias for `paused()`. Returns true if the vault is currently paused.
+    /// Alias for canonical `paused()`. Returns true if the vault is currently paused.
     pub fn is_pause(e: &Env) -> bool {
         get_paused(e)
     }
@@ -3824,12 +3849,6 @@ impl SingleRWAVault {
         get_escrowed_shares(e, &id)
     }
 
-    /// Returns the vault's current asset token balance.
-    /// Allows frontends to verify vault solvency before submitting transactions.
-    pub fn vault_asset_balance(e: &Env) -> i128 {
-        asset_balance_of_vault(e)
-    }
-
     pub fn transfer(e: &Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
         require_lock_up_elapsed(e, &from);
@@ -3977,10 +3996,17 @@ impl SingleRWAVault {
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Validates that an address is not the zero-equivalent (contract's own address).
-/// This prevents null-like semantics where the contract address is used as a placeholder.
-fn require_valid_address(_e: &Env, _addr: &Address) {
-    // No-op for now to avoid blocking contract's own address which is used as a KYC bypass.
+/// Validates that an address is not the Stellar null address (all-zero account
+/// key, `GAAA…WHF`).  The contract's own address is intentionally allowed: it
+/// is used as the zkMe KYC-bypass sentinel (see `is_kyc_verified`).
+fn require_valid_address(e: &Env, addr: &Address) {
+    let zero = Address::from_str(
+        e,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    if addr == &zero {
+        panic_with_error!(e, Error::ZeroAddress);
+    }
 }
 
 /// A tiny helper reduces duplicated panic/error messages and centralizes formatting.

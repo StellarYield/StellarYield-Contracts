@@ -135,7 +135,7 @@ class JobQueue {
         const sendProgress = async (data: { progress: number }) => {
           await this.updateJobProgress(String(job.id), data.progress);
         };
-        (job as any).send = sendProgress;
+        Object.assign(job, { send: sendProgress });
 
         await runWithMetrics("indexer-backfill", async () => {
           const { fromLedger, toLedger } = job.data as {

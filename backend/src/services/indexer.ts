@@ -27,7 +27,8 @@ import { recordRpcSuccess, recordRpcError } from "./rpcMonitor.js";
 import { timedRpcCall } from "./rpcClient.js";
 import { TOPIC_EVENT_TYPES } from "./indexerEventTypes.js";
 import { logSystemAudit } from "./adminAuditLog.js";
-import { recordLedgerAnchor, ledgerToTimestamp } from "./ledgerEstimator.js";
+import { recordLedgerAnchor } from "./ledgerEstimator.js";
+import { decodeAddress, decodeI128, decodeVec } from "../stellar/scval.js";
 
 // ── Lightweight trace spans (#827) ────────────────────────────────────────────
 // No external tracing dependency — spans are emitted as structured pino log
@@ -331,6 +332,30 @@ export class Indexer {
     }
   }
 
+  getBatchSize(): number {
+    return this.currentBatchSize;
+  }
+
+  private tuneBatchSize(durationMs: number, failure = false): void {
+    if (failure) {
+      this.currentBatchSize = Math.max(this.minBatchSize, Math.floor(this.currentBatchSize / 2));
+      this.consecutiveFastBatches = 0;
+      return;
+    }
+    if (durationMs < 500) {
+      this.consecutiveFastBatches += 1;
+      if (this.consecutiveFastBatches >= 3) {
+        this.currentBatchSize = Math.min(this.maxBatchSize, this.currentBatchSize * 2);
+        this.consecutiveFastBatches = 0;
+      }
+    } else if (durationMs > 5000) {
+      this.currentBatchSize = Math.max(this.minBatchSize, Math.floor(this.currentBatchSize / 2));
+      this.consecutiveFastBatches = 0;
+    } else {
+      this.consecutiveFastBatches = 0;
+    }
+  }
+
   async start(): Promise<void> {
     this.running = true;
 
@@ -476,7 +501,9 @@ export class Indexer {
     await this.loadContractControls();
     await this.replayResumedContracts();
 
+    const batchStartedAt = Date.now();
     const endBatchTimer = indexerProcessingDurationSeconds.startTimer();
+    const batchDurationMs = () => Date.now() - batchStartedAt;
     const contractIds = this.activeContractIds();
 
     let events: any[] = [];
@@ -511,6 +538,7 @@ export class Indexer {
         for (const event of events) {
           await this.processEvent(event, tickSpan);
         }
+        await this.saveContractIndexingCursors(contractIds, batchTo, events);
         await this.saveLastIndexedLedger(latestLedger);
         await this.recordAnchorsIfNeeded(from, latestLedger, events);
       });
@@ -521,10 +549,16 @@ export class Indexer {
       return;
     }
 
+    try {
+      await this.validateVaultDecimalsForEvents(events);
+    } catch (err) {
+      logger.warn({ err }, "Failed to validate vault decimals after tick");
+    }
+
     // Only tune on a tick that actually advanced the cursor: an idle poll that
     // found no new ledgers would otherwise inflate the fast-batch streak.
     if (batchTo > this.lastLedger) {
-      this.tuneBatchSize(batchDurationMs);
+      this.tuneBatchSize(batchDurationMs());
     }
 
     await this.notificationService?.processRetries();
@@ -580,10 +614,17 @@ export class Indexer {
             );
             await this.processEvent(event);
           }
+          await this.saveContractIndexingCursors(contractIds, batchTo, resp.events);
           await this.saveLastIndexedLedger(batchTo);
           await this.recordAnchorsIfNeeded(cursor + 1, batchTo, resp.events);
         });
         endBatchTimer();
+
+        try {
+          await this.validateVaultDecimalsForEvents(resp.events);
+        } catch (err) {
+          logger.warn({ err }, "Failed to validate vault decimals after backfill");
+        }
 
         cursor = batchTo;
         this.lastLedger = cursor;
@@ -2374,6 +2415,98 @@ export class Indexer {
        ON CONFLICT (id) DO UPDATE SET last_ledger = EXCLUDED.last_ledger, updated_at = NOW()`,
       [ledger],
     );
+  }
+
+  async saveContractIndexingCursors(
+    contractIds: string[],
+    ledger: number,
+    events: any[] = [],
+  ): Promise<void> {
+    const indexedAt = new Date();
+    const cursors = new Map<string, { ledger: number; at: Date }>();
+
+    for (const event of events) {
+      const contractId = event?.contractId;
+      if (!contractId || this.contractControls.get(contractId)?.indexingPaused) continue;
+      const eventLedger = Number(event?.ledger);
+      if (!Number.isInteger(eventLedger) || eventLedger < 0) continue;
+      const eventAt = eventChangedAt(event);
+      const current = cursors.get(contractId);
+      if (
+        !current ||
+        eventLedger > current.ledger ||
+        (eventLedger === current.ledger && eventAt > current.at)
+      ) {
+        cursors.set(contractId, { ledger: eventLedger, at: eventAt });
+      }
+    }
+
+    for (const contractId of contractIds) {
+      if (!contractId || this.contractControls.get(contractId)?.indexingPaused) continue;
+      if (!cursors.has(contractId)) {
+        cursors.set(contractId, { ledger, at: indexedAt });
+      }
+    }
+
+    if (cursors.size === 0) return;
+
+    const ids: string[] = [];
+    const ledgers: number[] = [];
+    const timestamps: Date[] = [];
+    for (const [contractId, cursor] of cursors) {
+      ids.push(contractId);
+      ledgers.push(cursor.ledger);
+      timestamps.push(cursor.at);
+    }
+
+    await query(
+      `INSERT INTO indexer_contract_state (
+         contract_id, last_indexed_ledger, last_indexed_at, updated_at
+       )
+       SELECT c.contract_id, c.ledger, c.at, NOW()
+       FROM unnest($1::text[], $2::int[], $3::timestamptz[]) AS c(contract_id, ledger, at)
+       ON CONFLICT (contract_id) DO UPDATE SET
+         last_indexed_ledger = GREATEST(
+           COALESCE(indexer_contract_state.last_indexed_ledger, 0),
+           EXCLUDED.last_indexed_ledger
+         ),
+         last_indexed_at = CASE
+           WHEN indexer_contract_state.last_indexed_ledger IS NULL
+             OR EXCLUDED.last_indexed_ledger > indexer_contract_state.last_indexed_ledger
+             OR (EXCLUDED.last_indexed_ledger = indexer_contract_state.last_indexed_ledger
+               AND (indexer_contract_state.last_indexed_at IS NULL
+                 OR EXCLUDED.last_indexed_at > indexer_contract_state.last_indexed_at))
+           THEN EXCLUDED.last_indexed_at
+           ELSE indexer_contract_state.last_indexed_at
+         END,
+         updated_at = NOW()`,
+      [ids, ledgers, timestamps],
+    );
+
+    for (const contractId of ids) {
+      await cacheDel(`vault:${contractId}`);
+    }
+    await cacheDel("vaults:list:*");
+  }
+
+  private async validateVaultDecimalsForEvents(events: any[]): Promise<void> {
+    const contractIds = [...new Set(
+      events
+        .map((event) => event?.contractId)
+        .filter((contractId): contractId is string => !!contractId)
+        .filter((contractId) => contractId !== this.vaultFactoryContractId)
+        .filter((contractId) => !this.contractControls.get(contractId)?.indexingPaused),
+    )];
+    if (contractIds.length === 0) return;
+
+    const rows = await query<{ contract_id: string }>(
+      `SELECT contract_id FROM vaults WHERE contract_id = ANY($1::text[])`,
+      [contractIds],
+    );
+    const vaultContractIds = rows.map((row) => row.contract_id);
+    if (vaultContractIds.length === 0) return;
+
+    await this.vaultService.validateVaultDecimals?.(vaultContractIds);
   }
 
   /**

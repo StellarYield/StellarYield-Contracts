@@ -43,7 +43,7 @@ export class TvlPubSub extends EventEmitter {
       [Symbol.asyncIterator]() {
         return this;
       },
-      async next(): Promise<IteratorResult<VaultTvlUpdatePayload>> {
+      async next(): Promise<IteratorResult<VaultTvlUpdatePayload, undefined>> {
         while (listening) {
           if (queue.length > 0) {
             return { value: queue.shift()!, done: false };
@@ -52,11 +52,11 @@ export class TvlPubSub extends EventEmitter {
             notify = resolve;
           });
         }
-        return { value: undefined as any, done: true };
+        return { value: undefined, done: true };
       },
-      async return(): Promise<IteratorResult<VaultTvlUpdatePayload>> {
+      async return(): Promise<IteratorResult<VaultTvlUpdatePayload, undefined>> {
         cleanup();
-        return { value: undefined as any, done: true };
+        return { value: undefined, done: true };
       },
       async throw(err?: any): Promise<IteratorResult<VaultTvlUpdatePayload>> {
         cleanup();

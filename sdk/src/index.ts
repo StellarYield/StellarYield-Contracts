@@ -10,3 +10,4 @@ export * from "./vault-factory-client.js";
 export * from "./utils.js";
 export * from "./freighter.js";
 export * from "./events/parse.js";
+export * from "./errors.js";

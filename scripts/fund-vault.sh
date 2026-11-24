@@ -4,6 +4,7 @@
 #
 # Usage:
 #   ./scripts/fund-vault.sh [--non-interactive]
+#   ./scripts/fund-vault.sh --help
 #
 # Environment variables (all prompted if not set):
 #   VAULT_ADDRESS    — contract ID of the target vault
@@ -34,41 +35,49 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTRACT_DIR="$SCRIPT_DIR/../soroban-contracts"
 ENV_FILE="$CONTRACT_DIR/.env.testnet"
 
+source "$SCRIPT_DIR/lib/common.sh"
+
 NETWORK="${NETWORK:-testnet}"
 NON_INTERACTIVE=false
-[[ "${1:-}" == "--non-interactive" ]] && NON_INTERACTIVE=true
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+usage() {
+    cat <<EOF
+Usage: ./scripts/fund-vault.sh [--non-interactive]
+       ./scripts/fund-vault.sh --help
 
-info()    { echo "[INFO]  $*"; }
-success() { echo "[OK]    $*"; }
-die()     { echo "[ERROR] $*" >&2; exit 1; }
+Approves and deposits test tokens into a StellarYield vault.
 
-prompt() {
-    local var_name="$1"
-    local prompt_text="$2"
-    local default="${3:-}"
-    local value
+Required environment variables (prompted if not set):
+  VAULT_ADDRESS   Contract ID of the target vault
+  DEPOSITOR       Stellar address making the deposit (must be KYC-verified)
 
-    if [[ -n "${!var_name:-}" ]]; then
-        return
-    fi
+Optional environment variables:
+  NETWORK          Stellar network (default: testnet)
+  SOURCE_ACCOUNT   Stellar CLI key name used to sign (default: default)
+  DEFAULT_ASSET    Contract ID used as the default ASSET
+  ASSET            Deposit asset contract ID
+  DEPOSIT_AMOUNT   Amount in stroops (default: 100000000)
+  RECEIVER_ADDRESS Address receiving vault shares (default: DEPOSITOR)
+  EXPIRY_LEDGER    Allowance expiry ledger (derived from the network if unset)
 
-    if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        [[ -n "$default" ]] && printf -v "$var_name" '%s' "$default" && return
-        die "Required variable '$var_name' not set and running non-interactively."
-    fi
+Options:
+  --non-interactive  Fail instead of prompting for missing variables.
+  -h, --help         Show this message and exit.
 
-    local display_default=""
-    [[ -n "$default" ]] && display_default=" [$default]"
-
-    read -rp "${prompt_text}${display_default}: " value
-    value="${value:-$default}"
-    [[ -z "$value" ]] && die "'$var_name' cannot be empty."
-    printf -v "$var_name" '%s' "$value"
+Example:
+  VAULT_ADDRESS=C... DEPOSITOR=G... DEPOSIT_AMOUNT=10000000 \\
+    ./scripts/fund-vault.sh --non-interactive
+EOF
 }
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        --non-interactive) NON_INTERACTIVE=true ;;
+        *) die "Unknown option '$1'. Try --help." ;;
+    esac
+    shift
+done
 
 # ---------------------------------------------------------------------------
 # Pre-flight
@@ -93,6 +102,17 @@ prompt DEPOSITOR        "Depositor Stellar address (G...) — must be KYC-verifi
 prompt SOURCE_ACCOUNT   "Stellar CLI key name for signing" "default"
 prompt DEPOSIT_AMOUNT   "Deposit amount in stroops (1 USDC = 10000000)" "100000000"
 prompt RECEIVER_ADDRESS "Receiver address for vault shares" "$DEPOSITOR"
+
+# Validate contract IDs locally before any network call.
+validate_contract_id() {
+    local var_name="$1"
+    local value="${!var_name:-}"
+    if [[ ! "$value" =~ ^C[A-Z2-7]{55}$ ]]; then
+        die "Invalid $var_name '$value': must be a 56-character Stellar contract ID starting with C and containing only base32 characters (A-Z, 2-7)."
+    fi
+}
+
+validate_contract_id VAULT_ADDRESS
 
 # Approve expiry — current ledger + ~30 days worth of ledgers (5s per ledger)
 # Approximate: 30 * 24 * 3600 / 5 = 518400 ledgers ahead

@@ -712,6 +712,16 @@ a {
   color: var(--text-muted);
 }
 
+/* Keyboard focus stays visible in both themes; pointer clicks do not show it. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--info);
+  outline-offset: 2px;
+}
+
 /* ------------------------------------------------------------ responsive -- */
 
 @media (max-width: 900px) {

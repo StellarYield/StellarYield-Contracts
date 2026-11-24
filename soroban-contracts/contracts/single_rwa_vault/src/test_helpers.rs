@@ -338,6 +338,7 @@ fn default_params(
     cooperator: Address,
 ) -> InitParams {
     InitParams {
+        max_investors: 0u32,
         asset,
         share_name: String::from_str(env, "StellarYield Bond Share"),
         share_symbol: String::from_str(env, "syBOND"),

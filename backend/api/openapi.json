@@ -105,7 +105,10 @@
                         "description": "Tokenized short-term US Treasury bills",
                         "logoUri": "https://example.com/logo.png",
                         "createdAt": "2026-01-15T00:00:00.000Z",
-                        "updatedAt": "2026-09-20T00:00:00.000Z"
+                        "updatedAt": "2026-09-20T00:00:00.000Z",
+                        "lastIndexedLedger": 12345678,
+                        "lastIndexedAt": "2026-09-20T00:00:00.000Z",
+                        "decimalsMismatch": false
                       }
                     ],
                     "total": 1,
@@ -138,7 +141,10 @@
                       "description": "Tokenized short-term US Treasury bills",
                       "logoUri": "https://example.com/logo.png",
                       "createdAt": "2026-01-15T00:00:00.000Z",
-                      "updatedAt": "2026-09-20T00:00:00.000Z"
+                      "updatedAt": "2026-09-20T00:00:00.000Z",
+                      "lastIndexedLedger": 12345678,
+                      "lastIndexedAt": "2026-09-20T00:00:00.000Z",
+                      "decimalsMismatch": false
                     }
                   ],
                   "total": 1,
@@ -320,7 +326,7 @@
     "schemas": {
       "Vault": {
         "type": "object",
-        "required": ["id", "contractId", "asset", "state", "totalAssets", "totalSupply", "depositorCount", "createdAt", "updatedAt"],
+        "required": ["id", "contractId", "asset", "state", "totalAssets", "totalSupply", "depositorCount", "createdAt", "updatedAt", "lastIndexedLedger", "lastIndexedAt", "decimalsMismatch"],
         "properties": {
           "id": { "type": "integer", "example": 1 },
           "contractId": { "type": "string", "example": "CAUZE223Z3225XAS6DTIAV3ZCK4SD3XSKURGALZJNSCW7CW5QYEHF557" },
@@ -347,7 +353,10 @@
           "description": { "type": "string", "nullable": true, "example": "Tokenized short-term US Treasury bills" },
           "logoUri": { "type": "string", "nullable": true, "example": "https://example.com/logo.png" },
           "createdAt": { "type": "string", "example": "2026-01-15T00:00:00.000Z" },
-          "updatedAt": { "type": "string", "example": "2026-09-20T00:00:00.000Z" }
+          "updatedAt": { "type": "string", "example": "2026-09-20T00:00:00.000Z" },
+          "lastIndexedLedger": { "type": "integer", "nullable": true, "example": 12345678 },
+          "lastIndexedAt": { "type": "string", "nullable": true, "example": "2026-09-20T00:00:00.000Z" },
+          "decimalsMismatch": { "type": "boolean", "example": false }
         },
         "example": {
           "id": 1,
@@ -365,7 +374,10 @@
           "fundingProgress": 20.5,
           "rwaCategory": "Government Debt",
           "createdAt": "2026-01-15T00:00:00.000Z",
-          "updatedAt": "2026-09-20T00:00:00.000Z"
+          "updatedAt": "2026-09-20T00:00:00.000Z",
+          "lastIndexedLedger": 12345678,
+          "lastIndexedAt": "2026-09-20T00:00:00.000Z",
+          "decimalsMismatch": false
         }
       },
       "TvlBucket": {

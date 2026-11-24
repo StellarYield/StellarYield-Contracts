@@ -186,6 +186,8 @@ Routes listed in `ROUTE_SLA_MS` emit `X-SLA-Ms`; responses exceeding the configu
 
 ## Documentation
 
+- [GraphQL API Guide](docs/graphql.md) - Endpoint, API key authentication, queries, and depth/complexity limits
+- [Feature Flags Guide](docs/feature-flags.md) - Flag definitions, evaluation precedence, route gating, and examples
 - [Webhook Documentation](docs/webhooks.md) - Webhook payload schemas and verification
 - [Indexer Architecture](docs/indexer.md) - Polling loop, event dispatch, dedup, and backfill
 - [Indexer Event Reference](docs/events.md) - Every event parser, its DB effect, and its webhook

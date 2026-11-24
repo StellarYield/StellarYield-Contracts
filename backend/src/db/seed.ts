@@ -1,9 +1,10 @@
 import { pool } from "./index.js";
+import { logger } from "../logger.js";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export async function seed() {
-  console.log("Seeding database...");
+  logger.info("Seeding database...");
 
   // Insert sample vaults
   await pool.query(`
@@ -13,7 +14,7 @@ export async function seed() {
       ('GALAXYVAULTCONTRACTID123456789', 'FACTORY123', 'USDC', 'USD Coin Vault', 'SVUSDC', 'Active', 2500000, 1200000)
     ON CONFLICT (contract_id) DO NOTHING
   `);
-  console.log("Inserted 2 sample vaults");
+  logger.info("Inserted 2 sample vaults");
 
   // Insert sample user
   await pool.query(`
@@ -21,9 +22,9 @@ export async function seed() {
     VALUES ('GDUKQHGK4JLJXZM7KQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ5JQ', true)
     ON CONFLICT (address) DO NOTHING
   `);
-  console.log("Inserted 1 sample user");
+  logger.info("Inserted 1 sample user");
 
-  console.log("Seeding complete.");
+  logger.info("Seeding complete.");
 }
 
 const isDirectScriptRun = (() => {
@@ -37,7 +38,8 @@ if (isDirectScriptRun) {
       await pool.end();
     })
     .catch((err) => {
-      console.error("Seeding failed:", err);
-      process.exit(1);
+      logger.error({ err }, "Seeding failed");
+      // Flush the async logger transport before exiting so the failure is not lost.
+      logger.flush(() => process.exit(1));
     });
 }

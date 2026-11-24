@@ -294,7 +294,7 @@ stellar contract invoke \
 
 ## Error catalog
 
-This section documents all error codes returned by the contracts. Integrators can use these codes to display actionable error messages to users.
+This section documents all error codes returned by the contracts. Integrators can use these codes to display actionable error messages to users. For the canonical error code reference generated directly from `errors.rs`, see [Contract Error Codes](../docs/contract-error-codes.md).
 
 ### `single_rwa_vault` errors
 

@@ -110,17 +110,18 @@ async function rotateApiKey(label: string, graceDays: number): Promise<void> {
     await client.query("COMMIT");
 
     logger.info(
-      { label, keyId: newKey.id, oldKeyId: oldKey.id, graceDays, oldKeyExpiresAt },
-      "API key rotated",
+      {
+        label,
+        role: newKey.role,
+        keyId: newKey.id,
+        oldKeyId: oldKey.id,
+        graceDays,
+        oldKeyExpiresAt: oldKeyExpiresAt.toISOString(),
+      },
+      "API key rotated; old key remains active during grace period",
     );
     console.log(`\nNew API Key (save this - it won't be shown again):`);
-    console.log(plaintext);
-    console.log(`\nLabel: ${label}`);
-    console.log(`Role: ${newKey.role}`);
-    console.log(
-      `Old key ${oldKey.id} keeps working until ${oldKeyExpiresAt.toISOString()} ` +
-        `(grace period: ${graceDays} days). Deploy the new key before then.\n`,
-    );
+    console.log(`${plaintext}\n`);
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw err;
@@ -135,13 +136,15 @@ async function main(): Promise<void> {
   try {
     ({ label, graceDays } = parseArgs(process.argv.slice(2)));
   } catch (err) {
-    console.error((err as Error).message);
+    logger.error({ err }, (err as Error).message);
     process.exit(1);
   }
 
   if (!label) {
-    console.error("Usage: rotate-api-key --label <label> [--grace-days <days>]");
-    console.error("Example: rotate-api-key --label my-admin-key --grace-days 14");
+    logger.error(
+      "Usage: rotate-api-key --label <label> [--grace-days <days>]\n" +
+        "Example: rotate-api-key --label my-admin-key --grace-days 14",
+    );
     process.exit(1);
   }
 

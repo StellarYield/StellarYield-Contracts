@@ -2,7 +2,9 @@
 
 use soroban_sdk::contracterror;
 
-#[contracterror]
+// Spec export is disabled: the enum has more variants than the 50-case limit
+// allowed by ScSpecUdtUnionV0, so spec generation would panic at compile time.
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     NotKYCVerified = 1,

@@ -137,6 +137,13 @@ function knownQueryKeys(schema: ZodSchema): Set<string> | null {
   return null;
 }
 
+/** The slice of a Zod object schema's internals that the duplicate check reads. */
+interface ZodShapeInternals {
+  _def?: {
+    shape?: () => Record<string, { _def?: { typeName?: string } } | undefined>;
+  };
+}
+
 export function validateQuery(schema: ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     // Reject query keys absent from the route's Zod schema when strict mode is
@@ -166,7 +173,7 @@ export function validateQuery(schema: ZodSchema) {
       if (Array.isArray(value)) {
         // Check whether the schema's shape declares this key as an array.
         // If the schema has no shape (e.g. z.record), skip the check.
-        const shape = (schema as any)._def?.shape?.();
+        const shape = (schema as unknown as ZodShapeInternals)._def?.shape?.();
         const fieldDef = shape?.[key]?._def;
         // ZodArray inner type is stored under _def.type === "ZodArray".
         const isArrayType = fieldDef?.typeName === "ZodArray";

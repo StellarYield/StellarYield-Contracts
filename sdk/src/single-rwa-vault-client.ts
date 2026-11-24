@@ -145,6 +145,18 @@ export class SingleRwaVaultClient {
   epochYield(epoch: number): SorobanOperation {
     return this.call("epoch_yield", scU32(epoch));
   }
+  /** `get_epoch_range(start, end)`: `EpochData` for each epoch in `[start, end]`. */
+  getEpochRange(start: number, end: number): SorobanOperation {
+    return this.call("get_epoch_range", scU32(start), scU32(end));
+  }
+  /** `get_epoch_metadata(epoch)`: yield amount, total shares and timestamp for one epoch. */
+  getEpochMetadata(epoch: number): SorobanOperation {
+    return this.call("get_epoch_metadata", scU32(epoch));
+  }
+  /** `price_per_share_history(epoch)`: share price at an epoch, scaled by `10^share_decimals`. */
+  pricePerShareHistory(epoch: number): SorobanOperation {
+    return this.call("price_per_share_history", scU32(epoch));
+  }
   totalYieldDistributed(): SorobanOperation {
     return this.call("total_yield_distributed");
   }
@@ -312,6 +324,18 @@ export class SingleRwaVaultClient {
   }
   expectedApy(): SorobanOperation {
     return this.call("expected_apy");
+  }
+  getVaultOverview(): SorobanOperation {
+    return this.call("get_vault_overview");
+  }
+  getUserOverview(user: string): SorobanOperation {
+    return this.call("get_user_overview", scAddress(user));
+  }
+  getYieldReconciliation(): SorobanOperation {
+    return this.call("get_yield_reconciliation");
+  }
+  getVaultHealth(): SorobanOperation {
+    return this.call("get_vault_health");
   }
   setFundingTarget(caller: string, target: bigint): SorobanOperation {
     return this.call("set_funding_target", scAddress(caller), scI128(target));

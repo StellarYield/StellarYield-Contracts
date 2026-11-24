@@ -224,17 +224,21 @@ function DepositForm({
     <div className="stack" style={{ gap: 16 }}>
       <div className="field">
         <div className="row-between">
-          <MicroLabel>You deposit</MicroLabel>
+          <label className="micro-label" htmlFor="deposit-amount">
+            You deposit
+          </label>
           <span className="faint" style={{ fontSize: 12 }}>
             Balance: {formatAmount(user?.assetBalance, vault.assetDecimals)}{" "}
             {vault.assetSymbol}
           </span>
         </div>
         <AmountInput
+          id="deposit-amount"
           value={value}
           onChange={setValue}
           suffix={vault.assetSymbol}
           disabled={tx.busy}
+          maxLabel={`Use maximum ${vault.assetSymbol} deposit for ${vault.name}`}
           onMax={
             maxDeposit && maxDeposit > 0n
               ? () => setValue(formatAmount(maxDeposit, vault.assetDecimals, { maxFractionDigits: vault.assetDecimals }).replace(/,/g, ""))
@@ -265,12 +269,13 @@ function DepositForm({
         </span>
       ) : null}
 
-      {inputError ? <Notice tone="danger">{inputError}</Notice> : null}
+      {inputError ? <Notice tone="danger" role="alert">{inputError}</Notice> : null}
 
       <button
         className="btn btn-primary btn-block"
         onClick={submit}
         disabled={tx.busy || vault.paused || !value}
+        aria-label={`Deposit ${vault.assetSymbol} into ${vault.name}`}
       >
         {tx.busy ? <Spinner /> : null}
         {tx.busy ? "processing…" : "deposit"}
@@ -318,6 +323,7 @@ function ClaimForm({
           })
         }
         disabled={tx.busy || pending <= 0n || vault.paused}
+        aria-label={`Claim yield from ${vault.name}`}
       >
         {tx.busy ? <Spinner /> : null}
         {tx.busy ? "processing…" : pending > 0n ? "claim yield" : "nothing to claim"}
@@ -367,6 +373,7 @@ function RedeemForm({
             })
           }
           disabled={tx.busy || shares <= 0n}
+          aria-label={`Claim refund from ${vault.name}`}
         >
           {tx.busy ? <Spinner /> : null}
           {tx.busy ? "processing…" : "claim refund"}
@@ -426,16 +433,20 @@ function RedeemForm({
 
       <div className="field">
         <div className="row-between">
-          <MicroLabel>You redeem</MicroLabel>
+          <label className="micro-label" htmlFor="redeem-amount">
+            You redeem
+          </label>
           <span className="faint" style={{ fontSize: 12 }}>
             Holding: {formatAmount(shares, vault.shareDecimals)} {vault.symbol}
           </span>
         </div>
         <AmountInput
+          id="redeem-amount"
           value={value}
           onChange={setValue}
           suffix={vault.symbol}
           disabled={tx.busy}
+          maxLabel={`Use maximum ${vault.symbol} redemption for ${vault.name}`}
           onMax={
             shares > 0n
               ? () =>
@@ -449,12 +460,15 @@ function RedeemForm({
         />
       </div>
 
-      {inputError ? <Notice tone="danger">{inputError}</Notice> : null}
+      {inputError ? <Notice tone="danger" role="alert">{inputError}</Notice> : null}
 
       <button
         className="btn btn-primary btn-block"
         onClick={submit}
         disabled={tx.busy || shares <= 0n || vault.paused || !value}
+        aria-label={isMatured
+          ? `Redeem ${vault.symbol} shares from ${vault.name}`
+          : `Request early redemption of ${vault.symbol} shares from ${vault.name}`}
       >
         {tx.busy ? <Spinner /> : null}
         {tx.busy

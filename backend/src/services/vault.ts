@@ -3,6 +3,7 @@ import { query } from "../db/index.js";
 import * as db from "../db/index.js";
 import { logger } from "../logger.js";
 import { cacheGet, cacheSet, cacheDel } from "../cache/redis.js";
+import { readVaultDecimals } from "./stellar.js";
 import { xdr, scValToNative } from "@stellar/stellar-sdk";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -205,6 +206,9 @@ export const VAULT_FIELD_MAP: Record<string, string> = {
   updatedAt: "v.updated_at",
   expectedApy: "v.expected_apy",
   maturityDate: "v.maturity_date",
+  decimalsMismatch: "v.decimals_mismatch",
+  lastIndexedLedger: "ci.last_indexed_ledger",
+  lastIndexedAt: "ci.last_indexed_at",
 };
 
 export const VAULT_FIELD_ALLOWLIST = Object.keys(VAULT_FIELD_MAP);
@@ -348,6 +352,7 @@ try {
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        ORDER BY v.created_at DESC
        LIMIT $1 OFFSET $2`
     );
@@ -363,6 +368,7 @@ try {
       "tvl_history",
       `SELECT v.contract_id, v.total_assets, v.updated_at
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        ORDER BY v.updated_at DESC
        LIMIT $1`
     );
@@ -494,6 +500,10 @@ interface VaultRow {
   unlisted?: boolean;
   featured_rank?: number | null;
   tags?: string[];
+  decimals?: number | null;
+  decimals_mismatch?: boolean;
+  last_indexed_ledger?: number | null;
+  last_indexed_at?: Date | string | null;
 }
 
 function computeFundingProgress(totalAssets: string, fundingTarget: string | null): number | null {
@@ -572,6 +582,11 @@ function mapVaultRow(row: VaultRow): Vault {
     ...(row.unlisted !== undefined ? { unlisted: row.unlisted } : {}),
     ...(row.featured_rank !== undefined ? { featuredRank: row.featured_rank } : {}),
     ...(row.tags !== undefined ? { tags: row.tags } : {}),
+    decimalsMismatch: row.decimals_mismatch ?? false,
+    lastIndexedLedger: row.last_indexed_ledger ?? null,
+    lastIndexedAt: row.last_indexed_at
+      ? new Date(row.last_indexed_at).toISOString()
+      : null,
   };
 }
 
@@ -587,7 +602,16 @@ export const TRANSFER_VOLUME_PERIOD_DAYS: Record<TransferVolumePeriod, number> =
   "30d": 30,
 };
 
+export type ReadVaultDecimals = (contractId: string) => Promise<number | null>;
+
 export class VaultService {
+  private readonly readDecimals: ReadVaultDecimals;
+  private readonly reportedDecimalsMismatch = new Map<string, string>();
+
+  constructor(readDecimals: ReadVaultDecimals = readVaultDecimals) {
+    this.readDecimals = readDecimals;
+  }
+
   /**
    * List non-archived vaults with optional filtering, sorting, and pagination.
    * Results are cached (TTL depends on `state`, see `TTL_BY_STATE`) keyed by
@@ -709,13 +733,16 @@ export class VaultService {
                v.description, v.logo_uri,
                v.settlement_status,
                v.supply_at_maturity,
-               v.unlisted, v.featured_rank, v.tags,
-               COALESCE((
+                v.unlisted, v.featured_rank, v.tags,
+                v.decimals_mismatch,
+                ci.last_indexed_ledger, ci.last_indexed_at,
+                COALESCE((
                  SELECT COUNT(*)::int
                  FROM user_vault_positions uvp
                  WHERE uvp.vault_id = v.id AND uvp.shares > 0
                ), 0) AS depositor_count
         FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
         ${whereClause}
         ORDER BY ${orderByClause}, v.id ${sortDirection}
         LIMIT $${limitIdx}`;
@@ -730,13 +757,16 @@ export class VaultService {
                v.description, v.logo_uri,
                v.settlement_status,
                v.supply_at_maturity,
-               v.unlisted, v.featured_rank, v.tags,
-               COALESCE((
+                v.unlisted, v.featured_rank, v.tags,
+                v.decimals_mismatch,
+                ci.last_indexed_ledger, ci.last_indexed_at,
+                COALESCE((
                  SELECT COUNT(*)::int
                  FROM user_vault_positions uvp
                  WHERE uvp.vault_id = v.id AND uvp.shares > 0
                ), 0) AS depositor_count
         FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
         ${whereClause}
         ORDER BY ${orderByClause}
         LIMIT $${limitIdx} OFFSET $${limitIdx + 1}`;
@@ -775,7 +805,8 @@ export class VaultService {
 
       const countWhere = countConditions.length > 0 ? `WHERE ${countConditions.join(" AND ")}` : "";
       const countResult = await query<{ count: string }>(
-        `SELECT COUNT(*) as count FROM vaults v ${countWhere}`,
+        `SELECT COUNT(*) as count FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id ${countWhere}`,
         countParams as any[],
       );
       total = parseInt(countResult[0]?.count ?? "0", 10);
@@ -824,6 +855,7 @@ export class VaultService {
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.archived = TRUE
        ORDER BY v.updated_at DESC`,
       [],
@@ -847,13 +879,16 @@ export class VaultService {
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.zkme_verifier_address,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
-              v.unlisted, v.featured_rank, v.tags,
-              COALESCE((
+               v.unlisted, v.featured_rank, v.tags,
+               v.decimals_mismatch,
+               ci.last_indexed_ledger, ci.last_indexed_at,
+               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.factory_id = $1 AND v.archived = FALSE AND v.unlisted = FALSE
        ORDER BY v.created_at DESC`,
       [factoryId],
@@ -888,13 +923,16 @@ export class VaultService {
               v.description, v.logo_uri,
               v.settlement_status,
               v.supply_at_maturity,
-              v.unlisted, v.featured_rank, v.tags,
-              COALESCE((
+               v.unlisted, v.featured_rank, v.tags,
+               v.decimals_mismatch,
+               ci.last_indexed_ledger, ci.last_indexed_at,
+               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.contract_id = $1`,
       [contractId],
     );
@@ -1042,6 +1080,66 @@ export class VaultService {
     }));
   }
 
+  private async resolveVaultDecimals(
+    contractId: string,
+  ): Promise<{ decimals: number | null; mismatch: boolean }> {
+    const rows = await query<{ decimals: number | null; decimals_mismatch: boolean }>(
+      "SELECT decimals, decimals_mismatch FROM vaults WHERE contract_id = $1",
+      [contractId],
+    );
+    const storedDecimals = rows[0]?.decimals ?? null;
+    const storedMismatch = rows[0]?.decimals_mismatch ?? false;
+    const onChainDecimals = await this.readDecimals(contractId);
+
+    if (onChainDecimals === null) {
+      return { decimals: storedDecimals, mismatch: storedMismatch };
+    }
+
+    if (storedDecimals === null) {
+      this.reportedDecimalsMismatch.delete(contractId);
+      return { decimals: onChainDecimals, mismatch: false };
+    }
+
+    if (storedDecimals !== onChainDecimals) {
+      const signature = `${storedDecimals}:${onChainDecimals}`;
+      if (this.reportedDecimalsMismatch.get(contractId) !== signature) {
+        this.reportedDecimalsMismatch.set(contractId, signature);
+        logger.warn(
+          { contractId, storedDecimals, onChainDecimals },
+          "Vault decimals mismatch",
+        );
+      }
+      return { decimals: storedDecimals, mismatch: true };
+    }
+
+    this.reportedDecimalsMismatch.delete(contractId);
+    return { decimals: storedDecimals, mismatch: false };
+  }
+
+  async validateVaultDecimals(contractIds: string[]): Promise<void> {
+    const uniqueContractIds = [...new Set(contractIds.filter((contractId) => !!contractId))];
+    if (uniqueContractIds.length === 0) return;
+
+    await Promise.all(
+      uniqueContractIds.map(async (contractId) => {
+        const { decimals, mismatch } = await this.resolveVaultDecimals(contractId);
+        const rows = await query<{ contract_id: string }>(
+          `UPDATE vaults
+           SET decimals = COALESCE(decimals, $2),
+               decimals_mismatch = $3,
+               updated_at = NOW()
+           WHERE contract_id = $1
+           RETURNING contract_id`,
+          [contractId, decimals, mismatch],
+        );
+        if (rows.length > 0) {
+          await cacheDel(`vault:${contractId}`);
+          await cacheDel("vaults:list:*");
+        }
+      }),
+    );
+  }
+
   /**
    * Insert a new vault or update an existing one (matched by `contractId`),
    * then invalidate its cache entries. Called by the indexer when it observes
@@ -1110,6 +1208,8 @@ export class VaultService {
       logoUri = null,
     } = vault;
 
+    const { decimals, mismatch } = await this.resolveVaultDecimals(contractId);
+
     logger.info(
       { contractId, factoryId, name, asset },
       "Upserting vault into database",
@@ -1122,9 +1222,10 @@ export class VaultService {
          funding_target, funding_deadline, min_deposit, max_deposit_per_user,
          rwa_name, rwa_symbol, rwa_document_uri, rwa_category,
          description, logo_uri,
+         decimals, decimals_mismatch,
          created_at, updated_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW())
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW())
        ON CONFLICT (contract_id)
        DO UPDATE SET
          state = EXCLUDED.state,
@@ -1140,10 +1241,13 @@ export class VaultService {
          rwa_category = COALESCE(EXCLUDED.rwa_category, vaults.rwa_category),
          description = COALESCE(EXCLUDED.description, vaults.description),
          logo_uri = COALESCE(EXCLUDED.logo_uri, vaults.logo_uri),
+         decimals = COALESCE(vaults.decimals, EXCLUDED.decimals),
+         decimals_mismatch = EXCLUDED.decimals_mismatch,
          updated_at = NOW()`,
       [contractId, factoryId, asset, name, symbol, state, totalAssets, totalSupply,
        fundingTarget, fundingDeadline, minDeposit, maxDepositPerUser,
-       rwaName, rwaSymbol, rwaDocumentUri, rwaCategory, description, logoUri],
+       rwaName, rwaSymbol, rwaDocumentUri, rwaCategory, description, logoUri,
+       decimals, mismatch],
     );
 
     logger.info({ contractId }, "Vault upserted successfully");
@@ -1299,6 +1403,7 @@ export class VaultService {
                 WHERE e.vault_id = v.id
               ), 0) AS epoch_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.contract_id = $1`,
       [contractId],
     );
@@ -1649,13 +1754,16 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
-              v.unlisted, v.featured_rank, v.tags,
-              COALESCE((
+               v.unlisted, v.featured_rank, v.tags,
+               v.decimals_mismatch,
+               ci.last_indexed_ledger, ci.last_indexed_at,
+               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        ${whereClause}
        ORDER BY v.${sortColumn} ${sortDirection}
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -1665,6 +1773,7 @@ export class VaultService {
     const countResult = await query<{ count: string }>(
       `SELECT COUNT(*) as count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        ${whereClause}`,
       params,
     );
@@ -1733,13 +1842,16 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
-              v.unlisted, v.featured_rank, v.tags,
-              COALESCE((
+               v.unlisted, v.featured_rank, v.tags,
+               v.decimals_mismatch,
+               ci.last_indexed_ledger, ci.last_indexed_at,
+               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.created_at > $1 AND v.archived = FALSE AND v.unlisted = FALSE
        ORDER BY v.created_at DESC`,
       [cutoff],
@@ -1756,14 +1868,17 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
-              v.unlisted, v.featured_rank, v.tags,
-              COALESCE((
+               v.unlisted, v.featured_rank, v.tags,
+               v.decimals_mismatch,
+               ci.last_indexed_ledger, ci.last_indexed_at,
+               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count,
               GREATEST(0, (v.maturity_date::date - CURRENT_DATE)) AS days_until_maturity
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.state = 'Active'
          AND v.maturity_date > NOW()
          AND v.maturity_date <= NOW() + ($1::int * INTERVAL '1 day')
@@ -1787,13 +1902,16 @@ export class VaultService {
               v.created_at, v.updated_at,
               v.funding_target, v.funding_deadline, v.min_deposit, v.max_deposit_per_user,
               v.rwa_name, v.rwa_symbol, v.rwa_document_uri, v.rwa_category,
-              v.unlisted, v.featured_rank, v.tags,
-              COALESCE((
+               v.unlisted, v.featured_rank, v.tags,
+               v.decimals_mismatch,
+               ci.last_indexed_ledger, ci.last_indexed_at,
+               COALESCE((
                 SELECT COUNT(*)::int
                 FROM user_vault_positions uvp
                 WHERE uvp.vault_id = v.id AND uvp.shares > 0
               ), 0) AS depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        WHERE v.state = 'Funding'
          AND v.funding_target IS NOT NULL
          AND v.funding_target::numeric > 0
@@ -1937,6 +2055,7 @@ export class VaultService {
            WHERE uvp.vault_id = v.id AND uvp.shares > 0
          ), 0))::text               AS avg_depositor_count
        FROM vaults v
+        LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id
        ${whereClause}`,
       params,
     );

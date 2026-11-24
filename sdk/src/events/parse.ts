@@ -125,6 +125,17 @@ export function parseVaultEvents(
   events: xdr.DiagnosticEvent[] | xdr.ContractEvent[],
 ): ParsedStellarYieldEvent[] {
   const human = humanizeEvents(events) as HumanizedSorobanEvent[];
+  return parseHumanizedEvents(human);
+}
+
+/**
+ * Map already-humanized events (the shape `humanizeEvents` returns) to typed
+ * SDK objects. Kept separate from `parseVaultEvents` so the mapping can be
+ * exercised with plain fixtures instead of XDR input.
+ */
+export function parseHumanizedEvents(
+  human: HumanizedSorobanEvent[],
+): ParsedStellarYieldEvent[] {
   const out: ParsedStellarYieldEvent[] = [];
   for (const ev of human) {
     if (ev.type !== "contract" || !ev.contractId) {
