@@ -37,6 +37,10 @@ mod test_convert_erc4626;
 #[cfg(test)]
 mod test_deposit_limits;
 #[cfg(test)]
+mod test_dust_preview;
+#[cfg(test)]
+mod test_timelock_errors;
+#[cfg(test)]
 mod test_epoch_activity;
 #[cfg(test)]
 mod test_epoch_history;
@@ -92,6 +96,12 @@ mod test_withdraw;
 mod test_yield_shortfall;
 #[cfg(test)]
 mod test_yield_vesting;
+#[cfg(test)]
+mod test_burn_requires_yield_claim;
+#[cfg(test)]
+mod test_transfer_exemption_limit;
+#[cfg(test)]
+mod test_max_investors_cap;
 #[cfg(test)]
 mod tests;
 
@@ -3881,6 +3891,9 @@ impl SingleRWAVault {
 
     pub fn burn(e: &Env, from: Address, amount: i128) {
         from.require_auth();
+        if Self::pending_yield(e, from.clone()) > 0 {
+            panic_with_error!(e, Error::BurnRequiresYieldClaim);
+        }
         // Snapshot before balance change so epoch yield is attributed to pre-burn shares.
         update_user_snapshot(e, &from);
         _burn(e, &from, amount);

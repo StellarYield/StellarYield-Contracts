@@ -9,7 +9,11 @@ mod types;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
+mod test_access_control;
+#[cfg(test)]
 mod test_factory_migration;
+#[cfg(test)]
+mod test_wasm_hash;
 #[cfg(test)]
 mod tests;
 
