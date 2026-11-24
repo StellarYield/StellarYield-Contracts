@@ -32,7 +32,10 @@ The feature flag router is mounted at `/api/v1/admin/feature-flags`:
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/v1/admin/feature-flags` | List all currently defined feature flags. |
+| `GET` | `/api/v1/admin/feature-flags/:name` | Read a flag. Returns `404` if it does not exist. |
 | `PATCH` | `/api/v1/admin/feature-flags/:name` | Create or update a flag. Body accepts `{ enabled?: boolean, rolloutPercent?: number, enabledForRoles?: string[] }`. Returns `404` if the flag does not exist and the body is `{}`. |
+
+All feature flag administration endpoints require an admin API key.
 
 ## Precedence and Evaluation Rules
 

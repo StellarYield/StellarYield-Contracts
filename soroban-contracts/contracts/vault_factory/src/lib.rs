@@ -1102,10 +1102,13 @@ impl VaultFactory {
 // Guard helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Validates that an address is not the zero-equivalent (contract's own address).
-/// This prevents null-like semantics where the contract address is used as a placeholder.
+/// Rejects null-like addresses: the zero account and this contract's own address.
 fn require_valid_address(e: &Env, addr: &Address) {
-    if *addr == e.current_contract_address() {
+    let zero_address = Address::from_str(
+        e,
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    );
+    if *addr == e.current_contract_address() || *addr == zero_address {
         panic_with_error!(e, Error::InvalidInitParams);
     }
 }
