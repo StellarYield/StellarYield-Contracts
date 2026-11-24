@@ -97,6 +97,21 @@ function getEventData(rawEvent: any): unknown | null {
   return rawEvent?.value ?? rawEvent?.data ?? null;
 }
 
+/**
+ * Decode a raw topic or value into an ScVal. RPC events carry base64 XDR
+ * strings; values that were already decoded are passed through unchanged.
+ */
+function toScVal(value: unknown): xdr.ScVal {
+  return typeof value === "string" ? xdr.ScVal.fromXDR(value, "base64") : (value as xdr.ScVal);
+}
+
+/**
+ * A decoded event payload as returned by scValToNative. Structs decode to
+ * objects keyed by field name and tuples to arrays, so each field is narrowed
+ * at its use site.
+ */
+type DecodedEventPayload = Record<string, unknown> | null | undefined;
+
 function parseRawEventName(rawEvent: any): { topics: unknown[]; data: unknown } | null {
   const topics = getEventTopics(rawEvent);
   const data = getEventData(rawEvent);
@@ -855,7 +870,7 @@ export class Indexer {
       const parsedData = await this.handleYieldDistributed(event.contractId ?? "", yieldDist);
       await this.recordEvent(event, "yield_distributed", parsedData);
       try {
-        await this.notificationService?.notify("yield_distributed", yieldDist as any);
+        await this.notificationService?.notify("yield_distributed", yieldDist);
       } catch (e) {
         logger.warn({ err: e }, "NotificationService.notify failed for yield_distributed");
       }
@@ -889,7 +904,7 @@ export class Indexer {
       await this.handleCancelFunding(event.contractId ?? "");
       await this.recordEvent(event, "cancel_funding");
       try {
-        await this.notificationService?.notify("cancel_funding", cancelFunding as any);
+        await this.notificationService?.notify("cancel_funding", cancelFunding);
       } catch (e) {
         logger.warn({ err: e }, "NotificationService.notify failed for cancel_funding");
       }
@@ -912,7 +927,7 @@ export class Indexer {
       await this.handleVaultStateChanged(event.contractId ?? "", vaultStateChanged);
       await this.recordEvent(event, "vault_state_changed");
       try {
-        await this.notificationService?.notify("vault_state_changed", vaultStateChanged as any);
+        await this.notificationService?.notify("vault_state_changed", vaultStateChanged);
       } catch (e) {
         logger.warn({ err: e }, "NotificationService.notify failed for vault_state_changed");
       }
@@ -940,7 +955,7 @@ export class Indexer {
       await this.handleVaultCreated(event.contractId ?? "", vaultCreated, event);
       await this.recordEvent(event, "vault_created");
       try {
-        await this.notificationService?.notify("vault_created", vaultCreated as any);
+        await this.notificationService?.notify("vault_created", vaultCreated);
       } catch (e) {
         logger.warn({ err: e }, "NotificationService.notify failed for vault_created");
       }
@@ -1176,7 +1191,7 @@ export class Indexer {
     const metadataUpdated = parseMetadataUpdatedEvent(event);
     if (metadataUpdated) {
       await this.handleMetadataUpdated(event.contractId ?? "", metadataUpdated);
-      await this.recordEvent(event, "rwa_details_updated", metadataUpdated as any);
+      await this.recordEvent(event, "rwa_details_updated", metadataUpdated);
       try {
         const metadataFields: { field: string; newValue: string }[] = [
           { field: "name", newValue: metadataUpdated.name },
@@ -2748,11 +2763,13 @@ export function parseWithdrawEvent(rawEvent: unknown): ParsedWithdrawEvent | nul
   }
 }
 
-export interface ParsedYieldDistributedEvent {
+// A type alias rather than an interface: only object-literal types are
+// assignable to Record<string, unknown>, which notify() requires.
+export type ParsedYieldDistributedEvent = {
   epoch: number;
   amount: bigint;
   timestamp: bigint;
-}
+};
 
 export function parseYieldDistributedEvent(rawEvent: unknown): ParsedYieldDistributedEvent | null {
   try {
@@ -2835,10 +2852,7 @@ export function parseVaultStateChangedEvent(rawEvent: any): {
     const { topics, data } = parsed;
     let eventName = "";
     try {
-      const firstTopic = typeof topics[0] === "string"
-        ? xdr.ScVal.fromXDR(topics[0], "base64")
-        : (topics[0] as any);
-      eventName = scValToNative(firstTopic as any);
+      eventName = scValToNative(toScVal(topics[0]));
     } catch {
       return null;
     }
@@ -2848,7 +2862,7 @@ export function parseVaultStateChangedEvent(rawEvent: any): {
     const parsedValue = typeof data === "string"
       ? xdr.ScVal.fromXDR(data, "base64")
       : data;
-    const native = scValToNative(parsedValue as any) as any;
+    const native: DecodedEventPayload = scValToNative(toScVal(parsedValue));
     const oldState = String(native?.oldState ?? (Array.isArray(native) ? native[0] : ""));
     const newState = String(native?.newState ?? (Array.isArray(native) ? native[1] : ""));
 
@@ -2880,10 +2894,7 @@ export function parseMetadataUpdatedEvent(rawEvent: any): {
     const { topics, data } = parsed;
     let eventName = "";
     try {
-      const firstTopic = typeof topics[0] === "string"
-        ? xdr.ScVal.fromXDR(topics[0], "base64")
-        : (topics[0] as any);
-      eventName = scValToNative(firstTopic as any);
+      eventName = scValToNative(toScVal(topics[0]));
     } catch {
       return null;
     }
@@ -2893,7 +2904,7 @@ export function parseMetadataUpdatedEvent(rawEvent: any): {
     const parsedValue = typeof data === "string"
       ? xdr.ScVal.fromXDR(data, "base64")
       : data;
-    const native = scValToNative(parsedValue as any) as any;
+    const native: DecodedEventPayload = scValToNative(toScVal(parsedValue));
     const name = String(native?.[0] ?? native?.name ?? "");
     const symbol = String(native?.[1] ?? native?.symbol ?? "");
     const documentUri = String(
@@ -2944,7 +2955,7 @@ export function parseVaultCreatedEvent(rawEvent: any): {
     if (eventName !== "v_create" && eventName !== "vault_created") return null;
 
     const contractId = String(parsedTopics[1] ?? rawEvent?.contractId ?? "");
-    const nativeData = scValToNative(parsedValue as any) as any;
+    const nativeData: DecodedEventPayload = scValToNative(toScVal(parsedValue));
     const asset = String(nativeData?.asset ?? (Array.isArray(nativeData) ? nativeData[0] : "") ?? "");
     const name = String(nativeData?.name ?? (Array.isArray(nativeData) ? nativeData[1] : "") ?? "");
     const symbol = String(nativeData?.symbol ?? (Array.isArray(nativeData) ? nativeData[2] : "") ?? "");
@@ -2993,10 +3004,7 @@ export function parseCancelFundingEvent(rawEvent: any): {
 
     let eventName = "";
     try {
-      const firstTopic = typeof topics[0] === "string"
-        ? xdr.ScVal.fromXDR(topics[0], "base64")
-        : (topics[0] as any);
-      eventName = scValToNative(firstTopic as any);
+      eventName = scValToNative(toScVal(topics[0]));
     } catch {
       return null;
     }
@@ -3346,10 +3354,7 @@ export function parsePausedEvent(rawEvent: any): ParsedPausedEvent | null {
     const { topics } = parsed;
     let eventName = "";
     try {
-      const firstTopic = typeof topics[0] === "string"
-        ? xdr.ScVal.fromXDR(topics[0], "base64")
-        : (topics[0] as any);
-      eventName = scValToNative(firstTopic as any);
+      eventName = scValToNative(toScVal(topics[0]));
     } catch {
       return null;
     }
@@ -3762,10 +3767,7 @@ export function parseUnpausedEvent(rawEvent: any): ParsedUnpausedEvent | null {
     const { topics } = parsed;
     let eventName = "";
     try {
-      const firstTopic = typeof topics[0] === "string"
-        ? xdr.ScVal.fromXDR(topics[0], "base64")
-        : (topics[0] as any);
-      eventName = scValToNative(firstTopic as any);
+      eventName = scValToNative(toScVal(topics[0]));
     } catch {
       return null;
     }
@@ -4485,9 +4487,10 @@ export function parseTransferFeeCollectedEvent(rawEvent: unknown): ParsedTransfe
           feeAmount = decodeBigInt(data[0]);
         }
       } else if (data && typeof data === "object") {
-        from = String((data as any).from ?? (data as any).from_address ?? (data as any).fromAddress ?? "");
-        to = String((data as any).to ?? (data as any).to_address ?? (data as any).toAddress ?? "");
-        feeAmount = decodeBigInt((data as any).feeAmount ?? (data as any).fee_amount ?? (data as any).amount ?? (data as any).fee ?? 0);
+        const fields = data as Record<string, unknown>;
+        from = String(fields.from ?? fields.from_address ?? fields.fromAddress ?? "");
+        to = String(fields.to ?? fields.to_address ?? fields.toAddress ?? "");
+        feeAmount = decodeBigInt(fields.feeAmount ?? fields.fee_amount ?? fields.amount ?? fields.fee ?? 0);
       } else {
         feeAmount = decodeBigInt(data);
       }
