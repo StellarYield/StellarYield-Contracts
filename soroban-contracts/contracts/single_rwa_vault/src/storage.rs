@@ -461,6 +461,10 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
 macro_rules! instance_get {
     ($fn:ident, $key:ident, $ty:ty) => {
         pub fn $fn(e: &Env) -> $ty {
+            // INVARIANT: every key read through this macro is written by
+            // `__constructor` (lib.rs) and no code path removes it, so `get`
+            // is always `Some` on a deployed contract. Adding a key here
+            // requires the same guarantee.
             e.storage().instance().get(&Key::$key).unwrap()
         }
     };
@@ -635,7 +639,10 @@ pub fn put_operator(e: &Env, addr: Address, val: bool) {
     put_role(e, addr.clone(), Role::FullOperator, val);
 
     let mut list = get_operator_list(e);
-    let already_listed = (0..list.len()).any(|i| list.get(i).unwrap() == addr);
+    // INVARIANT: `i` is always below `list.len()`, so `get_unchecked` cannot
+    // go out of bounds. It also skips the extra `len()` host call that `get`
+    // makes, so each iteration costs one host call fewer than the old form.
+    let already_listed = (0..list.len()).any(|i| list.get_unchecked(i) == addr);
 
     if val && !already_listed {
         list.push_back(addr);
@@ -643,7 +650,8 @@ pub fn put_operator(e: &Env, addr: Address, val: bool) {
     } else if !val && already_listed {
         let mut updated = Vec::new(e);
         for i in 0..list.len() {
-            let entry = list.get(i).unwrap();
+            // INVARIANT: `i < list.len()` by the loop bound.
+            let entry = list.get_unchecked(i);
             if entry != addr {
                 updated.push_back(entry);
             }
@@ -978,7 +986,8 @@ pub fn put_transfer_requires_kyc(e: &Env, val: bool) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn transfer_exempt_index(addresses: &Vec<Address>, addr: &Address) -> Option<u32> {
-    (0..addresses.len()).find(|&i| addresses.get(i).unwrap() == *addr)
+    // INVARIANT: `i` ranges over `0..addresses.len()`, so `get_unchecked` is in bounds.
+    (0..addresses.len()).find(|&i| addresses.get_unchecked(i) == *addr)
 }
 
 fn put_transfer_exempt_address_list(e: &Env, addresses: &Vec<Address>) {
@@ -1031,7 +1040,8 @@ pub fn put_transfer_exempt(e: &Env, addr: &Address, exempt: bool) {
     if existing.is_some() {
         let mut updated = Vec::new(e);
         for i in 0..addresses.len() {
-            let current = addresses.get(i).unwrap();
+            // INVARIANT: `i < addresses.len()` by the loop bound.
+            let current = addresses.get_unchecked(i);
             if current != *addr {
                 updated.push_back(current);
             }
@@ -1052,7 +1062,8 @@ pub fn get_blacklisted(e: &Env, addr: &Address) -> bool {
 }
 
 fn blacklist_index(addresses: &Vec<Address>, addr: &Address) -> Option<u32> {
-    (0..addresses.len()).find(|&i| addresses.get(i).unwrap() == *addr)
+    // INVARIANT: `i` ranges over `0..addresses.len()`, so `get_unchecked` is in bounds.
+    (0..addresses.len()).find(|&i| addresses.get_unchecked(i) == *addr)
 }
 
 fn put_blacklisted_address_list(e: &Env, addresses: &Vec<Address>) {
@@ -1093,7 +1104,8 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
     if existing.is_some() {
         let mut updated = Vec::new(e);
         for i in 0..addresses.len() {
-            let current = addresses.get(i).unwrap();
+            // INVARIANT: `i < addresses.len()` by the loop bound.
+            let current = addresses.get_unchecked(i);
             if current != *addr {
                 updated.push_back(current);
             }
