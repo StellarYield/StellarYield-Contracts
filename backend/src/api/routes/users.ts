@@ -38,8 +38,11 @@ import {
   stellarAddressSchema,
 } from "../middleware/validate.js";
 import { requireApiKey } from "../middleware/auth.js";
+import { normalizeAddressParam } from "../middleware/normalizeAddressParams.js";
 
 export const usersRouter = Router();
+usersRouter.param("address", normalizeAddressParam("address"));
+usersRouter.param("contractId", normalizeAddressParam("contractId"));
 
 const addressParamSchema = z.object({
   address: stellarAddressSchema,

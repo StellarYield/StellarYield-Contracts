@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { listVaults, getVault } from "../../controllers/vaults.js";
 import { validateParams, validateQuery } from "../../middleware/validate.js";
+import { normalizeAddressParam } from "../../middleware/normalizeAddressParams.js";
 import {
   listVaultsQuerySchema,
   vaultParamsSchema,
@@ -15,6 +16,7 @@ import {
  * start targeting the v2 prefix. Every response carries `API-Version: 2`.
  */
 export const vaultsV2Router = Router();
+vaultsV2Router.param("contractId", normalizeAddressParam("contractId"));
 
 vaultsV2Router.use((_req, res, next) => {
   res.setHeader("API-Version", "2");

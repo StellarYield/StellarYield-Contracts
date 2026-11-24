@@ -9,6 +9,8 @@ import {
   createFeeTier,
   deleteFeeTier,
 } from "../controllers/fees.js";
+import { requireApiKey } from "../middleware/auth.js";
+import { normalizeAddressParam } from "../middleware/normalizeAddressParams.js";
 import { requireApiKey, enforceApiKeyContractScope } from "../middleware/auth.js";
 
 /** Public: GET /api/v1/platform/fees (#1101). */
@@ -20,6 +22,7 @@ platformFeesRouter.get("/fees", getPlatformFees);
  * second segment, so none of them shadows a `/:contractId` vault route.
  */
 export const vaultFeesRouter = Router();
+vaultFeesRouter.param("contractId", normalizeAddressParam("contractId"));
 vaultFeesRouter.param("contractId", enforceApiKeyContractScope); // #1243
 vaultFeesRouter.get("/:contractId/fee-accrual-estimate", getFeeAccrualEstimate); // #1102
 vaultFeesRouter.get("/:contractId/fee-rebates", listFeeRebates); // #1103
@@ -31,6 +34,7 @@ vaultFeesRouter.get("/:contractId/fee-tiers", listFeeTiers); // #1099
  * and API-key check; the mutating routes additionally require the admin role.
  */
 export const adminFeesRouter = Router();
+adminFeesRouter.param("contractId", normalizeAddressParam("contractId"));
 adminFeesRouter.post("/:contractId/fee-rebates", requireApiKey({ role: "admin" }), createFeeRebate); // #1103
 adminFeesRouter.post("/:contractId/fee-tiers", requireApiKey({ role: "admin" }), createFeeTier); // #1099
 adminFeesRouter.delete("/:contractId/fee-tiers/:tierId", requireApiKey({ role: "admin" }), deleteFeeTier); // #1099

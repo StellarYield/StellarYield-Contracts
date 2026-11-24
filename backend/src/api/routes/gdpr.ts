@@ -8,9 +8,11 @@ import {
 import { validateParams, validateQuery, stellarAddressSchema } from "../middleware/validate.js";
 import { requireApiKey } from "../middleware/auth.js";
 import { ipAllowlist } from "../middleware/ipAllowlist.js";
+import { normalizeAddressParam } from "../middleware/normalizeAddressParams.js";
 
 /** GDPR data subject rights (#1110 export, #1111 erasure), mounted at /api/v1/gdpr. */
 export const gdprRouter = Router();
+gdprRouter.param("address", normalizeAddressParam("address"));
 
 const addressParamSchema = z.object({
   address: stellarAddressSchema,
