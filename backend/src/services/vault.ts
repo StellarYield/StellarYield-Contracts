@@ -1,4 +1,4 @@
-import type { Vault, VaultOperator, UserVaultPosition, PaginatedResponse, VaultHolder, VaultHolderSort, OperatorLogEntry, TransferVolume, TransferVolumePeriod } from "../types/index.js";
+import type { Vault, VaultState, VaultOperator, UserVaultPosition, PaginatedResponse, VaultHolder, VaultHolderSort, OperatorLogEntry, TransferVolume, TransferVolumePeriod } from "../types/index.js";
 import { query } from "../db/index.js";
 import * as db from "../db/index.js";
 import { logger } from "../logger.js";
@@ -340,7 +340,8 @@ export function parseVaultSort(
 
 // Register hot query prepared statements at module load
 try {
-  const registerFn = (db as any)["registerPreparedStatement"];
+  // The namespace import is read defensively: unit tests mock db/index.js partially.
+  const registerFn: typeof db.registerPreparedStatement | undefined = db.registerPreparedStatement;
   if (typeof registerFn === "function") {
     registerFn(
       "list_vaults",
@@ -476,7 +477,7 @@ interface VaultRow {
   asset: string;
   name: string | null;
   symbol: string | null;
-  state: string;
+  state: VaultState;
   total_assets: string;
   total_supply: string;
   total_shares_ever_minted: string;
@@ -555,7 +556,7 @@ function mapVaultRow(row: VaultRow): Vault {
     asset: row.asset,
     name: row.name,
     symbol: row.symbol,
-    state: row.state as any,
+    state: row.state,
     // Defensive fallback: row.total_assets should always be non-null after the
     // COALESCE in the query, but guard here too in case of raw inserts (#499).
     totalAssets: row.total_assets ?? "0",
@@ -772,7 +773,7 @@ export class VaultService {
         LIMIT $${limitIdx} OFFSET $${limitIdx + 1}`;
     }
 
-    const vaults = await query<VaultRow>(sql, params as any[]);
+    const vaults = await query<VaultRow>(sql, params);
 
     // Determine nextCursor if cursor-based pagination
     let nextCursor: string | null = null;
@@ -807,7 +808,7 @@ export class VaultService {
       const countResult = await query<{ count: string }>(
         `SELECT COUNT(*) as count FROM vaults v
         LEFT JOIN indexer_contract_state ci ON ci.contract_id = v.contract_id ${countWhere}`,
-        countParams as any[],
+        countParams,
       );
       total = parseInt(countResult[0]?.count ?? "0", 10);
     }
