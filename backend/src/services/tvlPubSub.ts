@@ -58,7 +58,7 @@ export class TvlPubSub extends EventEmitter {
         cleanup();
         return { value: undefined, done: true };
       },
-      async throw(err?: any): Promise<IteratorResult<VaultTvlUpdatePayload>> {
+      async throw(err?: unknown): Promise<IteratorResult<VaultTvlUpdatePayload>> {
         cleanup();
         throw err;
       },

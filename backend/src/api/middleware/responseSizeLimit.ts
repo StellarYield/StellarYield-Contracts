@@ -56,7 +56,7 @@ export function responseSizeLimit(maxMb: number = config.maxResponseSizeMb) {
       }
     }
 
-    res.setHeader = function (name: string, value: any) {
+    res.setHeader = function (name: string, value: number | string | readonly string[]) {
       if (typeof name === "string" && name.toLowerCase() === "content-length") {
         const contentLength = parseInt(String(value), 10);
         if (!isNaN(contentLength)) {
